@@ -1,0 +1,23 @@
+# Локальная база нового SoundFlow. Порт 5433 намеренно — 5432 занят старым
+# сервером, пока он ещё жив. Образ с pgvector — под подбор по звуку (следующий шаг).
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: soundflow2-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: soundflow
+      POSTGRES_PASSWORD: soundflow_dev
+      POSTGRES_DB: soundflow
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - soundflow2_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soundflow -d soundflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  soundflow2_pg:

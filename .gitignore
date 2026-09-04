@@ -1,0 +1,31 @@
+# --- секреты ---
+.env
+*.local
+
+# --- Flutter (apps/mobile) ---
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/build/
+apps/mobile/.gradle/
+apps/mobile/android/.gradle/
+apps/mobile/android/app/debug/
+apps/mobile/android/app/release/
+apps/mobile/android/local.properties
+apps/mobile/android/key.properties
+apps/mobile/*.iml
+apps/mobile/ios/
+apps/mobile/linux/
+apps/mobile/macos/
+apps/mobile/windows/
+apps/mobile/web/
+
+# --- Go (apps/server) ---
+apps/server/bin/
+apps/server/soundflow-server
+apps/server/soundflow-server.exe
+
+# --- прочее ---
+_srv.out
+_srv.err
+.DS_Store
