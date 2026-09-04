@@ -146,23 +146,17 @@ class _SearchScreenState extends State<SearchScreen> {
         children: [
           const Text('ЗАКАЗАТЬ НОВОЕ', style: _label),
           const SizedBox(height: 10),
-          TextField(
+          _ClearableField(
             controller: _artist,
+            label: 'Исполнитель',
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-              labelText: 'Исполнитель',
-              border: OutlineInputBorder(),
-            ),
           ),
           const SizedBox(height: 10),
-          TextField(
+          _ClearableField(
             controller: _title,
+            label: 'Название песни',
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _acquire(),
-            decoration: const InputDecoration(
-              labelText: 'Название песни',
-              border: OutlineInputBorder(),
-            ),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -187,14 +181,11 @@ class _SearchScreenState extends State<SearchScreen> {
           const SizedBox(height: 16),
           const Text('УЖЕ НА СЕРВЕРЕ', style: _label),
           const SizedBox(height: 10),
-          TextField(
+          _ClearableField(
             controller: _q,
+            hint: 'Поиск по каталогу',
+            prefixIcon: const Icon(Icons.search),
             onChanged: _onQueryChanged,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Поиск по каталогу',
-              border: OutlineInputBorder(),
-            ),
           ),
           const SizedBox(height: 8),
           if (found == null)
@@ -245,6 +236,53 @@ class _SearchScreenState extends State<SearchScreen> {
     letterSpacing: 1.5,
     fontWeight: FontWeight.w600,
   );
+}
+
+/// Текстовое поле с крестиком очистки, как только там что-то напечатано.
+class _ClearableField extends StatelessWidget {
+  const _ClearableField({
+    required this.controller,
+    this.label,
+    this.hint,
+    this.prefixIcon,
+    this.textInputAction,
+    this.onSubmitted,
+    this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String? label;
+  final String? hint;
+  final Widget? prefixIcon;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => TextField(
+          controller: controller,
+          textInputAction: textInputAction,
+          onSubmitted: onSubmitted,
+          onChanged: onChanged,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            prefixIcon: prefixIcon,
+            border: const OutlineInputBorder(),
+            suffixIcon: controller.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      controller.clear();
+                      onChanged?.call('');
+                    },
+                  ),
+          ),
+        ),
+      );
 }
 
 class _Busy extends StatelessWidget {
