@@ -135,9 +135,11 @@ class NowPlaying {
     required this.title,
     required this.artist,
     this.path = '',
+    this.coverPath,
   });
   final String id;
   final String title;
   final String artist;
   final String path;
+  final String? coverPath; // локальный файл обложки на телефоне; null — нет
 }

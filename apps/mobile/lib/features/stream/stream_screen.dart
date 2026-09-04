@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/now_playing_screen.dart';
@@ -36,7 +37,7 @@ class _StreamScreenState extends State<StreamScreen> {
 
   List<NowPlaying> get _queue => [
         for (final t in _items ?? const <DownloadedTrack>[])
-          NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path),
+          NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
       ];
 
   Future<void> _listen({int startIndex = 0, bool? shuffle}) async {
@@ -82,8 +83,10 @@ class _StreamScreenState extends State<StreamScreen> {
     }
 
     final queue = [
-      NowPlaying(id: seed.id, title: seed.title, artist: seed.artist, path: seed.path),
-      for (final t in rest) NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path),
+      NowPlaying(
+          id: seed.id, title: seed.title, artist: seed.artist, path: seed.path, coverPath: seed.coverPath),
+      for (final t in rest)
+        NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
     ];
     await scope.player.playQueue(queue, startIndex: 0, shuffle: false);
     if (!mounted) return;
@@ -175,6 +178,7 @@ class _StreamScreenState extends State<StreamScreen> {
                 final t = items[i];
                 final active = now?.id == t.id;
                 return ListTile(
+                  leading: CoverThumb(path: t.coverPath, size: 40),
                   title: Text(t.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

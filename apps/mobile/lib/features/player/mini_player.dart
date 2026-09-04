@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import 'now_playing_screen.dart';
 import 'player_controller.dart';
@@ -44,9 +45,11 @@ class MiniPlayer extends StatelessWidget {
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: Afisha.line)),
               ),
-              padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
               child: Row(
                 children: [
+                  CoverThumb(path: now.coverPath, size: 40),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
 
@@ -107,6 +108,7 @@ class _SearchScreenState extends State<SearchScreen> {
           'artist': artist,
           'title': title,
           'favorite': res['favorite'] == true,
+          'cover_url': res['cover_url'],
         });
         note = '$note, скачано на телефон';
         if (res['favorite'] == true) note = '$note, в избранном';
@@ -216,6 +218,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final onPhone = _onPhone.contains(id);
     return ListTile(
       contentPadding: EdgeInsets.zero,
+      leading: CoverThumb(url: '${t['cover_url'] ?? ''}', size: 40),
       title: Text('${t['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text('${t['artist']}', maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: onPhone

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/player_controller.dart';
@@ -54,7 +55,8 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
     final items = _items ?? const <DownloadedTrack>[];
     final i = items.indexWhere((x) => x.id == t.id);
     final queue = [
-      for (final x in items) NowPlaying(id: x.id, title: x.title, artist: x.artist, path: x.path),
+      for (final x in items)
+        NowPlaying(id: x.id, title: x.title, artist: x.artist, path: x.path, coverPath: x.coverPath),
     ];
     await AppScope.of(context).player.playQueue(queue, startIndex: i < 0 ? 0 : i, shuffle: false);
   }
@@ -150,6 +152,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
 
   Widget _row(DownloadedTrack t) => ListTile(
         contentPadding: const EdgeInsets.only(left: 16, right: 4),
+        leading: CoverThumb(path: t.coverPath, size: 44),
         title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text('${t.artist} · ${_mb(t.bytes)}',
             maxLines: 1, overflow: TextOverflow.ellipsis),

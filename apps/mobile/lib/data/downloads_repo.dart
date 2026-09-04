@@ -25,6 +25,13 @@ class DownloadsRepo {
     return dir;
   }
 
+  Future<Directory> _coversDir() async {
+    final base = await getApplicationDocumentsDirectory();
+    final dir = Directory('${base.path}/covers');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    return dir;
+  }
+
   Future<String> localPath(String id) async => '${(await _musicDir()).path}/$id';
 
   Future<bool> isDownloaded(String id) async {
@@ -38,6 +45,21 @@ class DownloadsRepo {
     final path = await localPath(id);
     await _api.downloadTrack(id, path);
     final size = await File(path).length();
+
+    // Обложка — необязательно: нет ссылки или сайт с картинкой не ответил —
+    // просто играем без неё, трек это не должно останавливать.
+    String? coverPath;
+    final coverUrl = '${track['cover_url'] ?? ''}';
+    if (coverUrl.isNotEmpty) {
+      try {
+        final cp = '${(await _coversDir()).path}/$id.jpg';
+        await _api.downloadCover(coverUrl, cp);
+        coverPath = cp;
+      } catch (_) {
+        coverPath = null;
+      }
+    }
+
     await _db.upsertDownloaded(DownloadedTrack(
       id: id,
       title: '${track['title'] ?? id}',
@@ -45,6 +67,7 @@ class DownloadsRepo {
       path: path,
       bytes: size,
       addedAt: DateTime.now().millisecondsSinceEpoch,
+      coverPath: coverPath,
     ));
     await _sync?.record('download', trackId: id);
     // Был в избранном старого плеера — ставим сердечко (только добавляем).

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
@@ -97,12 +99,14 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                   ),
                   child: AspectRatio(
                     aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Afisha.surfaceHi,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: (now.coverPath != null && File(now.coverPath!).existsSync())
+                          ? Image.file(File(now.coverPath!), fit: BoxFit.cover)
+                          : Container(
+                              color: Afisha.surfaceHi,
+                              child: const Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
+                            ),
                     ),
                   ),
                 ),
