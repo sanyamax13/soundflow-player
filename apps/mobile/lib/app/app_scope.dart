@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../data/api.dart';
 import '../data/downloads_repo.dart';
+import '../data/sync_repo.dart';
 import '../features/player/player_controller.dart';
 
 /// Общие сервисы, доступные из дерева виджетов. На каркасе — вместо
@@ -12,12 +13,14 @@ class AppScope extends InheritedWidget {
     required this.api,
     required this.downloads,
     required this.player,
+    required this.sync,
     required super.child,
   });
 
   final Api api;
   final DownloadsRepo downloads;
   final PlayerController player;
+  final SyncRepo sync;
 
   static AppScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
@@ -27,5 +30,8 @@ class AppScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppScope oldWidget) =>
-      api != oldWidget.api || downloads != oldWidget.downloads || player != oldWidget.player;
+      api != oldWidget.api ||
+      downloads != oldWidget.downloads ||
+      player != oldWidget.player ||
+      sync != oldWidget.sync;
 }

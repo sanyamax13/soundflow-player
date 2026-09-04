@@ -25,6 +25,12 @@ func main() {
 		// Не падаем: каркас должен подниматься и без базы. health покажет "down".
 		log.Printf("база недоступна на старте (%v) — продолжаю, health скажет down", err)
 	}
+	if pool != nil {
+		if err := pool.Migrate(ctx); err != nil {
+			// Тоже не фатально: без базы сервер живёт, синк вернёт 503.
+			log.Printf("миграции не применились (%v) — продолжаю", err)
+		}
+	}
 
 	srv := &api.Server{
 		DB:    pool,

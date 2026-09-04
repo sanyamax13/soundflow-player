@@ -5,6 +5,12 @@ import 'package:just_audio/just_audio.dart';
 /// (офлайн). Фон/локскрин (`audio_service`), гэплесс, нормализация —
 /// следующими шагами.
 class PlayerController {
+  PlayerController({this.onPlay});
+
+  /// Дёргается, когда трек поставили играть — сюда вешаем запись события
+  /// «слушал» в очередь синхронизации.
+  final void Function(NowPlaying meta)? onPlay;
+
   AudioPlayer? _player;
 
   /// Что играет сейчас: null — ничего.
@@ -30,6 +36,7 @@ class PlayerController {
     final p = _ensure();
     await p.setFilePath(path);
     await p.play();
+    onPlay?.call(meta);
   }
 
   Future<void> toggle() async {

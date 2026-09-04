@@ -29,6 +29,8 @@ func (s *Server) Router() http.Handler {
 		r.Get("/health", s.health)
 		r.Get("/tracks", s.tracks)
 		r.Get("/music/{id}/file", s.musicFile)
+		r.Post("/sync/events", s.syncEvents)
+		r.Get("/sync/report", s.syncReport)
 	})
 	return r
 }
@@ -50,6 +52,73 @@ func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) musicFile(w http.ResponseWriter, r *http.Request) {
 	s.Music.ServeFile(w, r, chi.URLParam(r, "id"))
+}
+
+// --- Синхронизация телефон → сервер (этап 3) ---
+
+type syncReq struct {
+	Device struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		AppVersion string `json:"app_version"`
+		MusicBytes int64  `json:"music_bytes"`
+	} `json:"device"`
+	Events []db.SyncEvent `json:"events"`
+}
+
+func (s *Server) syncEvents(w http.ResponseWriter, r *http.Request) {
+	var req syncReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "битый json"})
+		return
+	}
+	if req.Device.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "нужен device.id"})
+		return
+	}
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	accepted, err := s.DB.SaveSync(r.Context(), db.Device{
+		ID:         req.Device.ID,
+		Name:       req.Device.Name,
+		AppVersion: req.Device.AppVersion,
+		MusicBytes: req.Device.MusicBytes,
+	}, req.Events)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if accepted == nil {
+		accepted = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"accepted":    accepted,
+		"server_time": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) syncReport(w http.ResponseWriter, r *http.Request) {
+	dev := r.URL.Query().Get("device")
+	if dev == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "нужен параметр device"})
+		return
+	}
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	last, total, err := s.DB.SyncReport(r.Context(), dev)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	out := map[string]any{"total_events": total}
+	if last != nil {
+		out["last_sync_at"] = last.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

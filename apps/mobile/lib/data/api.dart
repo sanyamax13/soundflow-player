@@ -28,4 +28,24 @@ class Api {
     final res = await _dio.get<Map<String, dynamic>>('/v1/health');
     return res.data ?? {};
   }
+
+  /// Отправить батч событий с телефона. Возвращает uuid принятых как новые
+  /// (дубли сервер молча пропускает).
+  Future<List<String>> postSyncEvents({
+    required String deviceId,
+    required List<Map<String, Object?>> events,
+    int musicBytes = 0,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>('/v1/sync/events', data: {
+      'device': {
+        'id': deviceId,
+        'name': 'Android',
+        'app_version': 'dev',
+        'music_bytes': musicBytes,
+      },
+      'events': events,
+    });
+    final acc = (res.data?['accepted'] as List?) ?? const [];
+    return acc.map((e) => '$e').toList();
+  }
 }

@@ -6,15 +6,17 @@ import 'core/theme.dart';
 import 'data/api.dart';
 import 'data/db.dart';
 import 'data/downloads_repo.dart';
+import 'data/sync_repo.dart';
 import 'features/player/player_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final api = Api();
   final db = await Db.open();
-  final downloads = DownloadsRepo(api, db);
-  final player = PlayerController();
-  runApp(SoundFlowApp(api: api, downloads: downloads, player: player));
+  final sync = SyncRepo(api, db);
+  final downloads = DownloadsRepo(api, db, sync);
+  final player = PlayerController(onPlay: (m) => sync.record('play', trackId: m.id));
+  runApp(SoundFlowApp(api: api, downloads: downloads, player: player, sync: sync));
 }
 
 class SoundFlowApp extends StatelessWidget {
@@ -23,11 +25,13 @@ class SoundFlowApp extends StatelessWidget {
     required this.api,
     required this.downloads,
     required this.player,
+    required this.sync,
   });
 
   final Api api;
   final DownloadsRepo downloads;
   final PlayerController player;
+  final SyncRepo sync;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +39,7 @@ class SoundFlowApp extends StatelessWidget {
       api: api,
       downloads: downloads,
       player: player,
+      sync: sync,
       child: MaterialApp(
         title: 'SoundFlow',
         debugShowCheckedModeBanner: false,
