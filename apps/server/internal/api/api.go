@@ -1,8 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -36,6 +42,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/health", s.health)
 			r.Get("/tracks", s.tracks)
 			r.Get("/search", s.search)
+			r.Post("/library/next-batch", s.libraryNextBatch)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Get("/sync/report", s.syncReport)
@@ -44,6 +51,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/devices", s.adminDevices)
 				r.Get("/events", s.adminEvents)
 				r.Post("/reanalyze", s.adminReanalyze)
+				r.Post("/import-library", s.adminImportLibrary)
 			})
 		})
 		// Скачивание трека через цепочку источников — минуты.
@@ -131,10 +139,66 @@ func (s *Server) syncEvents(w http.ResponseWriter, r *http.Request) {
 	if accepted == nil {
 		accepted = []string{}
 	}
+	s.handleDeleteEvents(r.Context(), req.Events, accepted)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"accepted":    accepted,
 		"server_time": time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// handleDeleteEvents — Alex удалил трек на телефоне ("Моя музыка" → корзина).
+// Сервер должен увидеть это и тоже убрать трек у себя: помечает его blocked в
+// legacy_marks (не попадёт в каталог/повторный импорт/повторное скачивание)
+// и переносит файл в _trash рядом с его корнем — не удаляет насовсем, мало ли
+// трек не тот или Alex передумает. Обрабатываем только реально новые события
+// (accepted), чтобы не дёргать файл при каждом повторном синке.
+func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, accepted []string) {
+	acc := make(map[string]bool, len(accepted))
+	for _, id := range accepted {
+		acc[id] = true
+	}
+	for _, e := range events {
+		if e.Kind != "delete" || e.TrackID == "" || !acc[e.UUID] {
+			continue
+		}
+		normKey, canonical, ok, err := s.DB.TrackForDeletion(ctx, e.TrackID)
+		if err != nil {
+			log.Printf("delete-event %s: поиск трека: %v", e.TrackID, err)
+			continue
+		}
+		if !ok {
+			continue // трек не наш (тестовый тон и т.п.) — нечего чистить
+		}
+		if err := s.DB.UpsertLegacyMark(ctx, db.LegacyMark{Key: normKey, Kind: "blocked"}); err != nil {
+			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
+		}
+		local := s.PathMap.ToLocal(canonical)
+		if err := moveToTrash(s.PathMap, local); err != nil {
+			log.Printf("delete-event %s: файл в корзину (%s): %v", e.TrackID, local, err)
+		} else {
+			log.Printf("delete-event %s: убран у себя (%s)", e.TrackID, local)
+		}
+	}
+}
+
+// moveToTrash переносит файл в «_trash» рядом с тем корнем библиотеки, под
+// которым он лежит (не удаляет — на случай ошибки распознавания трека).
+func moveToTrash(pm pathmap.Mapper, local string) error {
+	if local == "" {
+		return fmt.Errorf("пустой путь")
+	}
+	for _, root := range pm.LocalRoots() {
+		rel, err := filepath.Rel(root, local)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		dest := filepath.Join(root, "_trash", rel)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		return os.Rename(local, dest)
+	}
+	return fmt.Errorf("файл вне известных корней библиотеки")
 }
 
 func (s *Server) syncReport(w http.ResponseWriter, r *http.Request) {

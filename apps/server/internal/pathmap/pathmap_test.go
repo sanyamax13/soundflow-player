@@ -28,6 +28,30 @@ func TestToLocal(t *testing.T) {
 	}
 }
 
+func TestToCanonical(t *testing.T) {
+	m := New(
+		Pair{Canonical: `E:\soundflow-data\cache`, Local: `D:\SoundFlow\cache`},
+		Pair{Canonical: `E:\soundflow-data\music`, Local: `D:\SoundFlow\music`},
+	)
+	cases := []struct{ in, want string }{
+		{`D:\SoundFlow\cache\Kino - Gruppa krovi.mp3`, `E:\soundflow-data\cache\Kino - Gruppa krovi.mp3`},
+		{`D:\SoundFlow\music\Album\01.mp3`, `E:\soundflow-data\music\Album\01.mp3`},
+		{`C:\other\file.mp3`, `C:\other\file.mp3`},
+		{``, ``},
+	}
+	for _, c := range cases {
+		got := m.ToCanonical(c.in)
+		if !pathEqual(got, c.want) {
+			t.Errorf("ToCanonical(%q) = %q, ждал %q", c.in, got, c.want)
+		}
+	}
+	// туда-обратно — исходный путь
+	local := `D:\SoundFlow\cache\x.mp3`
+	if got := m.ToLocal(m.ToCanonical(local)); !pathEqual(got, local) {
+		t.Errorf("round-trip: получил %q", got)
+	}
+}
+
 func TestToLocalNoop(t *testing.T) {
 	// пары не заданы → путь не меняется
 	m := New()

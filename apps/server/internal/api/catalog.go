@@ -7,9 +7,11 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"soundflow/server/internal/acquire"
+	"soundflow/server/internal/importer"
 )
 
 // GET /v1/search?q= — поиск по уже скачанному каталогу.
@@ -83,6 +85,35 @@ func (s *Server) acquireTrack(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type nextBatchReq struct {
+	ExcludeIDs  []string `json:"exclude_ids"`
+	BudgetBytes int64    `json:"budget_bytes"`
+}
+
+// POST /v1/library/next-batch — «докачать ещё»: телефон шлёт id того, что уже
+// скачано, и бюджет в байтах; сервер отдаёт следующую порцию (избранное
+// вперёд), пока не наберётся бюджет.
+func (s *Server) libraryNextBatch(w http.ResponseWriter, r *http.Request) {
+	var req nextBatchReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "битый json"})
+		return
+	}
+	if req.BudgetBytes <= 0 {
+		req.BudgetBytes = 20 << 30 // 20 ГБ по умолчанию
+	}
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	list, total, err := s.DB.NextLibraryBatch(r.Context(), req.ExcludeIDs, req.BudgetBytes)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tracks": list, "total_bytes": total})
+}
+
 type streamOrderReq struct {
 	SeedID       string   `json:"seed_id"`
 	CandidateIDs []string `json:"candidate_ids"`
@@ -110,6 +141,42 @@ func (s *Server) streamOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"track_ids": ordered})
+}
+
+// importRunning — не даём двум обходам библиотеки идти параллельно (файлов
+// много, смысла нет, а гонка на INSERT/UPDATE в базе не нужна).
+var importRunning atomic.Bool
+
+// POST /v1/admin/import-library — разово занести уже скачанную старым
+// приложением музыку (D:\SoundFlow\cache, D:\SoundFlow\music) в новый
+// каталог. Файлы читаем на месте, никуда не качаем и не двигаем. Долго
+// (тысячи файлов) — работает фоном, прогресс смотреть в логе сервера или
+// по счётчику каталога в /v1/admin/status.
+func (s *Server) adminImportLibrary(w http.ResponseWriter, r *http.Request) {
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	roots := s.PathMap.LocalRoots()
+	if len(roots) == 0 {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "не настроены пути библиотеки (SIDECAR_LOCAL_*_DIR)"})
+		return
+	}
+	if !importRunning.CompareAndSwap(false, true) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "перенос уже идёт"})
+		return
+	}
+	go func() {
+		defer importRunning.Store(false)
+		start := time.Now()
+		res, err := importer.Scan(context.Background(), s.DB, s.PathMap, roots)
+		if err != nil {
+			log.Printf("import-library: остановлен ошибкой: %v (успело: %+v)", err, res)
+			return
+		}
+		log.Printf("import-library: готово за %s — %+v", time.Since(start).Round(time.Second), res)
+	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true, "roots": roots})
 }
 
 // POST /v1/admin/reanalyze — досчитать «звуковой отпечаток» трекам, у которых

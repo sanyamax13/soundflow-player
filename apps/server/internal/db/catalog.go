@@ -19,7 +19,8 @@ type CatalogTrack struct {
 	ReleaseKind string `json:"release_kind"`
 	Explicit    bool   `json:"explicit"`
 	CoverURL    string `json:"cover_url"`
-	Favorite    bool   `json:"favorite"` // был в избранном старого плеера
+	Favorite    bool   `json:"favorite"`   // был в избранном старого плеера
+	SizeBytes   int64  `json:"size_bytes"` // размер файла (для бюджета «докачать ещё N ГБ»)
 }
 
 // NewTrack + NewTrackFile — что вставляем после успешного скачивания.
@@ -116,9 +117,11 @@ func (d *Pool) RecordRejected(ctx context.Context, normKey, sourceURL, provider,
 const catalogSelect = `
 	SELECT t.id, t.artist, t.title, t.album, COALESCE(t.duration_sec,0),
 	       t.release_kind, t.explicit, t.cover_url,
-	       COALESCE(lm.kind = 'favorite', false) AS favorite
+	       COALESCE(lm.kind = 'favorite', false) AS favorite,
+	       COALESCE(tf.size_bytes, 0) AS size_bytes
 	FROM tracks t
 	LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
+	LEFT JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
 	WHERE lm.kind IS DISTINCT FROM 'blocked'`
 
 // CatalogList — весь каталог (для /v1/tracks).
@@ -146,12 +149,51 @@ func (d *Pool) catalogQuery(ctx context.Context, sql string, args ...any) ([]Cat
 	out := make([]CatalogTrack, 0)
 	for rows.Next() {
 		var t CatalogTrack
-		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite); err != nil {
+		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite, &t.SizeBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// NextLibraryBatch — следующая порция для «докачать ещё N байт»: треки не из
+// excludeIDs (то, что уже на телефоне), сначала избранное, затем остальное по
+// порядку добавления, пока не наберём budgetBytes (или не кончится каталог).
+// Возвращает выбранные треки и их суммарный размер.
+func (d *Pool) NextLibraryBatch(ctx context.Context, excludeIDs []string, budgetBytes int64) ([]CatalogTrack, int64, error) {
+	if d == nil || d.p == nil {
+		return nil, 0, errNoDB
+	}
+	if excludeIDs == nil {
+		excludeIDs = []string{}
+	}
+	rows, err := d.p.Query(ctx, catalogSelect+`
+		AND NOT (t.id = ANY($1))
+		ORDER BY favorite DESC, t.created_at ASC
+		LIMIT 5000`, excludeIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := make([]CatalogTrack, 0)
+	var total int64
+	for rows.Next() {
+		var t CatalogTrack
+		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite, &t.SizeBytes); err != nil {
+			return nil, 0, err
+		}
+		if len(out) > 0 && total >= budgetBytes {
+			break
+		}
+		out = append(out, t)
+		total += t.SizeBytes
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 // DeleteTrackByKey — убрать трек из каталога по normalized_key (track_files
@@ -280,6 +322,27 @@ func (d *Pool) OrderBySimilarity(ctx context.Context, seedID string, candidateID
 		}
 	}
 	return ordered, nil
+}
+
+// TrackForDeletion — normalized_key и канонический путь файла трека, для
+// обработки события delete с телефона (см. api.handleDeleteEvents).
+// ok=false — трек не наш (например, тестовый тон, у него нет строки в БД).
+func (d *Pool) TrackForDeletion(ctx context.Context, trackID string) (normKey, filePath string, ok bool, err error) {
+	if d == nil || d.p == nil {
+		return "", "", false, errNoDB
+	}
+	err = d.p.QueryRow(ctx, `
+		SELECT t.normalized_key, tf.file_path
+		FROM tracks t JOIN track_files tf ON tf.track_id = t.id
+		WHERE t.id = $1 AND NOT tf.rejected LIMIT 1`, trackID,
+	).Scan(&normKey, &filePath)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return normKey, filePath, true, nil
 }
 
 func nullInt(v int) any {

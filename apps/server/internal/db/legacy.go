@@ -64,6 +64,26 @@ func (d *Pool) LegacyMarksInsert(ctx context.Context, marks map[string]LegacyMar
 	return n, nil
 }
 
+// UpsertLegacyMark — поставить/перезаписать метку одного ключа (в отличие от
+// LegacyMarksInsert — не DO NOTHING, а именно перезаписывает kind). Для живых
+// событий с телефона (например, delete должен победить более раннее favorite).
+func (d *Pool) UpsertLegacyMark(ctx context.Context, m LegacyMark) error {
+	if d == nil || d.p == nil {
+		return errNoDB
+	}
+	var at any
+	if !m.At.IsZero() {
+		at = m.At
+	}
+	_, err := d.p.Exec(ctx, `
+		INSERT INTO legacy_marks (normalized_key, kind, artist, title, marked_at)
+		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (normalized_key) DO UPDATE SET
+			kind = EXCLUDED.kind, artist = EXCLUDED.artist, title = EXCLUDED.title, marked_at = EXCLUDED.marked_at`,
+		m.Key, m.Kind, m.Artist, m.Title, at)
+	return err
+}
+
 // DeleteLegacyMark — убрать метку по ключу (для «вернуть в каталог» и тестов).
 func (d *Pool) DeleteLegacyMark(ctx context.Context, normKey string) error {
 	if d == nil || d.p == nil {

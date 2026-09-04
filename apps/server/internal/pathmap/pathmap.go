@@ -48,6 +48,31 @@ func (m Mapper) ToLocal(canonical string) string {
 	return canonical
 }
 
+// LocalRoots — реальные корни на этой машине (правая часть всех пар).
+// Пригодится для разового обхода файлов на диске (импорт старой библиотеки).
+func (m Mapper) LocalRoots() []string {
+	out := make([]string, 0, len(m.pairs))
+	for _, p := range m.pairs {
+		out = append(out, p.Local)
+	}
+	return out
+}
+
+// ToCanonical — обратный перевод: реальный путь на этой машине → канонический
+// для хранения в БД. Нужен при переносе уже лежащих на диске файлов (импорт
+// старой библиотеки), а не полученных от сайдкара.
+func (m Mapper) ToCanonical(local string) string {
+	if local == "" {
+		return local
+	}
+	for _, p := range m.pairs {
+		if out, ok := swapRoot(local, p.Local, p.Canonical); ok {
+			return out
+		}
+	}
+	return local
+}
+
 // swapRoot меняет корневой префикс fromRoot на toRoot, сохраняя хвост как есть.
 // ok=false — путь не внутри fromRoot. Сравнение регистронезависимое (Windows fs).
 func swapRoot(path, fromRoot, toRoot string) (string, bool) {

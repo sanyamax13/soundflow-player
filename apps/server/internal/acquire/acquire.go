@@ -50,7 +50,8 @@ type Result struct {
 	Created     bool   `json:"created"` // false — трек уже был в каталоге
 	Source      string `json:"source"`
 	QualityTier string `json:"quality_tier"`
-	Favorite    bool   `json:"favorite,omitempty"` // был в избранном старого плеера
+	Favorite    bool   `json:"favorite,omitempty"`  // был в избранном старого плеера
+	CoverURL    string `json:"cover_url,omitempty"` // обложка (для скачивания на телефон)
 	Reason      string `json:"reason,omitempty"`
 }
 
@@ -76,7 +77,7 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 	if existing, err := s.DB.TrackByKey(ctx, normKey); err != nil {
 		return Result{}, err
 	} else if existing != nil {
-		return Result{TrackID: existing.ID, Created: false, Source: "catalog", Favorite: legacyFav}, nil
+		return Result{TrackID: existing.ID, Created: false, Source: "catalog", Favorite: legacyFav, CoverURL: existing.CoverURL}, nil
 	}
 
 	// 4. Найти и скачать через сайдкар.
@@ -152,7 +153,7 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
-	return Result{TrackID: trackID, Created: true, Source: res.Source, QualityTier: tier.String(), Favorite: legacyFav}, nil
+	return Result{TrackID: trackID, Created: true, Source: res.Source, QualityTier: tier.String(), Favorite: legacyFav, CoverURL: coverURL}, nil
 }
 
 // AnalyzeAndStore — посчитать «звуковой отпечаток» трека через сайдкар и

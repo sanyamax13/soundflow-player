@@ -140,6 +140,88 @@ func TestCatalogHidesBlockedFlagsFavorite(t *testing.T) {
 	}
 }
 
+func TestNextLibraryBatch(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "nb-" + time.Now().Format("150405.000000")
+	fav := "t_" + tag + "_fav"
+	a := "t_" + tag + "_a"
+	b := "t_" + tag + "_b"
+	blocked := "t_" + tag + "_blk"
+	kFav, kA, kB, kBlk := tag+"__fav", tag+"__a", tag+"__b", tag+"__blk"
+	t.Cleanup(func() {
+		for _, id := range []string{fav, a, b, blocked} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id)
+		}
+		for _, k := range []string{kFav, kBlk} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM legacy_marks WHERE normalized_key=$1`, k)
+		}
+	})
+
+	mk := func(id, nk string, size int64) {
+		if err := p.InsertTrackWithFile(ctx,
+			NewTrack{ID: id, Artist: tag, Title: id, NormalizedKey: nk, ReleaseKind: "studio"},
+			NewTrackFile{ID: id + "_f", NormalizedKey: nk, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", SizeBytes: size, Source: "test", QualityTier: "excellent"},
+		); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	mk(fav, kFav, 1000)
+	mk(a, kA, 1000)
+	mk(b, kB, 1000)
+	mk(blocked, kBlk, 1000)
+
+	if _, err := p.LegacyMarksInsert(ctx, map[string]LegacyMark{
+		kFav: {Key: kFav, Kind: "favorite"},
+		kBlk: {Key: kBlk, Kind: "blocked"},
+	}); err != nil {
+		t.Fatalf("marks: %v", err)
+	}
+
+	// Бюджет в 1500 байт — должен взять fav (избранное вперёд) и остановиться,
+	// как только накопленное >= бюджета (после первого же трека: 1000 < 1500,
+	// возьмёт второй, тогда 2000 >= 1500 и хватит).
+	list, total, err := p.NextLibraryBatch(ctx, nil, 1500)
+	if err != nil {
+		t.Fatalf("NextLibraryBatch: %v", err)
+	}
+	names := map[string]bool{}
+	for _, t2 := range list {
+		names[t2.ID] = true
+	}
+	if !names[fav] {
+		t.Errorf("избранное должно быть первым и попасть в порцию: %+v", list)
+	}
+	if names[blocked] {
+		t.Error("заблокированный трек не должен попасть в порцию")
+	}
+	if len(list) < 1 || total < 1000 {
+		t.Errorf("неверный результат: len=%d total=%d", len(list), total)
+	}
+	if list[0].ID != fav {
+		t.Errorf("ждал избранное первым, получил %+v", list[0])
+	}
+
+	// exclude — favorite уже скачан, дальше идут a/b в порядке добавления.
+	list2, _, err := p.NextLibraryBatch(ctx, []string{fav, blocked}, 500)
+	if err != nil {
+		t.Fatalf("NextLibraryBatch#2: %v", err)
+	}
+	if len(list2) == 0 || (list2[0].ID != a && list2[0].ID != b) {
+		t.Fatalf("ждал a или b первым после исключения избранного, получил %+v", list2)
+	}
+	for _, tr := range list2 {
+		if tr.ID == fav || tr.ID == blocked {
+			t.Errorf("исключённый или заблокированный трек попал в порцию: %s", tr.ID)
+		}
+	}
+}
+
 func TestOrderBySimilaritySeedWithoutVector(t *testing.T) {
 	p := testPool(t)
 	ctx := context.Background()
