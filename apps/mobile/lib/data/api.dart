@@ -104,6 +104,21 @@ class Api {
     return acc.map((e) => '$e').toList();
   }
 
+  /// Упорядочить очередь Потока по близости звучания к seed. Отдаём id всех
+  /// скачанных треков, получаем их же в новом порядке (без seed). Сервер молчит
+  /// или трек без «отпечатка» — вернётся то же, что дали, только без seed.
+  Future<List<String>> streamOrder({
+    required String seedId,
+    required List<String> candidateIds,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>('/v1/stream/order', data: {
+      'seed_id': seedId,
+      'candidate_ids': candidateIds,
+    });
+    final list = (res.data?['track_ids'] as List?) ?? const [];
+    return list.map((e) => '$e').toList();
+  }
+
   /// Состояние сервера для экрана «Сервер».
   Future<Map<String, dynamic>> adminStatus() async {
     final res = await _dio.get<Map<String, dynamic>>('/v1/admin/status');

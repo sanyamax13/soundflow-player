@@ -12,6 +12,12 @@ class _FakeApi extends Api {
   _FakeApi();
   @override
   Future<List<Map<String, dynamic>>> tracks() async => const [];
+  @override
+  Future<List<String>> streamOrder({
+    required String seedId,
+    required List<String> candidateIds,
+  }) async =>
+      [for (final id in candidateIds) if (id != seedId) id];
 }
 
 Future<Widget> _app({List<DownloadedTrack> downloaded = const []}) async {
@@ -66,5 +72,17 @@ void main() {
     expect(find.text('2 песен на телефоне'), findsOneWidget);
     expect(find.text('Песня А'), findsOneWidget);
     expect(find.text('Песня Б'), findsOneWidget);
+  });
+
+  testWidgets('у каждой песни в Потоке есть кнопка «Радио по этой»', (tester) async {
+    await tester.pumpWidget(await _app(downloaded: [
+      DownloadedTrack(
+          id: 'a', title: 'Песня А', artist: 'Кто-то', path: '/tmp/a', bytes: 10, addedAt: 1),
+      DownloadedTrack(
+          id: 'b', title: 'Песня Б', artist: 'Кто-то', path: '/tmp/b', bytes: 20, addedAt: 2),
+    ]));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.radio), findsNWidgets(2));
   });
 }
