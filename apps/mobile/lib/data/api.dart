@@ -79,6 +79,10 @@ class Api {
     await _dio.download('/v1/music/$id/file', toPath);
   }
 
+  /// Скачать обложку по прямой ссылке (Яндекс.Музыка) — чтобы играть офлайн
+  /// вместе с песней, а не тянуть картинку по сети каждый раз.
+  Future<void> downloadCover(String url, String toPath) => _dio.download(url, toPath);
+
   Future<Map<String, dynamic>> health() async {
     final res = await _dio.get<Map<String, dynamic>>('/v1/health');
     return res.data ?? {};
@@ -102,6 +106,21 @@ class Api {
     });
     final acc = (res.data?['accepted'] as List?) ?? const [];
     return acc.map((e) => '$e').toList();
+  }
+
+  /// «Докачать ещё»: отдаём id уже скачанного, получаем следующую порцию
+  /// каталога (избранное — вперёд), пока не наберётся budgetBytes.
+  Future<({List<Map<String, dynamic>> tracks, int totalBytes})> nextLibraryBatch({
+    required List<String> excludeIds,
+    int budgetBytes = 20 * 1024 * 1024 * 1024,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>('/v1/library/next-batch', data: {
+      'exclude_ids': excludeIds,
+      'budget_bytes': budgetBytes,
+    });
+    final list = ((res.data?['tracks'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final total = (res.data?['total_bytes'] as num?)?.toInt() ?? 0;
+    return (tracks: list, totalBytes: total);
   }
 
   /// Упорядочить очередь Потока по близости звучания к seed. Отдаём id всех

@@ -110,4 +110,18 @@ void main() {
     expect(find.text('на связи'), findsOneWidget);
     expect(find.text('пока никто не синхронизировался'), findsOneWidget);
   });
+
+  testWidgets('в Профиле есть «Библиотека», кнопка «докачать ещё» на месте', (tester) async {
+    await tester.pumpWidget(await _app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Профиль'));
+    await tester.pumpAndSettle();
+    expect(find.text('Библиотека'), findsOneWidget);
+
+    await tester.tap(find.text('Библиотека'));
+    await tester.pumpAndSettle();
+    expect(find.text('Скачано: 0 песен, 0 Б'), findsOneWidget);
+    expect(find.text('Докачать ещё 20 ГБ'), findsOneWidget);
+  });
 }

@@ -84,6 +84,36 @@ class DownloadsRepo {
   /// Поиск по каталогу сервера (что уже скачано на домашний компьютер).
   Future<List<Map<String, dynamic>>> searchCatalog(String q) => _api.searchCatalog(q);
 
+  /// «Докачать ещё»: спрашивает сервер, что из библиотеки ещё не скачано
+  /// (избранное — вперёд), и качает порцию по budgetBytes (по умолчанию
+  /// 20 ГБ). onProgress зовётся после каждого трека: (сколько скачано,
+  /// сколько всего в порции, название текущего). Останавливаем скачивание
+  /// без сети или другой ошибки — то, что успело, уже в «Моей музыке».
+  Future<({int downloaded, int bytes, int failed})> downloadMore({
+    int budgetBytes = 20 * 1024 * 1024 * 1024,
+    void Function(int done, int total, String title)? onProgress,
+  }) async {
+    final excludeIds = (await _db.allDownloaded()).map((t) => t.id).toList();
+    final batch = await _api.nextLibraryBatch(excludeIds: excludeIds, budgetBytes: budgetBytes);
+    var done = 0;
+    var bytes = 0;
+    var failed = 0;
+    for (final track in batch.tracks) {
+      onProgress?.call(done, batch.tracks.length, '${track['artist'] ?? ''} — ${track['title'] ?? ''}');
+      try {
+        bytes += await download(track);
+      } catch (_) {
+        // Один плохой трек (сеть моргнула, файл пропал) не должен рвать
+        // всю порцию — пробуем следующий, недокачанное подберётся в
+        // следующий раз (его id не попадёт в excludeIds).
+        failed++;
+      }
+      done++;
+    }
+    onProgress?.call(done, batch.tracks.length, '');
+    return (downloaded: done - failed, bytes: bytes, failed: failed);
+  }
+
   /// Заказать трек на сервере. Возвращает ответ каталога:
   /// {track_id, created, source, quality_tier}. Бросает [AcquireException].
   Future<Map<String, dynamic>> acquireOnServer({

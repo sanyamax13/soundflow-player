@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../admin/admin_screen.dart';
+import '../library/library_screen.dart';
 import '../sync/sync_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
@@ -15,6 +16,14 @@ class ProfileScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Профиль')),
       body: ListView(
         children: [
+          _Row(
+            icon: Icons.download_outlined,
+            title: 'Библиотека',
+            subtitle: 'докачать музыку с сервера',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
+            ),
+          ),
           _Row(
             icon: Icons.sync,
             title: 'Синхронизация',

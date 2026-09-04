@@ -15,13 +15,16 @@ class Db {
     final db = await f.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
         },
         onUpgrade: (db, from, _) async {
           if (from < 2) await _createSync(db);
+          if (from < 3) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN cover_path TEXT');
+          }
         },
       ),
     );
@@ -30,13 +33,14 @@ class Db {
 
   static Future<void> _createDownloads(Database db) => db.execute('''
         CREATE TABLE downloaded_tracks (
-          id        TEXT PRIMARY KEY,
-          title     TEXT NOT NULL,
-          artist    TEXT NOT NULL,
-          path      TEXT NOT NULL,
-          bytes     INTEGER NOT NULL,
-          favorite  INTEGER NOT NULL DEFAULT 0,
-          added_at  INTEGER NOT NULL
+          id         TEXT PRIMARY KEY,
+          title      TEXT NOT NULL,
+          artist     TEXT NOT NULL,
+          path       TEXT NOT NULL,
+          bytes      INTEGER NOT NULL,
+          favorite   INTEGER NOT NULL DEFAULT 0,
+          cover_path TEXT,
+          added_at   INTEGER NOT NULL
         )
       ''');
 
@@ -153,6 +157,7 @@ class DownloadedTrack {
     required this.bytes,
     required this.addedAt,
     this.favorite = false,
+    this.coverPath,
   });
 
   final String id;
@@ -162,6 +167,7 @@ class DownloadedTrack {
   final int bytes;
   final bool favorite;
   final int addedAt;
+  final String? coverPath; // локальный файл обложки на телефоне; null — нет
 
   Map<String, Object?> toMap() => {
         'id': id,
@@ -170,6 +176,7 @@ class DownloadedTrack {
         'path': path,
         'bytes': bytes,
         'favorite': favorite ? 1 : 0,
+        'cover_path': coverPath,
         'added_at': addedAt,
       };
 
@@ -180,6 +187,7 @@ class DownloadedTrack {
         path: m['path'] as String,
         bytes: m['bytes'] as int,
         favorite: (m['favorite'] as int? ?? 0) == 1,
+        coverPath: m['cover_path'] as String?,
         addedAt: m['added_at'] as int,
       );
 }
