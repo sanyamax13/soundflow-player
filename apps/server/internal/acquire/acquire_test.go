@@ -149,6 +149,55 @@ func TestAcquireWrongTrackByID3(t *testing.T) {
 	}
 }
 
+func TestAcquireBlockedByLegacy(t *testing.T) {
+	p := testDB(t)
+	ctx := context.Background()
+	artist := "LegacyBlocked " + randID()
+	key := quality.NormalizedKey(artist, "Track")
+	if _, err := p.LegacyMarksInsert(ctx, map[string]db.LegacyMark{
+		key: {Key: key, Kind: "blocked", Artist: artist, Title: "Track"},
+	}); err != nil {
+		t.Fatalf("seed mark: %v", err)
+	}
+	t.Cleanup(func() { _ = p.DeleteLegacyMark(context.Background(), key) })
+
+	s := &Service{DB: p, Finder: fakeFinder{res: sidecar.FindAudioResult{Found: true, FilePath: `E:\x\b.mp3`, BitrateKbps: 320, Source: "yandex"}}}
+	_, err := s.Acquire(ctx, Request{Artist: artist, Title: "Track"})
+	if !errors.Is(err, ErrRejected) {
+		t.Fatalf("ждал ErrRejected для трека из старого чёрного списка, получил %v", err)
+	}
+	if tk, _ := p.TrackByKey(ctx, key); tk != nil {
+		t.Error("заблокированный трек не должен попасть в каталог")
+	}
+}
+
+func TestAcquireFavoriteFromLegacy(t *testing.T) {
+	p := testDB(t)
+	ctx := context.Background()
+	artist := "LegacyFav " + randID()
+	key := quality.NormalizedKey(artist, "Track")
+	if _, err := p.LegacyMarksInsert(ctx, map[string]db.LegacyMark{
+		key: {Key: key, Kind: "favorite", Artist: artist, Title: "Track"},
+	}); err != nil {
+		t.Fatalf("seed mark: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = p.DeleteTrackByKey(context.Background(), key)
+		_ = p.DeleteLegacyMark(context.Background(), key)
+	})
+
+	s := &Service{DB: p, Finder: fakeFinder{res: sidecar.FindAudioResult{
+		Found: true, FilePath: `E:\x\f.mp3`, BitrateKbps: 320, DurationSec: 200, Source: "yandex",
+	}}}
+	r, err := s.Acquire(ctx, Request{Artist: artist, Title: "Track"})
+	if err != nil || !r.Created {
+		t.Fatalf("ждал успех, получил %+v %v", r, err)
+	}
+	if !r.Favorite {
+		t.Error("Result.Favorite должен быть true для трека из старого избранного")
+	}
+}
+
 func TestAnalyzeAndStoreSetsVector(t *testing.T) {
 	p := testDB(t)
 	ctx := context.Background()

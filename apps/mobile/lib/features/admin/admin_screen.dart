@@ -105,6 +105,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final catalog = (_status['catalog'] as Map?) ?? const {};
     final events = (_status['events'] as Map?) ?? const {};
     final byKind = (events['by_kind'] as Map?) ?? const {};
+    final legacy = (_status['legacy'] as Map?) ?? const {};
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -118,6 +119,8 @@ class _AdminScreenState extends State<AdminScreen> {
         _section('Каталог'),
         _kv('Треков', '${catalog['tracks'] ?? 0}'),
         _kv('Файлов', '${catalog['track_files'] ?? 0}'),
+        _kv('Из старого: избранное', '${legacy['favorites'] ?? 0}'),
+        _kv('Из старого: скрыто', '${legacy['blocked'] ?? 0}'),
         _section('События'),
         _kv('Всего', '${events['total'] ?? 0}'),
         for (final e in byKind.entries) _kv('  ${e.key}', '${e.value}'),

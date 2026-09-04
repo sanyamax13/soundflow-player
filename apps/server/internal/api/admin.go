@@ -29,6 +29,7 @@ func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
 			out["events"] = map[string]any{"total": st.EventsTotal, "by_kind": st.EventsByKind}
 			out["devices"] = st.Devices
 			out["migrations"] = st.Migrations
+			out["legacy"] = map[string]int64{"favorites": st.LegacyFavs, "blocked": st.LegacyBlocked}
 		} else {
 			out["db"] = "error"
 			out["db_error"] = err.Error()

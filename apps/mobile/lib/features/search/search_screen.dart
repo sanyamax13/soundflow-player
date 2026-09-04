@@ -102,8 +102,14 @@ class _SearchScreenState extends State<SearchScreen> {
 
       var note = res['created'] == true ? 'Добавлено на сервер' : 'Уже было на сервере';
       try {
-        await downloads.download({'id': trackId, 'artist': artist, 'title': title});
+        await downloads.download({
+          'id': trackId,
+          'artist': artist,
+          'title': title,
+          'favorite': res['favorite'] == true,
+        });
         note = '$note, скачано на телефон';
+        if (res['favorite'] == true) note = '$note, в избранном';
       } catch (_) {
         note = '$note. На телефон не скачалось — попробуй позже';
       }

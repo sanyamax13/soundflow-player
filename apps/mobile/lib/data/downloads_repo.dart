@@ -47,6 +47,11 @@ class DownloadsRepo {
       addedAt: DateTime.now().millisecondsSinceEpoch,
     ));
     await _sync?.record('download', trackId: id);
+    // Был в избранном старого плеера — ставим сердечко (только добавляем).
+    if (track['favorite'] == true) {
+      await _db.setFavorite(id, true);
+      await _sync?.record('like', trackId: id);
+    }
     return size;
   }
 

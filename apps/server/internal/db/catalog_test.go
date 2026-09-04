@@ -73,6 +73,73 @@ func TestOrderBySimilarity(t *testing.T) {
 	}
 }
 
+func TestCatalogHidesBlockedFlagsFavorite(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "lm-" + time.Now().Format("150405.000000")
+	fav := "t_" + tag + "_fav"
+	blk := "t_" + tag + "_blk"
+	plain := "t_" + tag + "_pln"
+	kFav := tag + "__fav"
+	kBlk := tag + "__blk"
+	kPln := tag + "__pln"
+	t.Cleanup(func() {
+		for _, id := range []string{fav, blk, plain} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id)
+		}
+		for _, k := range []string{kFav, kBlk} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM legacy_marks WHERE normalized_key=$1`, k)
+		}
+	})
+
+	mk := func(id, nk string) {
+		if err := p.InsertTrackWithFile(ctx,
+			NewTrack{ID: id, Artist: tag, Title: id, NormalizedKey: nk, ReleaseKind: "studio"},
+			NewTrackFile{ID: id + "_f", NormalizedKey: nk, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+		); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	mk(fav, kFav)
+	mk(blk, kBlk)
+	mk(plain, kPln)
+
+	if _, err := p.LegacyMarksInsert(ctx, map[string]LegacyMark{
+		kFav: {Key: kFav, Kind: "favorite"},
+		kBlk: {Key: kBlk, Kind: "blocked"},
+	}); err != nil {
+		t.Fatalf("marks: %v", err)
+	}
+
+	list, err := p.CatalogSearch(ctx, tag, 50)
+	if err != nil {
+		t.Fatalf("CatalogSearch: %v", err)
+	}
+	seen := map[string]bool{}
+	favFlag := map[string]bool{}
+	for _, tr := range list {
+		seen[tr.ID] = true
+		favFlag[tr.ID] = tr.Favorite
+	}
+	if seen[blk] {
+		t.Error("заблокированный трек не должен быть в выдаче каталога")
+	}
+	if !seen[fav] || !seen[plain] {
+		t.Fatalf("ждал fav и plain в выдаче, получил %v", seen)
+	}
+	if !favFlag[fav] {
+		t.Error("favorite=true не проставлен для трека из старого избранного")
+	}
+	if favFlag[plain] {
+		t.Error("favorite у обычного трека должен быть false")
+	}
+}
+
 func TestOrderBySimilaritySeedWithoutVector(t *testing.T) {
 	p := testPool(t)
 	ctx := context.Background()

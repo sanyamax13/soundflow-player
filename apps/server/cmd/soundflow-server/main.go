@@ -14,6 +14,7 @@ import (
 	"soundflow/server/internal/api"
 	"soundflow/server/internal/config"
 	"soundflow/server/internal/db"
+	"soundflow/server/internal/legacy"
 	"soundflow/server/internal/music"
 	"soundflow/server/internal/sidecar"
 )
@@ -31,6 +32,11 @@ func main() {
 		if err := pool.Migrate(ctx); err != nil {
 			// Тоже не фатально: без базы сервер живёт, синк вернёт 503.
 			log.Printf("миграции не применились (%v) — продолжаю", err)
+		}
+		if n, err := legacy.Seed(ctx, pool); err != nil {
+			log.Printf("перенос старой разметки не удался (%v) — продолжаю", err)
+		} else if n > 0 {
+			log.Printf("перенесена разметка старого плеера: %d записей", n)
 		}
 	}
 

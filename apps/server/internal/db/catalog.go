@@ -19,6 +19,7 @@ type CatalogTrack struct {
 	ReleaseKind string `json:"release_kind"`
 	Explicit    bool   `json:"explicit"`
 	CoverURL    string `json:"cover_url"`
+	Favorite    bool   `json:"favorite"` // был в избранном старого плеера
 }
 
 // NewTrack + NewTrackFile — что вставляем после успешного скачивания.
@@ -110,20 +111,27 @@ func (d *Pool) RecordRejected(ctx context.Context, normKey, sourceURL, provider,
 	return err
 }
 
+// catalogSelect — общая выборка: помечает favorite из legacy_marks и прячет
+// треки, отмеченные там как blocked (в старом плеере удалены/скрыты).
+const catalogSelect = `
+	SELECT t.id, t.artist, t.title, t.album, COALESCE(t.duration_sec,0),
+	       t.release_kind, t.explicit, t.cover_url,
+	       COALESCE(lm.kind = 'favorite', false) AS favorite
+	FROM tracks t
+	LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
+	WHERE lm.kind IS DISTINCT FROM 'blocked'`
+
 // CatalogList — весь каталог (для /v1/tracks).
 func (d *Pool) CatalogList(ctx context.Context, limit int) ([]CatalogTrack, error) {
-	return d.catalogQuery(ctx, `
-		SELECT id, artist, title, album, COALESCE(duration_sec,0), release_kind, explicit, cover_url
-		FROM tracks ORDER BY created_at DESC LIMIT $1`, limit)
+	return d.catalogQuery(ctx, catalogSelect+`
+		ORDER BY t.created_at DESC LIMIT $1`, limit)
 }
 
 // CatalogSearch — поиск по артисту/названию.
 func (d *Pool) CatalogSearch(ctx context.Context, q string, limit int) ([]CatalogTrack, error) {
-	return d.catalogQuery(ctx, `
-		SELECT id, artist, title, album, COALESCE(duration_sec,0), release_kind, explicit, cover_url
-		FROM tracks
-		WHERE artist ILIKE '%' || $2 || '%' OR title ILIKE '%' || $2 || '%'
-		ORDER BY created_at DESC LIMIT $1`, limit, q)
+	return d.catalogQuery(ctx, catalogSelect+`
+		AND (t.artist ILIKE '%' || $2 || '%' OR t.title ILIKE '%' || $2 || '%')
+		ORDER BY t.created_at DESC LIMIT $1`, limit, q)
 }
 
 func (d *Pool) catalogQuery(ctx context.Context, sql string, args ...any) ([]CatalogTrack, error) {
@@ -138,7 +146,7 @@ func (d *Pool) catalogQuery(ctx context.Context, sql string, args ...any) ([]Cat
 	out := make([]CatalogTrack, 0)
 	for rows.Next() {
 		var t CatalogTrack
-		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL); err != nil {
+		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

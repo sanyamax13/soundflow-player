@@ -7,12 +7,14 @@ import (
 
 // AdminStatus — сводка для экрана «Сервер» в приложении.
 type AdminStatus struct {
-	Tracks       int64            `json:"tracks"`
-	TrackFiles   int64            `json:"track_files"`
-	EventsTotal  int64            `json:"events_total"`
-	EventsByKind map[string]int64 `json:"events_by_kind"`
-	Devices      int64            `json:"devices"`
-	Migrations   []string         `json:"migrations"`
+	Tracks        int64            `json:"tracks"`
+	TrackFiles    int64            `json:"track_files"`
+	EventsTotal   int64            `json:"events_total"`
+	EventsByKind  map[string]int64 `json:"events_by_kind"`
+	Devices       int64            `json:"devices"`
+	Migrations    []string         `json:"migrations"`
+	LegacyFavs    int64            `json:"legacy_favs"`
+	LegacyBlocked int64            `json:"legacy_blocked"`
 }
 
 func (d *Pool) AdminStatus(ctx context.Context) (AdminStatus, error) {
@@ -24,8 +26,10 @@ func (d *Pool) AdminStatus(ctx context.Context) (AdminStatus, error) {
 		SELECT (SELECT count(*) FROM tracks),
 		       (SELECT count(*) FROM track_files),
 		       (SELECT count(*) FROM sync_events),
-		       (SELECT count(*) FROM devices)`,
-	).Scan(&st.Tracks, &st.TrackFiles, &st.EventsTotal, &st.Devices); err != nil {
+		       (SELECT count(*) FROM devices),
+		       (SELECT count(*) FROM legacy_marks WHERE kind = 'favorite'),
+		       (SELECT count(*) FROM legacy_marks WHERE kind = 'blocked')`,
+	).Scan(&st.Tracks, &st.TrackFiles, &st.EventsTotal, &st.Devices, &st.LegacyFavs, &st.LegacyBlocked); err != nil {
 		return st, err
 	}
 

@@ -50,6 +50,7 @@ type Result struct {
 	Created     bool   `json:"created"` // false — трек уже был в каталоге
 	Source      string `json:"source"`
 	QualityTier string `json:"quality_tier"`
+	Favorite    bool   `json:"favorite,omitempty"` // был в избранном старого плеера
 	Reason      string `json:"reason,omitempty"`
 }
 
@@ -61,14 +62,24 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 
 	normKey := quality.NormalizedKey(req.Artist, req.Title)
 
-	// 2. Уже в каталоге?
+	// 2. Разметка со старого плеера: удалён/скрыт — не качаем.
+	legacyKind, err := s.DB.LegacyMarkKind(ctx, normKey)
+	if err != nil {
+		return Result{}, err
+	}
+	if legacyKind == "blocked" {
+		return Result{Reason: "в старом плеере удалён или скрыт"}, ErrRejected
+	}
+	legacyFav := legacyKind == "favorite"
+
+	// 3. Уже в каталоге?
 	if existing, err := s.DB.TrackByKey(ctx, normKey); err != nil {
 		return Result{}, err
 	} else if existing != nil {
-		return Result{TrackID: existing.ID, Created: false, Source: "catalog"}, nil
+		return Result{TrackID: existing.ID, Created: false, Source: "catalog", Favorite: legacyFav}, nil
 	}
 
-	// 3. Найти и скачать через сайдкар.
+	// 4. Найти и скачать через сайдкар.
 	res, err := s.Finder.FindAudio(ctx, req.Artist, req.Title, req.ExpectedDurationSec, skipProviders)
 	if err != nil {
 		return Result{}, fmt.Errorf("сайдкар: %w", err)
@@ -77,7 +88,7 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{}, ErrNotFound
 	}
 
-	// 4. Тот ли трек? Торренты-альбомы иногда отдают файл из чужого альбома —
+	// 5. Тот ли трек? Торренты-альбомы иногда отдают файл из чужого альбома —
 	//    сверяем артиста/название по тегам (если теги есть).
 	id3Artist, id3Title, _ := s.Finder.ID3Info(ctx, res.FilePath)
 	if id3Artist != "" && !looseMatch(req.Artist, id3Artist) {
@@ -91,7 +102,7 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{Reason: reason}, ErrWrongTrack
 	}
 
-	// 5. Качество файла.
+	// 6. Качество файла.
 	mime := quality.MimeFromExt(res.FilePath)
 	tier, playable, why := quality.ClassifyAudio(mime, res.BitrateKbps)
 	if !playable {
@@ -99,7 +110,7 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{Reason: why}, ErrLowQuality
 	}
 
-	// 6. Длительность (если знаем эталон).
+	// 7. Длительность (если знаем эталон).
 	if req.ExpectedDurationSec > 0 && res.DurationSec > 0 {
 		trusted := res.Source != "musify" && res.Source != "yandex" // торренты — доверенные для ремастера
 		if dm := quality.DurationMatch(req.ExpectedDurationSec, res.DurationSec, trusted, false); !dm.OK {
@@ -108,10 +119,10 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
-	// 7. Обложка (не критично).
+	// 8. Обложка (не критично).
 	coverURL, _ := s.Finder.YandexTrackCover(ctx, req.Artist, req.Title)
 
-	// 8. В каталог.
+	// 9. В каталог.
 	trackID := "t_" + randID()
 	fileID := "f_" + randID()
 	if err := s.DB.InsertTrackWithFile(ctx,
@@ -141,7 +152,7 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
-	return Result{TrackID: trackID, Created: true, Source: res.Source, QualityTier: tier.String()}, nil
+	return Result{TrackID: trackID, Created: true, Source: res.Source, QualityTier: tier.String(), Favorite: legacyFav}, nil
 }
 
 // AnalyzeAndStore — посчитать «звуковой отпечаток» трека через сайдкар и
