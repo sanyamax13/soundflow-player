@@ -45,9 +45,19 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
     return '${(bytes / (1 << 20)).toStringAsFixed(1)} МБ';
   }
 
-  Future<void> _play(DownloadedTrack t) => AppScope.of(context).player.playSingle(
-        NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path),
-      );
+  // Играть текущий список (Все/Избранное — что сейчас на экране) с этого
+  // трека, чтобы после его окончания шёл следующий по списку, а не тишина.
+  // playSingle тут не годится — он ставит очередь из одного трека без
+  // зацикливания, ровно это и было багом (замечено на реальном телефоне
+  // в «Избранном» 04.09.2026, но так же било и по вкладке «Все»).
+  Future<void> _play(DownloadedTrack t) async {
+    final items = _items ?? const <DownloadedTrack>[];
+    final i = items.indexWhere((x) => x.id == t.id);
+    final queue = [
+      for (final x in items) NowPlaying(id: x.id, title: x.title, artist: x.artist, path: x.path),
+    ];
+    await AppScope.of(context).player.playQueue(queue, startIndex: i < 0 ? 0 : i, shuffle: false);
+  }
 
   Future<void> _toggleFav(DownloadedTrack t) async {
     await AppScope.of(context).downloads.setFavorite(t.id, !t.favorite);
