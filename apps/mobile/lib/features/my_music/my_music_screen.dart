@@ -128,10 +128,18 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Row(
               children: [
-                Text('$_count песен · ${_mb(_bytes)}',
-                    style: const TextStyle(color: Afisha.inkDim)),
-                const Spacer(),
+                Flexible(
+                  child: Text('$_count песен · ${_mb(_bytes)}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Afisha.inkDim)),
+                ),
+                const SizedBox(width: 12),
                 SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   segments: const [
                     ButtonSegment(value: false, label: Text('Все')),
                     ButtonSegment(value: true, label: Text('Избранное')),
@@ -163,27 +171,27 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
   }
 
   Widget _row(DownloadedTrack t) => ListTile(
+        contentPadding: const EdgeInsets.only(left: 16, right: 4),
         title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text('${t.artist} · ${_mb(t.bytes)}',
             maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              onPressed: () => _play(t),
-              icon: const Icon(Icons.play_arrow, color: Afisha.lime),
-            ),
-            IconButton(
-              onPressed: () => _toggleFav(t),
-              icon: Icon(t.favorite ? Icons.favorite : Icons.favorite_border,
-                  color: t.favorite ? Afisha.lime : Afisha.inkDim),
-            ),
-            IconButton(
-              onPressed: () => _delete(t),
-              icon: const Icon(Icons.delete_outline, color: Afisha.inkDim),
-            ),
+            _mini(Icons.play_arrow, Afisha.lime, () => _play(t)),
+            _mini(t.favorite ? Icons.favorite : Icons.favorite_border,
+                t.favorite ? Afisha.lime : Afisha.inkDim, () => _toggleFav(t)),
+            _mini(Icons.delete_outline, Afisha.inkDim, () => _delete(t)),
           ],
         ),
+      );
+
+  Widget _mini(IconData icon, Color color, VoidCallback onTap) => IconButton(
+        onPressed: onTap,
+        icon: Icon(icon, color: color, size: 22),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       );
 
   Widget _empty() => Center(
