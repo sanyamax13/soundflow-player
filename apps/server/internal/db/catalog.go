@@ -345,6 +345,45 @@ func (d *Pool) TrackForDeletion(ctx context.Context, trackID string) (normKey, f
 	return normKey, filePath, true, nil
 }
 
+// SweepRow — трек каталога для повторной проверки по правилам качества
+// (Sweep). FilePath — канонический.
+type SweepRow struct {
+	ID       string
+	Artist   string
+	Title    string
+	NormKey  string
+	FilePath string
+}
+
+// TracksForSweep — весь активный каталог (не blocked, файл не отклонён) для
+// прогона через quality.Screen ещё раз — например, после того как список
+// мусорных слов расширили и хочется почистить то, что уже успело попасть
+// в каталог раньше.
+func (d *Pool) TracksForSweep(ctx context.Context) ([]SweepRow, error) {
+	if d == nil || d.p == nil {
+		return nil, errNoDB
+	}
+	rows, err := d.p.Query(ctx, `
+		SELECT t.id, t.artist, t.title, t.normalized_key, tf.file_path
+		FROM tracks t
+		JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
+		LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
+		WHERE lm.kind IS DISTINCT FROM 'blocked'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]SweepRow, 0)
+	for rows.Next() {
+		var r SweepRow
+		if err := rows.Scan(&r.ID, &r.Artist, &r.Title, &r.NormKey, &r.FilePath); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func nullInt(v int) any {
 	if v <= 0 {
 		return nil

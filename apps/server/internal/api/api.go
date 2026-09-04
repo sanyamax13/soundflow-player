@@ -3,12 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -51,6 +47,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/devices", s.adminDevices)
 				r.Get("/events", s.adminEvents)
 				r.Post("/reanalyze", s.adminReanalyze)
+				r.Post("/sweep-junk", s.adminSweepJunk)
 				r.Post("/import-library", s.adminImportLibrary)
 			})
 		})
@@ -173,32 +170,12 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
 		}
 		local := s.PathMap.ToLocal(canonical)
-		if err := moveToTrash(s.PathMap, local); err != nil {
+		if err := pathmap.MoveToTrash(s.PathMap, local); err != nil {
 			log.Printf("delete-event %s: файл в корзину (%s): %v", e.TrackID, local, err)
 		} else {
 			log.Printf("delete-event %s: убран у себя (%s)", e.TrackID, local)
 		}
 	}
-}
-
-// moveToTrash переносит файл в «_trash» рядом с тем корнем библиотеки, под
-// которым он лежит (не удаляет — на случай ошибки распознавания трека).
-func moveToTrash(pm pathmap.Mapper, local string) error {
-	if local == "" {
-		return fmt.Errorf("пустой путь")
-	}
-	for _, root := range pm.LocalRoots() {
-		rel, err := filepath.Rel(root, local)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			continue
-		}
-		dest := filepath.Join(root, "_trash", rel)
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return err
-		}
-		return os.Rename(local, dest)
-	}
-	return fmt.Errorf("файл вне известных корней библиотеки")
 }
 
 func (s *Server) syncReport(w http.ResponseWriter, r *http.Request) {

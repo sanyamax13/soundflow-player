@@ -157,3 +157,72 @@ func TestSanitizeTagPassthroughAndGarbage(t *testing.T) {
 		t.Errorf("пустая строка должна остаться пустой, получил %q", got)
 	}
 }
+
+// Alex: "убери весь мусор" — после того как список мусорных слов расширили
+// (интервью и подобное), Sweep должен убрать из УЖЕ существующего каталога
+// то, что новые правила больше не пропускают, и оставить нормальные песни.
+func TestSweepRemovesJunkAlreadyInCatalog(t *testing.T) {
+	p := testDB(t)
+	ctx := context.Background()
+	tag := "Swp" + time.Now().Format("150405.000000")
+
+	root := t.TempDir()
+	pm := pathmap.New(pathmap.Pair{Canonical: `E:\swp-canon`, Local: root})
+
+	mk := func(suffix, title string) (id, normKey string) {
+		id = "t_" + tag + "_" + suffix
+		normKey = tag + "__" + suffix
+		local := filepath.Join(root, suffix+".mp3")
+		if err := os.WriteFile(local, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := p.InsertTrackWithFile(ctx,
+			db.NewTrack{ID: id, Artist: tag, Title: title, NormalizedKey: normKey, ReleaseKind: "studio"},
+			db.NewTrackFile{ID: id + "_f", NormalizedKey: normKey, FilePath: pm.ToCanonical(local),
+				MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+		); err != nil {
+			t.Fatalf("insert %s: %v", suffix, err)
+		}
+		return id, normKey
+	}
+
+	_, junkKey := mk("junk", "Interview (Self Control Era)")
+	_, cleanKey := mk("clean", "Good Song")
+
+	t.Cleanup(func() {
+		for _, k := range []string{junkKey, cleanKey} {
+			_ = p.DeleteTrackByKey(context.Background(), k)
+			_ = p.DeleteLegacyMark(context.Background(), k)
+		}
+	})
+
+	res, removed, err := Sweep(ctx, p, pm)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if res.Removed < 1 {
+		t.Fatalf("ждал минимум 1 убранный трек, получил %+v", res)
+	}
+	found := false
+	for _, r := range removed {
+		if r.NormKey == junkKey {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("интервью должно быть в списке убранных: %+v", removed)
+	}
+
+	if kind, _ := p.LegacyMarkKind(ctx, junkKey); kind != "blocked" {
+		t.Errorf("junk должен стать blocked, получил %q", kind)
+	}
+	if kind, _ := p.LegacyMarkKind(ctx, cleanKey); kind == "blocked" {
+		t.Error("нормальная песня не должна попасть под чистку")
+	}
+	if _, err := os.Stat(filepath.Join(root, "_trash", "junk.mp3")); err != nil {
+		t.Errorf("файл интервью должен оказаться в _trash: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "clean.mp3")); err != nil {
+		t.Errorf("файл нормальной песни не должен был тронуться: %v", err)
+	}
+}

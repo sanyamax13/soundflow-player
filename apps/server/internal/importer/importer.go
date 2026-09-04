@@ -198,6 +198,52 @@ func fromFilename(path string) (artist, title string, ok bool) {
 	return a, t, true
 }
 
+// SweepResult — счётчики одного прогона Sweep.
+type SweepResult struct {
+	Checked int // всего треков в каталоге проверили
+	Removed int // не прошли Screen ещё раз — убраны
+	Errors  int // метку поставили, а файл в корзину переложить не вышло
+}
+
+// Sweep прогоняет уже существующий каталог через текущие правила Screen
+// (нужно, например, когда список мусорных слов расширили и хочется почистить
+// то, что попало в каталог раньше). Как и удаление с телефона — не стирает
+// файл насовсем: переносит в _trash и метит blocked, чтобы не всплыл опять
+// при повторном импорте/скачивании. Возвращает список того, что убрали —
+// показать Alex, что именно посчиталось мусором.
+func Sweep(ctx context.Context, p *db.Pool, pm pathmap.Mapper) (SweepResult, []db.SweepRow, error) {
+	var res SweepResult
+	if p == nil {
+		return res, nil, errors.New("importer: нет базы")
+	}
+	rows, err := p.TracksForSweep(ctx)
+	if err != nil {
+		return res, nil, err
+	}
+	removed := make([]db.SweepRow, 0)
+	for _, t := range rows {
+		if ctx.Err() != nil {
+			return res, removed, ctx.Err()
+		}
+		res.Checked++
+		if v := quality.Screen(t.Artist, t.Title, ""); v.OK {
+			continue
+		}
+		if err := p.UpsertLegacyMark(ctx, db.LegacyMark{Key: t.NormKey, Kind: "blocked"}); err != nil {
+			log.Printf("sweep %s: пометить blocked: %v", t.ID, err)
+			res.Errors++
+			continue
+		}
+		if err := pathmap.MoveToTrash(pm, pm.ToLocal(t.FilePath)); err != nil {
+			log.Printf("sweep %s: файл в корзину (%s): %v", t.ID, t.FilePath, err)
+			res.Errors++
+		}
+		res.Removed++
+		removed = append(removed, t)
+	}
+	return res, removed, nil
+}
+
 func randID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

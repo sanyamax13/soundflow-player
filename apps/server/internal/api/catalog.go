@@ -183,6 +183,31 @@ func (s *Server) adminImportLibrary(w http.ResponseWriter, r *http.Request) {
 // параллельно (сайдкар и так считает по одному треку за раз).
 var reanalyzeRunning atomic.Bool
 
+// POST /v1/admin/sweep-junk — прогнать уже существующий каталог через
+// текущие правила отсева мусора (Screen) ещё раз — например, после того как
+// список мусорных слов расширили. Не стирает файлы насовсем — переносит в
+// _trash и метит blocked (как удаление с телефона). Быстро (только Go-регексы
+// по уже загруженным строкам, без похода в сайдкар) — работает синхронно,
+// сразу возвращает список того, что убрал.
+func (s *Server) adminSweepJunk(w http.ResponseWriter, r *http.Request) {
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	res, removed, err := importer.Sweep(r.Context(), s.DB, s.PathMap)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	list := make([]map[string]string, 0, len(removed))
+	for _, t := range removed {
+		list = append(list, map[string]string{"artist": t.Artist, "title": t.Title})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"checked": res.Checked, "removed": res.Removed, "errors": res.Errors, "removed_list": list,
+	})
+}
+
 // POST /v1/admin/reanalyze — досчитать «звуковой отпечаток» трекам, у которых
 // его нет (после переноса каталога, сбоев сайдкара). Раньше брал только одну
 // пачку до 500 штук за вызов; после переноса старой библиотеки (этап 12)

@@ -17,8 +17,19 @@ var (
 	}
 
 	// Откровенный мусор — не «версия песни», режем всегда по границе слова.
-	junkWords   = []string{"karaoke", "караоке", "nightcore", "slowed", "instrumental", "инструментал", "минусовка", "demo", "rehearsal", "репетиция", "bootleg"}
-	junkPhrases = []string{"sped up", "speed up", "fan made", "фан-релиз", "фан релиз"}
+	// interview/podcast/trailer/ad/jingle/ringtone — не песни вообще, а не
+	// версия песни; добавлено 04.09.2026 после находки интервью Laura Branigan
+	// в перенесённой библиотеке (Alex: "надо понять из всех песен что мусор").
+	junkWords = []string{
+		"karaoke", "караоке", "nightcore", "slowed", "instrumental", "инструментал", "минусовка",
+		"demo", "rehearsal", "репетиция", "bootleg",
+		"interview", "интервью", "podcast", "подкаст", "trailer", "трейлер",
+		"jingle", "джингл", "ringtone", "рингтон", "skit",
+	}
+	junkPhrases = []string{
+		"sped up", "speed up", "fan made", "фан-релиз", "фан релиз",
+		"sound effect", "звуковой эффект", "voice memo",
+	}
 
 	// Альтернативные, но разрешённые к скачиванию версии (кавер/ремикс/акустика).
 	altWords   = []string{"cover", "remix", "acoustic", "version", "кавер", "ремикс", "акустика"}

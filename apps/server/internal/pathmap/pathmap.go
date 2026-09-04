@@ -8,6 +8,8 @@
 package pathmap
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -85,4 +87,26 @@ func swapRoot(path, fromRoot, toRoot string) (string, bool) {
 		return filepath.Join(toRoot, p[len(prefix):]), true
 	}
 	return path, false
+}
+
+// MoveToTrash переносит файл в «_trash» рядом с тем корнем библиотеки, под
+// которым он лежит (не удаляет — на случай ошибки распознавания трека).
+// Общая для ручного удаления с телефона (sync/events) и для чистки мусора
+// по правилам (Screen).
+func MoveToTrash(m Mapper, local string) error {
+	if local == "" {
+		return fmt.Errorf("пустой путь")
+	}
+	for _, root := range m.LocalRoots() {
+		rel, err := filepath.Rel(root, local)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		dest := filepath.Join(root, "_trash", rel)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		return os.Rename(local, dest)
+	}
+	return fmt.Errorf("файл вне известных корней библиотеки")
 }

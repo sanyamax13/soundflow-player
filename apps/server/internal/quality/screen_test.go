@@ -32,6 +32,13 @@ func TestScreenRejectsLiveAndJunk(t *testing.T) {
 		{"Someone Like You - Slowed + Reverb", false},
 		{"Nothing Else Matters (Instrumental)", false},
 		{"Track (sped up)", false},
+		// не песни вообще — режем (найдено на реальной библиотеке 04.09.2026:
+		// интервью Laura Branigan затесалось в музыку под видом трека)
+		{"The Hot Ones (Self Control Era) (Interview)", false},
+		{"Артист (Интервью Афише)", false},
+		{"Weekly Podcast Episode 12", false},
+		{"Movie Trailer", false},
+		{"My Ringtone", false},
 	}
 	for _, c := range cases {
 		got := Screen("Artist", c.title, "")
