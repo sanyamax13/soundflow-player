@@ -2,24 +2,31 @@
 
 Каталог наполняется заново (решение Alex 05.08.2026), но личную разметку
 сохраняем. Выгружено 04.09.2026 из старой базы (`soundflow-postgres` на fg,
-только чтение).
+только чтение). **Перевыгружено 04.09.2026** после того, как Alex дома открыл
+старое приложение и оно досинхронизировало телефон (было 10/127, стало 25/316).
+
+Запросы выгрузки: `migration/export_fav.sql`, `migration/export_bl.sql`
+(гонять на `soundflow-postgres`, `docker exec ... psql`).
 
 ## Файлы
 
-- `legacy-favorites.json` — 10 избранных треков. Поля: artist, title, album,
+- `legacy-favorites.json` — 25 избранных треков. Поля: artist, title, album,
   year, duration_sec, isrc, recording_mbid, language, genre_tags, liked_at.
-- `legacy-blacklist.json` — 127 удалённых/скрытых. Поля: artist, title,
-  normalized_key, kind (`permanent` / `temporary`), reason (`deleted` и т.п.),
-  blacklisted_at, expires_at.
+- `legacy-blacklist.json` — 316 удалённых/скрытых. Поля: artist, title,
+  normalized_key, kind, reason, blacklisted_at, expires_at.
+  - kind: `permanent` 313, `temporary` 3.
+  - reason: `manual_hide` 268 (руками скрыл), `deleted` 45 (удалил скачанное),
+    `quick_skip` 3 (быстрый скип на 14 дней).
 
 ## Как подключим
 
-Когда в новом приложении появится каталог песен (этап 3):
-- по artist+title (нормализованно) находим совпадение в новом каталоге;
+Когда в новом каталоге появятся песни:
+- по artist+title (нормализованно, `quality.NormalizedKey`) ищем совпадение;
 - из favorites → ставим ♥;
-- из blacklist с kind=permanent / reason=deleted → помечаем удалённым
-  (в Поток и списки не попадает). `temporary` игнорируем — это старые
-  быстрые скипы на 14 дней, в новой модели их нет.
+- из blacklist с `kind = permanent` (и `manual_hide`, и `deleted`) →
+  помечаем «не показывать»: в Поток, «Найти музыку» и списки не попадает,
+  acquire такой трек отклоняет. `temporary` / `quick_skip` игнорируем —
+  это старые скипы на 14 дней, в новой модели их нет.
 
-Совпадения не будет для треков, которых ещё нет в новом каталоге — отложим
-их в «не найдено», подтянутся когда докачаются.
+Совпадения не будет для треков, которых ещё нет в новом каталоге — держим
+список как есть, срабатывает при следующей попытке докачать.
