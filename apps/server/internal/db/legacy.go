@@ -93,6 +93,47 @@ func (d *Pool) DeleteLegacyMark(ctx context.Context, normKey string) error {
 	return err
 }
 
+// TrashedRow — трек в «Корзине»: был в каталоге, убран (удалён с телефона
+// или зачищен как мусор), файл лежит в _trash, можно вернуть.
+type TrashedRow struct {
+	TrackID  string     `json:"track_id"`
+	Artist   string     `json:"artist"`
+	Title    string     `json:"title"`
+	NormKey  string     `json:"-"`
+	MarkedAt *time.Time `json:"marked_at,omitempty"`
+}
+
+// TrashedTracks — всё, что сейчас blocked И при этом ЕСТЬ в каталоге (т.е.
+// раньше было доступно, а не старая метка из чёрного списка старого плеера
+// без своего трека). Именно это можно осмысленно «вернуть» — файл лежит в
+// _trash, ждёт.
+func (d *Pool) TrashedTracks(ctx context.Context) ([]TrashedRow, error) {
+	if d == nil || d.p == nil {
+		return nil, errNoDB
+	}
+	rows, err := d.p.Query(ctx, `
+		SELECT t.id, t.artist, t.title, t.normalized_key, lm.marked_at
+		FROM legacy_marks lm
+		JOIN tracks t ON t.normalized_key = lm.normalized_key
+		WHERE lm.kind = 'blocked'
+		ORDER BY lm.marked_at DESC NULLS LAST`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]TrashedRow, 0)
+	for rows.Next() {
+		var r TrashedRow
+		var at *time.Time
+		if err := rows.Scan(&r.TrackID, &r.Artist, &r.Title, &r.NormKey, &at); err != nil {
+			return nil, err
+		}
+		r.MarkedAt = at
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // LegacyMarkKind — "favorite" / "blocked" / "" для ключа.
 func (d *Pool) LegacyMarkKind(ctx context.Context, normKey string) (string, error) {
 	if d == nil || d.p == nil {

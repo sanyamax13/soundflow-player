@@ -222,6 +222,65 @@ func TestNextLibraryBatch(t *testing.T) {
 	}
 }
 
+func TestTrashedTracks(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "trash-" + time.Now().Format("150405.000000")
+	blocked := "t_" + tag + "_blk"
+	plain := "t_" + tag + "_pln"
+	kBlk := tag + "__blk"
+	kPln := tag + "__pln"
+	// Старая метка из чёрного списка старого плеера БЕЗ своего трека в
+	// каталоге — не должна попасть в «Корзину» (вернуть-то нечего).
+	kOldOnly := tag + "__old_only"
+	t.Cleanup(func() {
+		for _, id := range []string{blocked, plain} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id)
+		}
+		for _, k := range []string{kBlk, kOldOnly} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM legacy_marks WHERE normalized_key=$1`, k)
+		}
+	})
+
+	mk := func(id, nk string) {
+		if err := p.InsertTrackWithFile(ctx,
+			NewTrack{ID: id, Artist: tag, Title: id, NormalizedKey: nk, ReleaseKind: "studio"},
+			NewTrackFile{ID: id + "_f", NormalizedKey: nk, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+		); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	mk(blocked, kBlk)
+	mk(plain, kPln)
+
+	if _, err := p.LegacyMarksInsert(ctx, map[string]LegacyMark{
+		kBlk:     {Key: kBlk, Kind: "blocked"},
+		kOldOnly: {Key: kOldOnly, Kind: "blocked"}, // без трека — «мёртвая» метка
+	}); err != nil {
+		t.Fatalf("marks: %v", err)
+	}
+
+	list, err := p.TrashedTracks(ctx)
+	if err != nil {
+		t.Fatalf("TrashedTracks: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, r := range list {
+		seen[r.TrackID] = true
+	}
+	if !seen[blocked] {
+		t.Errorf("заблокированный трек с файлом должен быть в Корзине: %+v", list)
+	}
+	if seen[plain] {
+		t.Error("обычный (не blocked) трек не должен быть в Корзине")
+	}
+}
+
 func TestOrderBySimilaritySeedWithoutVector(t *testing.T) {
 	p := testPool(t)
 	ctx := context.Background()

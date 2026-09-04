@@ -12,6 +12,7 @@ import (
 
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/importer"
+	"soundflow/server/internal/pathmap"
 )
 
 // GET /v1/search?q= — поиск по уже скачанному каталогу.
@@ -83,6 +84,57 @@ func (s *Server) acquireTrack(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 	}
+}
+
+// GET /v1/trash — список убранных (удалено с телефона или зачищено как
+// мусор) — можно вернуть.
+func (s *Server) trashList(w http.ResponseWriter, r *http.Request) {
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	list, err := s.DB.TrashedTracks(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tracks": list})
+}
+
+type trashRestoreReq struct {
+	TrackID string `json:"track_id"`
+}
+
+// POST /v1/trash/restore — вернуть трек: файл обратно из _trash, метку
+// blocked снять — трек снова виден в каталоге и его можно скачать.
+func (s *Server) trashRestore(w http.ResponseWriter, r *http.Request) {
+	var req trashRestoreReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TrackID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "нужен track_id"})
+		return
+	}
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	normKey, canonical, ok, err := s.DB.TrackForDeletion(r.Context(), req.TrackID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "трек не найден"})
+		return
+	}
+	if err := pathmap.RestoreFromTrash(s.PathMap, s.PathMap.ToLocal(canonical)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := s.DB.DeleteLegacyMark(r.Context(), normKey); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"restored": true})
 }
 
 type nextBatchReq struct {

@@ -110,3 +110,27 @@ func MoveToTrash(m Mapper, local string) error {
 	}
 	return fmt.Errorf("файл вне известных корней библиотеки")
 }
+
+// RestoreFromTrash — обратное действие к MoveToTrash: local — исходный путь
+// файла (как он лежит в БД, ДО переноса в корзину); функция сама находит его
+// в «_trash» рядом с нужным корнем и кладёт назад.
+func RestoreFromTrash(m Mapper, local string) error {
+	if local == "" {
+		return fmt.Errorf("пустой путь")
+	}
+	for _, root := range m.LocalRoots() {
+		rel, err := filepath.Rel(root, local)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		trashPath := filepath.Join(root, "_trash", rel)
+		if _, err := os.Stat(trashPath); err != nil {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+			return err
+		}
+		return os.Rename(trashPath, local)
+	}
+	return fmt.Errorf("файла нет в корзине")
+}

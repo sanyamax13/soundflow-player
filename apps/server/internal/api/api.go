@@ -39,6 +39,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/tracks", s.tracks)
 			r.Get("/search", s.search)
 			r.Post("/library/next-batch", s.libraryNextBatch)
+			r.Get("/trash", s.trashList)
+			r.Post("/trash/restore", s.trashRestore)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Get("/sync/report", s.syncReport)
@@ -166,7 +168,7 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 		if !ok {
 			continue // трек не наш (тестовый тон и т.п.) — нечего чистить
 		}
-		if err := s.DB.UpsertLegacyMark(ctx, db.LegacyMark{Key: normKey, Kind: "blocked"}); err != nil {
+		if err := s.DB.UpsertLegacyMark(ctx, db.LegacyMark{Key: normKey, Kind: "blocked", At: time.Now()}); err != nil {
 			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
 		}
 		local := s.PathMap.ToLocal(canonical)

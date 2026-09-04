@@ -1,6 +1,7 @@
 package pathmap
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -63,6 +64,50 @@ func TestToLocalNoop(t *testing.T) {
 	m2 := New(Pair{Canonical: `D:\SoundFlow\cache`, Local: `D:\SoundFlow\cache`})
 	if got := m2.ToLocal(`D:\SoundFlow\cache\x.mp3`); !pathEqual(got, `D:\SoundFlow\cache\x.mp3`) {
 		t.Errorf("canonical==local: получил %q", got)
+	}
+}
+
+// MoveToTrash + RestoreFromTrash — «Корзина»: убрал, потом вернул, файл цел
+// на исходном месте, в _trash пусто.
+func TestMoveToTrashAndRestore(t *testing.T) {
+	root := t.TempDir()
+	m := New(Pair{Canonical: `E:\canon`, Local: root})
+	local := filepath.Join(root, "sub", "Song.mp3")
+	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(local, []byte("audio"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := MoveToTrash(m, local); err != nil {
+		t.Fatalf("MoveToTrash: %v", err)
+	}
+	if _, err := os.Stat(local); !os.IsNotExist(err) {
+		t.Fatalf("исходный файл должен исчезнуть: %v", err)
+	}
+	trashed := filepath.Join(root, "_trash", "sub", "Song.mp3")
+	if _, err := os.Stat(trashed); err != nil {
+		t.Fatalf("файл должен оказаться в _trash: %v", err)
+	}
+
+	if err := RestoreFromTrash(m, local); err != nil {
+		t.Fatalf("RestoreFromTrash: %v", err)
+	}
+	if _, err := os.Stat(local); err != nil {
+		t.Errorf("файл должен вернуться на место: %v", err)
+	}
+	if _, err := os.Stat(trashed); !os.IsNotExist(err) {
+		t.Errorf("в _trash не должно остаться копии: %v", err)
+	}
+}
+
+// Ничего не лежит в корзине — понятная ошибка, не паника и не тихий успех.
+func TestRestoreFromTrashNothingThere(t *testing.T) {
+	root := t.TempDir()
+	m := New(Pair{Canonical: `E:\canon`, Local: root})
+	if err := RestoreFromTrash(m, filepath.Join(root, "Ghost.mp3")); err == nil {
+		t.Error("ждал ошибку — в корзине ничего нет")
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dhowden/tag"
@@ -229,7 +230,7 @@ func Sweep(ctx context.Context, p *db.Pool, pm pathmap.Mapper) (SweepResult, []d
 		if v := quality.Screen(t.Artist, t.Title, ""); v.OK {
 			continue
 		}
-		if err := p.UpsertLegacyMark(ctx, db.LegacyMark{Key: t.NormKey, Kind: "blocked"}); err != nil {
+		if err := p.UpsertLegacyMark(ctx, db.LegacyMark{Key: t.NormKey, Kind: "blocked", At: time.Now()}); err != nil {
 			log.Printf("sweep %s: пометить blocked: %v", t.ID, err)
 			res.Errors++
 			continue
