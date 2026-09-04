@@ -33,8 +33,9 @@ func main() {
 	}
 
 	srv := &api.Server{
-		DB:    pool,
-		Music: music.New(cfg.MusicDir),
+		DB:        pool,
+		Music:     music.New(cfg.MusicDir),
+		StartedAt: time.Now(),
 	}
 
 	httpSrv := &http.Server{

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../admin/admin_screen.dart';
 import '../sync/sync_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
@@ -22,7 +23,14 @@ class ProfileScreen extends StatelessWidget {
               MaterialPageRoute<void>(builder: (_) => const SyncScreen()),
             ),
           ),
-          const _Row(icon: Icons.bar_chart, title: 'Статистика', subtitle: 'скоро'),
+          _Row(
+            icon: Icons.dns_outlined,
+            title: 'Сервер',
+            subtitle: 'состояние, устройства, события',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
+            ),
+          ),
           const _Row(icon: Icons.settings_outlined, title: 'Настройки', subtitle: 'скоро'),
         ],
       ),

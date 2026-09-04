@@ -30,6 +30,14 @@ type Service struct {
 
 func New(musicDir string) *Service { return &Service{dir: musicDir} }
 
+// SourceLabel — откуда берётся музыка (для экрана «Сервер»).
+func (s *Service) SourceLabel() string {
+	if s.dir == "" {
+		return "тестовые тоны"
+	}
+	return s.dir
+}
+
 var audioExt = map[string]bool{".mp3": true, ".m4a": true, ".flac": true, ".wav": true, ".ogg": true}
 
 // Встроенные тестовые тоны — пока нет каталога. Дают очередь для «Потока».

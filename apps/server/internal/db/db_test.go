@@ -88,3 +88,42 @@ func TestSaveSyncDedupe(t *testing.T) {
 		t.Fatalf("last_sync_at пуст")
 	}
 }
+
+func TestAdminStatusShape(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	st, err := p.AdminStatus(ctx)
+	if err != nil {
+		t.Fatalf("AdminStatus: %v", err)
+	}
+	if st.Tracks != 0 || st.TrackFiles != 0 {
+		t.Errorf("каталог должен быть пуст: tracks=%d files=%d", st.Tracks, st.TrackFiles)
+	}
+	if len(st.Migrations) < 2 {
+		t.Errorf("ждал ≥2 миграции, получил %v", st.Migrations)
+	}
+	if st.EventsByKind == nil {
+		t.Error("EventsByKind не должно быть nil")
+	}
+
+	devs, err := p.ListDevices(ctx)
+	if err != nil {
+		t.Fatalf("ListDevices: %v", err)
+	}
+	if devs == nil {
+		t.Error("ListDevices вернул nil вместо пустого списка")
+	}
+
+	ev, err := p.RecentEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("RecentEvents: %v", err)
+	}
+	if ev == nil {
+		t.Error("RecentEvents вернул nil вместо пустого списка")
+	}
+}

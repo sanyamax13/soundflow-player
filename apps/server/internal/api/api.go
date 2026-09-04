@@ -13,8 +13,9 @@ import (
 )
 
 type Server struct {
-	DB    *db.Pool
-	Music *music.Service
+	DB        *db.Pool
+	Music     *music.Service
+	StartedAt time.Time
 }
 
 func (s *Server) Router() http.Handler {
@@ -31,6 +32,11 @@ func (s *Server) Router() http.Handler {
 		r.Get("/music/{id}/file", s.musicFile)
 		r.Post("/sync/events", s.syncEvents)
 		r.Get("/sync/report", s.syncReport)
+		r.Route("/admin", func(r chi.Router) {
+			r.Get("/status", s.adminStatus)
+			r.Get("/devices", s.adminDevices)
+			r.Get("/events", s.adminEvents)
+		})
 	})
 	return r
 }

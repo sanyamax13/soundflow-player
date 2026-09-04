@@ -48,4 +48,21 @@ class Api {
     final acc = (res.data?['accepted'] as List?) ?? const [];
     return acc.map((e) => '$e').toList();
   }
+
+  /// Состояние сервера для экрана «Сервер».
+  Future<Map<String, dynamic>> adminStatus() async {
+    final res = await _dio.get<Map<String, dynamic>>('/v1/admin/status');
+    return res.data ?? {};
+  }
+
+  Future<List<Map<String, dynamic>>> adminDevices() async {
+    final res = await _dio.get<Map<String, dynamic>>('/v1/admin/devices');
+    return ((res.data?['devices'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> adminEvents({int limit = 20}) async {
+    final res = await _dio.get<Map<String, dynamic>>('/v1/admin/events',
+        queryParameters: {'limit': limit});
+    return ((res.data?['events'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
 }

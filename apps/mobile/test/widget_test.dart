@@ -14,6 +14,21 @@ class _FakeApi extends Api {
   Future<List<Map<String, dynamic>>> tracks() async => [
         {'id': 'test-tone', 'title': 'Тестовый тон 440 Гц', 'artist': 'SoundFlow'},
       ];
+  @override
+  Future<Map<String, dynamic>> adminStatus() async => {
+        'db': 'ok',
+        'uptime_sec': 12,
+        'go_version': 'go1.25',
+        'music_source': 'тестовые тоны',
+        'migrations': ['0001_sync.sql', '0002_catalog.sql'],
+        'catalog': {'tracks': 0, 'track_files': 0},
+        'events': {'total': 0, 'by_kind': {}},
+        'devices': 0,
+      };
+  @override
+  Future<List<Map<String, dynamic>>> adminDevices() async => const [];
+  @override
+  Future<List<Map<String, dynamic>>> adminEvents({int limit = 20}) async => const [];
 }
 
 // В testWidgets крутится FakeAsync — фоновый изолят sqflite не отвечает.
@@ -77,5 +92,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Всё отправлено'), findsOneWidget);
     expect(find.text('Синхронизировать сейчас'), findsOneWidget);
+  });
+
+  testWidgets('в Профиле есть «Сервер», экран показывает состояние', (tester) async {
+    await tester.pumpWidget(await _app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Профиль'));
+    await tester.pumpAndSettle();
+    expect(find.text('Сервер'), findsOneWidget);
+
+    await tester.tap(find.text('Сервер'));
+    await tester.pumpAndSettle();
+    expect(find.text('КАТАЛОГ'), findsOneWidget);
+    expect(find.text('на связи'), findsOneWidget);
+    expect(find.text('пока никто не синхронизировался'), findsOneWidget);
   });
 }
