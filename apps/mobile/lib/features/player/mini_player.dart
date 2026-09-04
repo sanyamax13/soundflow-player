@@ -16,8 +16,25 @@ class MiniPlayer extends StatelessWidget {
     return ValueListenableBuilder<NowPlaying?>(
       valueListenable: controller.now,
       builder: (context, now, _) {
-        if (now == null) return const SizedBox.shrink();
-        return Material(
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, anim) => SizeTransition(
+            sizeFactor: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+          child: now == null
+              ? const SizedBox(width: double.infinity, key: ValueKey('mp-empty'))
+              : _bar(context, now),
+        );
+      },
+    );
+  }
+
+  Widget _bar(BuildContext context, NowPlaying now) {
+    return Material(
+          key: const ValueKey('mp-bar'),
           color: Afisha.surfaceHi,
           child: InkWell(
             onTap: () => Navigator.of(context).push(
@@ -66,7 +83,5 @@ class MiniPlayer extends StatelessWidget {
             ),
           ),
         );
-      },
-    );
   }
 }

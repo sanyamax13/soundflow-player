@@ -86,14 +86,24 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
             child: Column(
               children: [
                 const Spacer(),
-                AspectRatio(
-                  aspectRatio: 1,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Afisha.surfaceHi,
-                      borderRadius: BorderRadius.circular(16),
+                TweenAnimationBuilder<double>(
+                  key: ValueKey(now.id),
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) => Opacity(
+                    opacity: t,
+                    child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
+                  ),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Afisha.surfaceHi,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
                     ),
-                    child: const Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
                   ),
                 ),
                 const SizedBox(height: 28),
