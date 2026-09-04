@@ -179,29 +179,49 @@ func (s *Server) adminImportLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"started": true, "roots": roots})
 }
 
+// reanalyzeRunning — не даём двум догонам звукового отпечатка идти
+// параллельно (сайдкар и так считает по одному треку за раз).
+var reanalyzeRunning atomic.Bool
+
 // POST /v1/admin/reanalyze — досчитать «звуковой отпечаток» трекам, у которых
-// его нет (после переноса каталога, сбоев сайдкара). Работает фоном.
+// его нет (после переноса каталога, сбоев сайдкара). Раньше брал только одну
+// пачку до 500 штук за вызов; после переноса старой библиотеки (этап 12)
+// без отпечатка осталось ~8776 треков — по ~9с на трек это почти сутки,
+// дёргать вручную раз в 500 неудобно. Теперь один вызов сам крутит пачки,
+// пока без отпечатка не останется никого; работает фоном, прогресс — по
+// логу сервера или количеству треков с отпечатком в /v1/admin/status.
 func (s *Server) adminReanalyze(w http.ResponseWriter, r *http.Request) {
 	if s.Acquire == nil || s.DB.Ping(r.Context()) != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "сервер не готов"})
 		return
 	}
-	ids, err := s.DB.TrackIDsWithoutFeatures(r.Context(), 500)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	if !reanalyzeRunning.CompareAndSwap(false, true) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "догон уже идёт"})
 		return
 	}
-	if len(ids) > 0 {
-		go func(ids []string) {
+	go func() {
+		defer reanalyzeRunning.Store(false)
+		start := time.Now()
+		total := 0
+		for {
+			ids, err := s.DB.TrackIDsWithoutFeatures(context.Background(), 500)
+			if err != nil {
+				log.Printf("reanalyze: список треков: %v", err)
+				return
+			}
+			if len(ids) == 0 {
+				break
+			}
 			for _, id := range ids {
 				bg, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 				if e := s.Acquire.AnalyzeAndStore(bg, id); e != nil {
 					log.Printf("reanalyze %s: %v", id, e)
 				}
 				cancel()
+				total++
 			}
-			log.Printf("reanalyze: обработано %d трек(ов)", len(ids))
-		}(ids)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"queued": len(ids)})
+		}
+		log.Printf("reanalyze: готово за %s — обработано %d трек(ов)", time.Since(start).Round(time.Second), total)
+	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }
