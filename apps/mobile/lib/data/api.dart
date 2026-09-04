@@ -2,6 +2,14 @@ import 'package:dio/dio.dart';
 
 import '../core/config.dart';
 
+/// Заказ трека не удался — текст уже человеческий, можно показывать как есть.
+class AcquireException implements Exception {
+  AcquireException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Клиент к серверу на Go. Входа нет — плеер личный, сервер в домашней сети.
 class Api {
   Api()
@@ -17,6 +25,53 @@ class Api {
     final res = await _dio.get<Map<String, dynamic>>('/v1/tracks');
     final list = (res.data?['tracks'] as List?) ?? const [];
     return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Поиск по каталогу сервера (что уже скачано на домашний компьютер).
+  /// Пустой запрос — вернёт последние добавленные.
+  Future<List<Map<String, dynamic>>> searchCatalog(String q) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/v1/search',
+      queryParameters: {'q': q},
+    );
+    final list = (res.data?['tracks'] as List?) ?? const [];
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Заказать трек: сервер ищет и качает его на домашний компьютер
+  /// (Яндекс.Музыка → musify → торренты) и кладёт в каталог. Долгая
+  /// операция — до нескольких минут. Бросает [AcquireException] с понятным
+  /// текстом, если не вышло.
+  Future<Map<String, dynamic>> acquireTrack({
+    required String artist,
+    required String title,
+    int durationSec = 0,
+  }) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/v1/tracks/acquire',
+        data: {'artist': artist, 'title': title, 'duration_sec': durationSec},
+        options: Options(receiveTimeout: const Duration(minutes: 10)),
+      );
+      return res.data ?? const {};
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final reason = (data is Map) ? '${data['reason'] ?? data['error'] ?? ''}' : '';
+      throw AcquireException(_acquireMessage(e.response?.statusCode, reason));
+    }
+  }
+
+  String _acquireMessage(int? code, String reason) {
+    switch (code) {
+      case 404:
+        return 'Не нашлось ни в одном источнике';
+      case 422:
+        return reason.isNotEmpty ? reason : 'Нашлось только плохое качество';
+      case 503:
+        return 'Сервер сейчас не может качать (нет базы или связи с качалкой)';
+      default:
+        return reason.isNotEmpty ? reason : 'Сервер не ответил';
+    }
   }
 
   /// Скачать файл трека в указанный путь.

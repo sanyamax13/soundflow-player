@@ -4,6 +4,7 @@ import '../../app/app_scope.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/player_controller.dart';
+import '../search/search_screen.dart';
 
 /// «Моя музыка» — всё, что скачано на телефон. Сверху: сколько песен и
 /// сколько занято. Переключатель Все/Избранное. У каждой песни: играть,
@@ -71,43 +72,11 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
     await _refresh();
   }
 
-  Future<void> _addFromServer() async {
-    final downloads = AppScope.of(context).downloads;
-    List<Map<String, dynamic>> server;
-    try {
-      server = await downloads.serverTracks();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Сервер не ответил')),
-        );
-      }
-      return;
-    }
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Afisha.surface,
-      builder: (sheetCtx) => ListView(
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('С сервера', style: TextStyle(color: Afisha.inkDim)),
-          ),
-          for (final t in server)
-            ListTile(
-              title: Text('${t['title']}'),
-              subtitle: Text('${t['artist']}'),
-              trailing: const Icon(Icons.download, color: Afisha.lime),
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                await downloads.download(t);
-                await _refresh();
-              },
-            ),
-        ],
-      ),
+  Future<void> _openSearch() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
     );
+    if (mounted) await _refresh();
   }
 
   @override
@@ -117,7 +86,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
       appBar: AppBar(
         title: const Text('Моя музыка'),
         actions: [
-          IconButton(onPressed: _addFromServer, icon: const Icon(Icons.add)),
+          IconButton(onPressed: _openSearch, icon: const Icon(Icons.add)),
           IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -199,7 +168,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
           children: [
             const Text('Пока ничего не скачано', style: TextStyle(color: Afisha.inkDim)),
             const SizedBox(height: 12),
-            FilledButton(onPressed: _addFromServer, child: const Text('Добавить с сервера')),
+            FilledButton(onPressed: _openSearch, child: const Text('Найти музыку')),
           ],
         ),
       );

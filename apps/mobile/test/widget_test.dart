@@ -29,6 +29,8 @@ class _FakeApi extends Api {
   Future<List<Map<String, dynamic>>> adminDevices() async => const [];
   @override
   Future<List<Map<String, dynamic>>> adminEvents({int limit = 20}) async => const [];
+  @override
+  Future<List<Map<String, dynamic>>> searchCatalog(String q) async => const [];
 }
 
 // В testWidgets крутится FakeAsync — фоновый изолят sqflite не отвечает.

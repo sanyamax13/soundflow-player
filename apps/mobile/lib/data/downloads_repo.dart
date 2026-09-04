@@ -76,6 +76,15 @@ class DownloadsRepo {
     return (count: all.length, bytes: await _db.totalBytes());
   }
 
-  /// Что предлагает сервер (пока — тестовый список; каталога ещё нет).
-  Future<List<Map<String, dynamic>>> serverTracks() => _api.tracks();
+  /// Поиск по каталогу сервера (что уже скачано на домашний компьютер).
+  Future<List<Map<String, dynamic>>> searchCatalog(String q) => _api.searchCatalog(q);
+
+  /// Заказать трек на сервере. Возвращает ответ каталога:
+  /// {track_id, created, source, quality_tier}. Бросает [AcquireException].
+  Future<Map<String, dynamic>> acquireOnServer({
+    required String artist,
+    required String title,
+    int durationSec = 0,
+  }) =>
+      _api.acquireTrack(artist: artist, title: title, durationSec: durationSec);
 }
