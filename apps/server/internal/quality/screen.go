@@ -24,7 +24,9 @@ var (
 		"karaoke", "караоке", "nightcore", "slowed", "instrumental", "инструментал", "минусовка",
 		"demo", "rehearsal", "репетиция", "bootleg",
 		"interview", "интервью", "podcast", "подкаст", "trailer", "трейлер",
-		"jingle", "джингл", "ringtone", "рингтон", "skit",
+		"ringtone", "рингтон", "skit",
+		// "jingle"/"джингл" НЕ добавляем — ложно сработало на настоящей песне
+		// "Jingle Bell Rock" (04.09.2026, прогон на реальной библиотеке).
 	}
 	junkPhrases = []string{
 		"sped up", "speed up", "fan made", "фан-релиз", "фан релиз",
