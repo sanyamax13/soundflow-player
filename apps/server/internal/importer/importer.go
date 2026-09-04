@@ -13,8 +13,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dhowden/tag"
+	"golang.org/x/text/encoding/charmap"
 
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/pathmap"
@@ -162,7 +164,23 @@ func readTags(path string) (artist, title, album string) {
 	if err != nil {
 		return "", "", ""
 	}
-	return strings.TrimSpace(m.Artist()), strings.TrimSpace(m.Title()), strings.TrimSpace(m.Album())
+	return sanitizeTag(m.Artist()), sanitizeTag(m.Title()), sanitizeTag(m.Album())
+}
+
+// sanitizeTag чинит теги из старых файлов: ID3v1 и часть ID3v2 в старой
+// библиотеке хранят русский текст в Windows-1251 без пометки кодировки —
+// dhowden/tag отдаёт эти байты как есть, и Postgres (UTF-8) на такое падает.
+// Пробуем перекодировать как cp1251; не вышло — вырезаем некорректные байты,
+// чтобы трек не потерялся совсем.
+func sanitizeTag(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || utf8.ValidString(s) {
+		return s
+	}
+	if fixed, err := charmap.Windows1251.NewDecoder().String(s); err == nil && utf8.ValidString(fixed) {
+		return strings.TrimSpace(fixed)
+	}
+	return strings.TrimSpace(strings.ToValidUTF8(s, ""))
 }
 
 // fromFilename разбирает «Артист - Название.ext» — самый частый вид имён в

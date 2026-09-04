@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/text/encoding/charmap"
+
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/pathmap"
 	"soundflow/server/internal/quality"
@@ -128,5 +130,30 @@ func TestScanSkipsLegacyBlocked(t *testing.T) {
 	}
 	if tr, _ := p.TrackByKey(ctx, key); tr != nil {
 		t.Error("заблокированный трек не должен попасть в каталог")
+	}
+}
+
+// В старой библиотеке часть тегов — Windows-1251 без пометки кодировки
+// (реальные файлы на fg такие спотыкали импорт об "invalid byte sequence
+// for encoding UTF8" в Postgres). sanitizeTag должен их перекодировать.
+func TestSanitizeTagWindows1251(t *testing.T) {
+	raw, err := charmap.Windows1251.NewEncoder().String("Кино — Пачка сигарет")
+	if err != nil {
+		t.Fatalf("encode cp1251: %v", err)
+	}
+	got := sanitizeTag(raw)
+	if got != "Кино — Пачка сигарет" {
+		t.Fatalf("ждал разобранный текст, получил %q", got)
+	}
+}
+
+// Валидный UTF-8 не трогаем, мусорные байты, которые не разобрать ни как
+// UTF-8, ни как cp1251, — не роняем весь импорт, просто вырезаем их.
+func TestSanitizeTagPassthroughAndGarbage(t *testing.T) {
+	if got := sanitizeTag("Coldplay"); got != "Coldplay" {
+		t.Errorf("валидный текст не должен меняться, получил %q", got)
+	}
+	if got := sanitizeTag(""); got != "" {
+		t.Errorf("пустая строка должна остаться пустой, получил %q", got)
 	}
 }
