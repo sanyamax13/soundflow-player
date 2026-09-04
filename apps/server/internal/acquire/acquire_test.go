@@ -17,6 +17,7 @@ type fakeFinder struct {
 	res              sidecar.FindAudioResult
 	err              error
 	id3Artist, id3Ti string
+	vec              []float32
 }
 
 func (f fakeFinder) FindAudio(_ context.Context, _, _ string, _ int, _ []string) (sidecar.FindAudioResult, error) {
@@ -27,6 +28,9 @@ func (f fakeFinder) ID3Info(_ context.Context, _ string) (string, string, error)
 }
 func (f fakeFinder) YandexTrackCover(_ context.Context, _, _ string) (string, error) {
 	return "https://cover/600", nil
+}
+func (f fakeFinder) AnalyzeFeatures(_ context.Context, _ string) ([]float32, error) {
+	return f.vec, nil
 }
 
 func testDB(t *testing.T) *db.Pool {
@@ -142,6 +146,39 @@ func TestAcquireWrongTrackByID3(t *testing.T) {
 	}
 	if tk, _ := p.TrackByKey(ctx, key); tk != nil {
 		t.Error("чужой трек не должен был попасть в каталог")
+	}
+}
+
+func TestAnalyzeAndStoreSetsVector(t *testing.T) {
+	p := testDB(t)
+	ctx := context.Background()
+	artist := "AnalyzeTest " + randID()
+	key := quality.NormalizedKey(artist, "Song")
+	t.Cleanup(func() { _ = p.DeleteTrackByKey(context.Background(), key) })
+
+	vec := make([]float32, 2048)
+	vec[0], vec[7] = 0.5, -0.25
+
+	s := &Service{DB: p, Finder: fakeFinder{
+		res: sidecar.FindAudioResult{Found: true, FilePath: `E:\soundflow-data\cache\an.mp3`, BitrateKbps: 320, Source: "yandex"},
+		vec: vec,
+	}}
+	r, err := s.Acquire(ctx, Request{Artist: artist, Title: "Song"})
+	if err != nil || !r.Created {
+		t.Fatalf("Acquire: %+v %v", r, err)
+	}
+	if err := s.AnalyzeAndStore(ctx, r.TrackID); err != nil {
+		t.Fatalf("AnalyzeAndStore: %v", err)
+	}
+
+	ids, err := p.TrackIDsWithoutFeatures(ctx, 100)
+	if err != nil {
+		t.Fatalf("TrackIDsWithoutFeatures: %v", err)
+	}
+	for _, id := range ids {
+		if id == r.TrackID {
+			t.Fatal("отпечаток не сохранился — трек всё ещё без вектора")
+		}
 	}
 }
 

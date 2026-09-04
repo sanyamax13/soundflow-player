@@ -31,6 +31,7 @@ type Finder interface {
 	FindAudio(ctx context.Context, artist, title string, expectedDurationSec int, skip []string) (sidecar.FindAudioResult, error)
 	ID3Info(ctx context.Context, canonicalPath string) (artist, title string, err error)
 	YandexTrackCover(ctx context.Context, artist, title string) (string, error)
+	AnalyzeFeatures(ctx context.Context, canonicalPath string) ([]float32, error)
 }
 
 type Service struct {
@@ -141,6 +142,24 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 	}
 
 	return Result{TrackID: trackID, Created: true, Source: res.Source, QualityTier: tier.String()}, nil
+}
+
+// AnalyzeAndStore — посчитать «звуковой отпечаток» трека через сайдкар и
+// сохранить в каталог. Зовётся фоном после acquire и из /admin/reanalyze.
+// Отсутствие файла/отпечатка — не ошибка (трек просто не попадёт в умное радио).
+func (s *Service) AnalyzeAndStore(ctx context.Context, trackID string) error {
+	path, ok, err := s.DB.TrackFilePath(ctx, trackID)
+	if err != nil || !ok {
+		return err
+	}
+	vec, err := s.Finder.AnalyzeFeatures(ctx, path)
+	if err != nil {
+		return err
+	}
+	if len(vec) == 0 {
+		return nil
+	}
+	return s.DB.SetFeatureVector(ctx, trackID, vec)
 }
 
 func randID() string {

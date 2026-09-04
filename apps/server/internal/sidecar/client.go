@@ -125,6 +125,23 @@ func (c *Client) ID3Info(ctx context.Context, canonicalPath string) (artist, tit
 	return out.Artist, out.Title, err
 }
 
+// AnalyzeFeatures — «звуковой отпечаток» файла: 2048-мерный вектор PANNs CNN14
+// (penultimate layer). Канонический путь; сайдкар сам переведёт в реальный.
+// nil без ошибки — если сайдкар не смог посчитать. Медленно: секунды на трек.
+func (c *Client) AnalyzeFeatures(ctx context.Context, canonicalPath string) ([]float32, error) {
+	var out struct {
+		Found     bool      `json:"found"`
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := c.post(ctx, "/analyze-features", map[string]any{"file_path": canonicalPath}, &out); err != nil {
+		return nil, err
+	}
+	if !out.Found || len(out.Embedding) == 0 {
+		return nil, nil
+	}
+	return out.Embedding, nil
+}
+
 // YandexTrackCover — URL обложки трека в Яндекс.Музыке ("" если не нашлась).
 func (c *Client) YandexTrackCover(ctx context.Context, artist, title string) (string, error) {
 	var out struct {

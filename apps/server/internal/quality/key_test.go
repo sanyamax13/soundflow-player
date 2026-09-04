@@ -4,15 +4,15 @@ import "testing"
 
 func TestNormalizeKeyPart(t *testing.T) {
 	cases := map[string]string{
-		"Beyoncé":                "beyonce",
-		"Sigur Rós":              "sigur ros",
-		"Mötley Crüe":            "motley crue",
-		"AC/DC":                  "ac dc",
-		"  Multiple   Spaces  ":  "multiple spaces",
-		"P!nk":                   "p nk",
-		"Би-2":                   "би 2",
-		"Sum 41":                 "sum 41",
-		"Guns N' Roses":          "guns n roses",
+		"Beyoncé":               "beyonce",
+		"Sigur Rós":             "sigur ros",
+		"Mötley Crüe":           "motley crue",
+		"AC/DC":                 "ac dc",
+		"  Multiple   Spaces  ": "multiple spaces",
+		"P!nk":                  "p nk",
+		"Би-2":                  "би 2",
+		"Sum 41":                "sum 41",
+		"Guns N' Roses":         "guns n roses",
 	}
 	for in, want := range cases {
 		if got := NormalizeKeyPart(in); got != want {

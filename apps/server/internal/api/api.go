@@ -36,12 +36,14 @@ func (s *Server) Router() http.Handler {
 			r.Get("/health", s.health)
 			r.Get("/tracks", s.tracks)
 			r.Get("/search", s.search)
+			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Get("/sync/report", s.syncReport)
 			r.Route("/admin", func(r chi.Router) {
 				r.Get("/status", s.adminStatus)
 				r.Get("/devices", s.adminDevices)
 				r.Get("/events", s.adminEvents)
+				r.Post("/reanalyze", s.adminReanalyze)
 			})
 		})
 		// Скачивание трека через цепочку источников — минуты.

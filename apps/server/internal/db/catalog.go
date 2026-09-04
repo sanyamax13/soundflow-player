@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -170,6 +172,106 @@ func (d *Pool) TrackFilePath(ctx context.Context, trackID string) (string, bool,
 		return "", false, err
 	}
 	return p, true, nil
+}
+
+// --- умное радио (этап 9): звуковой отпечаток и подбор похожих ---
+
+// vecLiteral — []float32 → pgvector-литерал "[0.1,0.2,...]".
+func vecLiteral(v []float32) string {
+	var b strings.Builder
+	b.Grow(len(v) * 12)
+	b.WriteByte('[')
+	for i, f := range v {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatFloat(float64(f), 'g', -1, 32))
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+// SetFeatureVector — записать «звуковой отпечаток» трека (2048-мерный).
+func (d *Pool) SetFeatureVector(ctx context.Context, trackID string, v []float32) error {
+	if d == nil || d.p == nil {
+		return errNoDB
+	}
+	_, err := d.p.Exec(ctx,
+		`UPDATE tracks SET feature_vector = $2::vector WHERE id = $1`,
+		trackID, vecLiteral(v))
+	return err
+}
+
+// TrackIDsWithoutFeatures — id треков без отпечатка (для догона /admin/reanalyze).
+func (d *Pool) TrackIDsWithoutFeatures(ctx context.Context, limit int) ([]string, error) {
+	if d == nil || d.p == nil {
+		return nil, errNoDB
+	}
+	rows, err := d.p.Query(ctx,
+		`SELECT id FROM tracks WHERE feature_vector IS NULL ORDER BY created_at LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// OrderBySimilarity — упорядочить candidateIDs по близости звучания к seedID
+// (косинус, pgvector `<=>`). seedID из результата исключается. Треки без
+// отпечатка (и весь список, если у seed нет отпечатка) идут в хвост в исходном
+// порядке — чтобы очередь Потока всё равно доиграла.
+func (d *Pool) OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) ([]string, error) {
+	if d == nil || d.p == nil {
+		return nil, errNoDB
+	}
+	ordered := make([]string, 0, len(candidateIDs))
+	seen := map[string]bool{seedID: true}
+
+	if len(candidateIDs) > 0 {
+		rows, err := d.p.Query(ctx, `
+			WITH seed AS (SELECT feature_vector AS v FROM tracks WHERE id = $1)
+			SELECT t.id
+			FROM tracks t, seed
+			WHERE t.id = ANY($2)
+			  AND t.id <> $1
+			  AND t.feature_vector IS NOT NULL
+			  AND seed.v IS NOT NULL
+			ORDER BY t.feature_vector <=> seed.v`,
+			seedID, candidateIDs)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			ordered = append(ordered, id)
+			seen[id] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// хвост: кандидаты без отпечатка / seed без отпечатка — в исходном порядке
+	for _, id := range candidateIDs {
+		if !seen[id] {
+			ordered = append(ordered, id)
+			seen[id] = true
+		}
+	}
+	return ordered, nil
 }
 
 func nullInt(v int) any {

@@ -66,6 +66,36 @@ func TestServerError(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFeatures(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/analyze-features" {
+			t.Errorf("путь %s", r.URL.Path)
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["file_path"] != `E:\soundflow-data\cache\A - B.mp3` {
+			t.Errorf("file_path не передан: %v", body["file_path"])
+		}
+		_, _ = w.Write([]byte(`{"found":true,"embedding":[0.1,-0.2,0.3]}`))
+	}))
+	defer srv.Close()
+	vec, err := New(srv.URL).AnalyzeFeatures(context.Background(), `E:\soundflow-data\cache\A - B.mp3`)
+	if err != nil || len(vec) != 3 || vec[1] != -0.2 {
+		t.Fatalf("embedding разобран неверно: %v %v", vec, err)
+	}
+}
+
+func TestAnalyzeFeaturesNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"found":false}`))
+	}))
+	defer srv.Close()
+	vec, err := New(srv.URL).AnalyzeFeatures(context.Background(), "x")
+	if err != nil || vec != nil {
+		t.Fatalf("ждал nil без ошибки, получил %v %v", vec, err)
+	}
+}
+
 func TestYandexTrackCover(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/yandex/track-cover" {

@@ -75,6 +75,14 @@ ssh soundflow-fg 'type D:\soundflow2\srv.log'
 Телефон/эмулятор: `flutter build apk --dart-define=SOUNDFLOW_API=http://192.168.1.73:8090`
 (в локальной сети — реальный IP, adb reverse не нужен).
 
+## Умное радио (этап 9)
+
+`/analyze-features` старого сайдкара работает (PANNs CNN14, deps на месте).
+Первый вызов грузит модель ~30 с, дальше ~2–5 с на трек. Go зовёт его фоном
+после `acquire`; догон — `curl -X POST http://192.168.1.73:8090/v1/admin/reanalyze`.
+Путь к файлу сайдкар берёт canonical (`E:\soundflow-data\cache\yandex-*.mp3`),
+сам переводит в local — как и для отдачи файла.
+
 ## Известные дыры
 
 - Задача `onstart` + задержка 2 мин. Если docker не поднялся за 2 мин после
