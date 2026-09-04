@@ -44,9 +44,8 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
     return '${(bytes / (1 << 20)).toStringAsFixed(1)} МБ';
   }
 
-  Future<void> _play(DownloadedTrack t) => AppScope.of(context).player.playLocalFile(
-        t.path,
-        NowPlaying(id: t.id, title: t.title, artist: t.artist),
+  Future<void> _play(DownloadedTrack t) => AppScope.of(context).player.playSingle(
+        NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path),
       );
 
   Future<void> _toggleFav(DownloadedTrack t) async {

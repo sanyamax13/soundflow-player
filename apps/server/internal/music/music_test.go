@@ -7,10 +7,22 @@ import (
 	"testing"
 )
 
-func TestListFallsBackToTestTone(t *testing.T) {
+func TestListFallsBackToTestTones(t *testing.T) {
 	got := New("").List()
-	if len(got) != 1 || got[0].ID != "test-tone" {
-		t.Fatalf("ждали один трек test-tone, получили %+v", got)
+	if len(got) != 3 || got[0].ID != "test-tone" {
+		t.Fatalf("ждали три тестовых тона (первый test-tone), получили %+v", got)
+	}
+}
+
+func TestServeFileSecondTone(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/music/test-tone-2/file", nil)
+	New("").ServeFile(rec, req, "test-tone-2")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("код %d", rec.Code)
+	}
+	if !bytes.HasPrefix(rec.Body.Bytes(), []byte("RIFF")) {
+		t.Fatalf("не WAV")
 	}
 }
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../features/my_music/my_music_screen.dart';
-import '../features/placeholder_screen.dart';
 import '../features/player/mini_player.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/stream/stream_screen.dart';
 import 'app_scope.dart';
 
 /// Каркас приложения. Вкладки (решение Alex 04.09.2026): Поток · Моя музыка ·
@@ -26,7 +26,7 @@ class _ShellState extends State<Shell> {
   Widget _screen(int i) => switch (i) {
         1 => const MyMusicScreen(),
         2 => const ProfileScreen(),
-        _ => const PlaceholderScreen(title: 'Поток', icon: Icons.graphic_eq),
+        _ => StreamScreen(onOpenLibrary: () => setState(() => _tab = 1)),
       };
 
   @override

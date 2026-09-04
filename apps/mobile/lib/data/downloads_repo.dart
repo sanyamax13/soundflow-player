@@ -65,6 +65,9 @@ class DownloadsRepo {
     await _sync?.record(value ? 'like' : 'unlike', trackId: id);
   }
 
+  /// В избранном ли скачанный трек (для сердечка в плеере).
+  Future<bool> favorite(String id) async => (await _db.downloadedById(id))?.favorite ?? false;
+
   Future<List<DownloadedTrack>> list({bool onlyFavorite = false}) =>
       _db.allDownloaded(onlyFavorite: onlyFavorite);
 

@@ -15,7 +15,10 @@ Future<void> main() async {
   final db = await Db.open();
   final sync = SyncRepo(api, db);
   final downloads = DownloadsRepo(api, db, sync);
-  final player = PlayerController(onPlay: (m) => sync.record('play', trackId: m.id));
+  final player = PlayerController(
+    onPlay: (m) => sync.record('play', trackId: m.id),
+    onSkip: (m) => sync.record('skip', trackId: m.id),
+  );
   runApp(SoundFlowApp(api: api, downloads: downloads, player: player, sync: sync));
 }
 

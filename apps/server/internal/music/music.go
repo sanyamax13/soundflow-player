@@ -1,12 +1,13 @@
 // Package music — выдача аудиофайлов на этапе каркаса.
-// Если задан SOUNDFLOW_MUSIC_DIR с файлами — отдаём их; иначе один
-// сгенерированный тон, чтобы «одна песня доставалась с сервера» работало
-// без укладки бинарника в репозиторий.
+// Если задан SOUNDFLOW_MUSIC_DIR с файлами — отдаём их; иначе несколько
+// сгенерированных тонов, чтобы «Поток» было чем наполнить без укладки
+// бинарников в репозиторий.
 package music
 
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"net/http"
 	"os"
@@ -31,11 +32,39 @@ func New(musicDir string) *Service { return &Service{dir: musicDir} }
 
 var audioExt = map[string]bool{".mp3": true, ".m4a": true, ".flac": true, ".wav": true, ".ogg": true}
 
+// Встроенные тестовые тоны — пока нет каталога. Дают очередь для «Потока».
+var testTones = []struct {
+	id   string
+	freq float64
+}{
+	{"test-tone", 440},
+	{"test-tone-2", 554},
+	{"test-tone-3", 659},
+}
+
+func toneFreq(id string) (float64, bool) {
+	for _, t := range testTones {
+		if t.id == id {
+			return t.freq, true
+		}
+	}
+	return 0, false
+}
+
 // List — что можно забрать с сервера.
 func (s *Service) List() []Track {
 	files := s.scan()
 	if len(files) == 0 {
-		return []Track{{ID: "test-tone", Title: "Тестовый тон 440 Гц", Artist: "SoundFlow", Format: "wav"}}
+		out := make([]Track, 0, len(testTones))
+		for _, t := range testTones {
+			out = append(out, Track{
+				ID:     t.id,
+				Title:  fmt.Sprintf("Тестовый тон %.0f Гц", t.freq),
+				Artist: "SoundFlow",
+				Format: "wav",
+			})
+		}
+		return out
 	}
 	out := make([]Track, 0, len(files))
 	for _, f := range files {
@@ -52,9 +81,12 @@ func (s *Service) List() []Track {
 
 // ServeFile — отдать аудио по id. Range поддерживается через http.ServeContent.
 func (s *Service) ServeFile(w http.ResponseWriter, r *http.Request, id string) {
-	if id == "test-tone" || s.dir == "" {
+	if freq, ok := toneFreq(id); ok || s.dir == "" {
+		if !ok {
+			freq = 440
+		}
 		w.Header().Set("Content-Type", "audio/wav")
-		http.ServeContent(w, r, "test-tone.wav", time.Time{}, bytes.NewReader(testTone()))
+		http.ServeContent(w, r, id+".wav", time.Time{}, bytes.NewReader(testTone(freq)))
 		return
 	}
 	for _, f := range s.scan() {
@@ -87,12 +119,11 @@ func (s *Service) scan() []string {
 	return out
 }
 
-// testTone — 2 секунды синуса 440 Гц, WAV PCM 16 бит, моно 22050.
-func testTone() []byte {
+// testTone — 3 секунды синуса заданной частоты, WAV PCM 16 бит, моно 22050.
+func testTone(freq float64) []byte {
 	const (
 		rate = 22050
-		secs = 2
-		freq = 440.0
+		secs = 3
 	)
 	n := rate * secs
 	buf := new(bytes.Buffer)
@@ -101,12 +132,12 @@ func testTone() []byte {
 	binary.Write(buf, binary.LittleEndian, uint32(36+dataLen))
 	buf.WriteString("WAVEfmt ")
 	binary.Write(buf, binary.LittleEndian, uint32(16))
-	binary.Write(buf, binary.LittleEndian, uint16(1))     // PCM
-	binary.Write(buf, binary.LittleEndian, uint16(1))     // моно
-	binary.Write(buf, binary.LittleEndian, uint32(rate))  // sample rate
+	binary.Write(buf, binary.LittleEndian, uint16(1))      // PCM
+	binary.Write(buf, binary.LittleEndian, uint16(1))      // моно
+	binary.Write(buf, binary.LittleEndian, uint32(rate))   // sample rate
 	binary.Write(buf, binary.LittleEndian, uint32(rate*2)) // byte rate
-	binary.Write(buf, binary.LittleEndian, uint16(2))     // block align
-	binary.Write(buf, binary.LittleEndian, uint16(16))    // bits
+	binary.Write(buf, binary.LittleEndian, uint16(2))      // block align
+	binary.Write(buf, binary.LittleEndian, uint16(16))     // bits
 	buf.WriteString("data")
 	binary.Write(buf, binary.LittleEndian, uint32(dataLen))
 	for i := 0; i < n; i++ {
