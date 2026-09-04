@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"soundflow/server/internal/auth"
 	"soundflow/server/internal/config"
 	"soundflow/server/internal/db"
+	"soundflow/server/internal/music"
 )
 
 func main() {
@@ -26,8 +28,9 @@ func main() {
 	}
 
 	srv := &api.Server{
-		Auth: auth.New(cfg.AdminLogin, cfg.AdminPass, cfg.JWTSecret),
-		DB:   pool,
+		Auth:  auth.New(cfg.AdminLogin, cfg.AdminPass, cfg.JWTSecret),
+		DB:    pool,
+		Music: music.New(cfg.MusicDir),
 	}
 
 	httpSrv := &http.Server{
@@ -36,9 +39,15 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	// tcp4 намеренно: на Windows пустой/0.0.0.0 хост Go биндит только на IPv6
+	// (::), и эмулятор Android через 10.0.2.2 (IPv4 loopback хоста) не достаёт.
+	ln, err := net.Listen("tcp4", cfg.Addr)
+	if err != nil {
+		log.Fatalf("не занять адрес %s: %v", cfg.Addr, err)
+	}
 	go func() {
-		log.Printf("SoundFlow server слушает %s", cfg.Addr)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("SoundFlow server слушает %s (tcp4)", ln.Addr())
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("сервер упал: %v", err)
 		}
 	}()

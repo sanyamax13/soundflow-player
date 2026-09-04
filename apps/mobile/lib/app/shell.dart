@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../features/library/library_screen.dart';
 import '../features/placeholder_screen.dart';
 
 /// Каркас приложения: пять вкладок из плана
@@ -21,11 +23,18 @@ class _ShellState extends State<Shell> {
     _Tab('Настройки', Icons.settings_outlined),
   ];
 
+  Widget _screen(int i) {
+    if (i == 2) return const LibraryScreen();
+    return PlaceholderScreen(title: _tabs[i].label, icon: _tabs[i].icon);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final t = _tabs[_tab];
     return Scaffold(
-      body: PlaceholderScreen(title: t.label, icon: t.icon),
+      body: IndexedStack(
+        index: _tab,
+        children: [for (var i = 0; i < _tabs.length; i++) _screen(i)],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),

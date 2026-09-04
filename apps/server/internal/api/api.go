@@ -12,16 +12,19 @@ import (
 
 	"soundflow/server/internal/auth"
 	"soundflow/server/internal/db"
+	"soundflow/server/internal/music"
 )
 
 type Server struct {
-	Auth *auth.Auth
-	DB   *db.Pool
+	Auth  *auth.Auth
+	DB    *db.Pool
+	Music *music.Service
 }
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(15 * time.Second))
 
@@ -29,13 +32,23 @@ func (s *Server) Router() http.Handler {
 		r.Get("/health", s.health)
 		r.Post("/auth/login", s.login)
 
-		// Пример защищённой ветки — проверяет пропуск в заголовке Authorization.
+		// Защищённая ветка — проверяет пропуск в заголовке Authorization.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireToken)
 			r.Get("/me", s.me)
+			r.Get("/tracks", s.tracks)
+			r.Get("/music/{id}/file", s.musicFile)
 		})
 	})
 	return r
+}
+
+func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"tracks": s.Music.List()})
+}
+
+func (s *Server) musicFile(w http.ResponseWriter, r *http.Request) {
+	s.Music.ServeFile(w, r, chi.URLParam(r, "id"))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,7 @@ type Config struct {
 	AdminPass   string // пароль (пока в открытую в env; станет bcrypt-хешем)
 	JWTSecret   []byte // ключ подписи пропуска
 	DatabaseURL string // строка подключения к PostgreSQL
+	MusicDir    string // папка с тестовой музыкой; пусто — отдаём сгенерированный тон
 }
 
 func Load() Config {
@@ -21,6 +22,7 @@ func Load() Config {
 		AdminPass:   env("SOUNDFLOW_ADMIN_PASSWORD", "change-me"),
 		JWTSecret:   []byte(env("SOUNDFLOW_JWT_SECRET", "dev-secret-change-me")),
 		DatabaseURL: env("DATABASE_URL", "postgres://soundflow:soundflow_dev@localhost:5433/soundflow?sslmode=disable"),
+		MusicDir:    env("SOUNDFLOW_MUSIC_DIR", ""),
 	}
 }
 

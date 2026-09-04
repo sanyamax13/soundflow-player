@@ -31,6 +31,14 @@ cd apps/mobile
 flutter run
 ```
 
+Эмулятор Android на этой машине надёжнее достаёт сервер через проброс порта,
+а не через 10.0.2.2:
+```
+adb reverse tcp:8090 tcp:8090
+flutter run --dart-define=SOUNDFLOW_API=http://127.0.0.1:8090
+```
+На реальном телефоне адрес — LAN-адрес fg (напр. http://192.168.1.73:8090).
+
 ## Состояние
 
 Этап 1 (каркас) — в работе. Дальше по `docs/SOUNDFLOW_FLUTTER_GO_MIGRATION_PLAN.md` §9.
