@@ -10,10 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/api"
 	"soundflow/server/internal/config"
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/music"
+	"soundflow/server/internal/sidecar"
 )
 
 func main() {
@@ -32,9 +34,18 @@ func main() {
 		}
 	}
 
+	sc := sidecar.New(cfg.SidecarURL)
+	if err := sc.Health(ctx); err != nil {
+		log.Printf("сайдкар %s недоступен (%v) — скачивание не заработает, остальное живёт", cfg.SidecarURL, err)
+	} else {
+		log.Printf("сайдкар на связи: %s", cfg.SidecarURL)
+	}
+
 	srv := &api.Server{
 		DB:        pool,
 		Music:     music.New(cfg.MusicDir),
+		Acquire:   &acquire.Service{DB: pool, Finder: sc},
+		PathMap:   cfg.PathMap,
 		StartedAt: time.Now(),
 	}
 

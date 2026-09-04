@@ -8,13 +8,17 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/music"
+	"soundflow/server/internal/pathmap"
 )
 
 type Server struct {
 	DB        *db.Pool
 	Music     *music.Service
+	Acquire   *acquire.Service
+	PathMap   pathmap.Mapper
 	StartedAt time.Time
 }
 
@@ -23,20 +27,30 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(15 * time.Second))
 
 	// Входа нет — плеер личный, сервер в домашней сети. Все ручки открыты.
 	r.Route("/v1", func(r chi.Router) {
-		r.Get("/health", s.health)
-		r.Get("/tracks", s.tracks)
-		r.Get("/music/{id}/file", s.musicFile)
-		r.Post("/sync/events", s.syncEvents)
-		r.Get("/sync/report", s.syncReport)
-		r.Route("/admin", func(r chi.Router) {
-			r.Get("/status", s.adminStatus)
-			r.Get("/devices", s.adminDevices)
-			r.Get("/events", s.adminEvents)
+		// Быстрые ручки — жёсткий таймаут.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Timeout(15 * time.Second))
+			r.Get("/health", s.health)
+			r.Get("/tracks", s.tracks)
+			r.Get("/search", s.search)
+			r.Post("/sync/events", s.syncEvents)
+			r.Get("/sync/report", s.syncReport)
+			r.Route("/admin", func(r chi.Router) {
+				r.Get("/status", s.adminStatus)
+				r.Get("/devices", s.adminDevices)
+				r.Get("/events", s.adminEvents)
+			})
 		})
+		// Скачивание трека через цепочку источников — минуты.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Timeout(10 * time.Minute))
+			r.Post("/tracks/acquire", s.acquireTrack)
+		})
+		// Отдача файла — потоковая, без таймаута.
+		r.Get("/music/{id}/file", s.musicFile)
 	})
 	return r
 }
@@ -53,11 +67,27 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
+	// Есть каталог — отдаём его; пусто — тестовые тоны (для демо до наполнения).
+	if s.DB.Ping(r.Context()) == nil {
+		if list, err := s.DB.CatalogList(r.Context(), 500); err == nil && len(list) > 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"tracks": list})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"tracks": s.Music.List()})
 }
 
 func (s *Server) musicFile(w http.ResponseWriter, r *http.Request) {
-	s.Music.ServeFile(w, r, chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	// Настоящий трек из каталога — отдаём файл с диска (канонический путь → реальный).
+	if s.DB.Ping(r.Context()) == nil {
+		if canonical, ok, err := s.DB.TrackFilePath(r.Context(), id); err == nil && ok {
+			http.ServeFile(w, r, s.PathMap.ToLocal(canonical))
+			return
+		}
+	}
+	// Иначе — тестовый тон / файл из локальной папки.
+	s.Music.ServeFile(w, r, id)
 }
 
 // --- Синхронизация телефон → сервер (этап 3) ---

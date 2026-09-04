@@ -64,7 +64,19 @@ func (d *Pool) Migrate(ctx context.Context) error {
 	if d == nil || d.p == nil {
 		return errNoDB
 	}
-	if _, err := d.p.Exec(ctx, `
+	// Advisory-lock: сериализует накат, если несколько процессов/тестов стартуют
+	// разом на одну базу. Автоснимается при закрытии сессии.
+	conn, err := d.p.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(838201)`); err != nil {
+		return err
+	}
+	defer conn.Exec(ctx, `SELECT pg_advisory_unlock(838201)`) //nolint:errcheck
+
+	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    text PRIMARY KEY,
 			applied_at timestamptz NOT NULL DEFAULT now()
@@ -106,7 +118,7 @@ func (d *Pool) Migrate(ctx context.Context) error {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("миграция %s: %w", name, err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES($1)`, name); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT (version) DO NOTHING`, name); err != nil {
 			_ = tx.Rollback(ctx)
 			return err
 		}
