@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
 import '../sync/sync_screen.dart';
+import '../trash/trash_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
 /// заглушки, приедут своими шагами.
@@ -22,6 +23,14 @@ class ProfileScreen extends StatelessWidget {
             subtitle: 'докачать музыку с сервера',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
+            ),
+          ),
+          _Row(
+            icon: Icons.delete_outline,
+            title: 'Корзина',
+            subtitle: 'убранные песни — можно вернуть',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const TrashScreen()),
             ),
           ),
           _Row(
