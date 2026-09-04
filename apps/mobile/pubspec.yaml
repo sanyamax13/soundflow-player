@@ -37,14 +37,18 @@ dependencies:
 
   # HTTP-клиент к серверу на Go.
   dio: ^5.7.0
-  # Хранение пропуска (token) в защищённом хранилище Android (keystore).
-  flutter_secure_storage: ^9.2.2
   # Путь к папке приложения для скачанной музыки.
   path_provider: ^2.1.4
+  # Локальная база телефона (скачанное, позже — чарты/лайки/Поток).
+  sqflite: ^2.4.1
+  # Проигрывание аудиофайлов.
+  just_audio: ^0.9.42
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # SQLite в тестах на десктопе (без эмулятора).
+  sqflite_common_ffi: ^2.3.4
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

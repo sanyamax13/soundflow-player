@@ -1,20 +1,23 @@
 import 'package:flutter/widgets.dart';
 
 import '../data/api.dart';
-import '../data/auth_repo.dart';
+import '../data/downloads_repo.dart';
+import '../features/player/player_controller.dart';
 
 /// Общие сервисы, доступные из дерева виджетов. На каркасе — вместо
 /// Riverpod (§5 плана); в тестах сюда подставляются подделки.
 class AppScope extends InheritedWidget {
   const AppScope({
     super.key,
-    required this.authRepo,
     required this.api,
+    required this.downloads,
+    required this.player,
     required super.child,
   });
 
-  final AuthRepo authRepo;
   final Api api;
+  final DownloadsRepo downloads;
+  final PlayerController player;
 
   static AppScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
@@ -24,5 +27,5 @@ class AppScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppScope oldWidget) =>
-      authRepo != oldWidget.authRepo || api != oldWidget.api;
+      api != oldWidget.api || downloads != oldWidget.downloads || player != oldWidget.player;
 }

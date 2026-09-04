@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"soundflow/server/internal/api"
-	"soundflow/server/internal/auth"
 	"soundflow/server/internal/config"
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/music"
@@ -28,13 +27,11 @@ func main() {
 	}
 
 	srv := &api.Server{
-		Auth:  auth.New(cfg.AdminLogin, cfg.AdminPass, cfg.JWTSecret),
 		DB:    pool,
 		Music: music.New(cfg.MusicDir),
 	}
 
 	httpSrv := &http.Server{
-		Addr:              cfg.Addr,
 		Handler:           srv.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

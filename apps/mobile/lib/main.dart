@@ -4,65 +4,44 @@ import 'app/app_scope.dart';
 import 'app/shell.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
-import 'data/auth_repo.dart';
-import 'features/auth/login_screen.dart';
+import 'data/db.dart';
+import 'data/downloads_repo.dart';
+import 'features/player/player_controller.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final auth = AuthRepo();
-  runApp(SoundFlowApp(authRepo: auth, api: Api(auth)));
+  final api = Api();
+  final db = await Db.open();
+  final downloads = DownloadsRepo(api, db);
+  final player = PlayerController();
+  runApp(SoundFlowApp(api: api, downloads: downloads, player: player));
 }
 
 class SoundFlowApp extends StatelessWidget {
-  const SoundFlowApp({super.key, required this.authRepo, required this.api});
+  const SoundFlowApp({
+    super.key,
+    required this.api,
+    required this.downloads,
+    required this.player,
+  });
 
-  final AuthRepo authRepo;
   final Api api;
+  final DownloadsRepo downloads;
+  final PlayerController player;
 
   @override
   Widget build(BuildContext context) {
     return AppScope(
-      authRepo: authRepo,
       api: api,
+      downloads: downloads,
+      player: player,
       child: MaterialApp(
         title: 'SoundFlow',
         debugShowCheckedModeBanner: false,
         theme: Afisha.theme(),
-        home: const _Gate(),
+        // Входа нет — сразу вкладки. Плеер личный, сервер в домашней сети.
+        home: const Shell(),
       ),
     );
-  }
-}
-
-/// Ворота входа. Правило офлайн-первости: на старте НЕ ходим в сеть —
-/// только проверяем сохранённый пропуск. Есть пропуск → сразу внутрь,
-/// даже без интернета. Нет → экран входа.
-class _Gate extends StatefulWidget {
-  const _Gate();
-
-  @override
-  State<_Gate> createState() => _GateState();
-}
-
-class _GateState extends State<_Gate> {
-  bool? _signedIn;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_signedIn == null) {
-      AppScope.of(context).authRepo.hasToken().then((has) {
-        if (mounted) setState(() => _signedIn = has);
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return switch (_signedIn) {
-      null => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      true => const Shell(),
-      false => LoginScreen(onSignedIn: () => setState(() => _signedIn = true)),
-    };
   }
 }

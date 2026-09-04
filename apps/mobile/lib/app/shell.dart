@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../features/library/library_screen.dart';
+import '../features/my_music/my_music_screen.dart';
 import '../features/placeholder_screen.dart';
+import '../features/player/mini_player.dart';
+import '../features/profile/profile_screen.dart';
+import 'app_scope.dart';
 
-/// Каркас приложения: пять вкладок из плана
-/// (Поток · Чарты · Библиотека · Профиль · Настройки).
+/// Каркас приложения. Вкладки (решение Alex 04.09.2026): Поток · Моя музыка ·
+/// Профиль. Настройки — внутри профиля. Чарты и альбомы убраны.
+/// Мини-плеер над вкладками.
 class Shell extends StatefulWidget {
   const Shell({super.key});
 
@@ -15,40 +19,34 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int _tab = 0;
 
-  static const _tabs = <_Tab>[
-    _Tab('Поток', Icons.graphic_eq),
-    _Tab('Чарты', Icons.leaderboard_outlined),
-    _Tab('Библиотека', Icons.library_music_outlined),
-    _Tab('Профиль', Icons.person_outline),
-    _Tab('Настройки', Icons.settings_outlined),
-  ];
+  static const _labels = ['Поток', 'Моя музыка', 'Профиль'];
+  static const _icons = [Icons.graphic_eq, Icons.library_music_outlined, Icons.person_outline];
 
-  Widget _screen(int i) {
-    if (i == 2) return const LibraryScreen();
-    return PlaceholderScreen(title: _tabs[i].label, icon: _tabs[i].icon);
-  }
+  // Экран строим только когда вкладку открыли — не дёргаем сеть на старте.
+  Widget _screen(int i) => switch (i) {
+        1 => const MyMusicScreen(),
+        2 => const ProfileScreen(),
+        _ => const PlaceholderScreen(title: 'Поток', icon: Icons.graphic_eq),
+      };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: [for (var i = 0; i < _tabs.length; i++) _screen(i)],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: [
-          for (final tab in _tabs)
-            NavigationDestination(icon: Icon(tab.icon), label: tab.label),
+      body: _screen(_tab),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MiniPlayer(controller: AppScope.of(context).player),
+          NavigationBar(
+            selectedIndex: _tab,
+            onDestinationSelected: (i) => setState(() => _tab = i),
+            destinations: [
+              for (var i = 0; i < _labels.length; i++)
+                NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
+            ],
+          ),
         ],
       ),
     );
   }
-}
-
-class _Tab {
-  const _Tab(this.label, this.icon);
-  final String label;
-  final IconData icon;
 }
