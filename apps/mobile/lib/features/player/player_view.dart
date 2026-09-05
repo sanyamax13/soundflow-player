@@ -15,11 +15,16 @@ import 'player_controller.dart';
 /// - [NowPlayingScreen] открывает его поверх текущего экрана (тап по
 ///   мини-плееру), с кнопкой «вниз».
 class PlayerView extends StatefulWidget {
-  const PlayerView({super.key, this.onDismiss});
+  const PlayerView({super.key, this.onDismiss, this.emptyState});
 
   /// Кнопка «вниз» в углу. Есть, когда экран открыт поверх другого (пуш) —
   /// во вкладке «Поток» сворачивать некуда, там её нет.
   final VoidCallback? onDismiss;
+
+  /// Чем показывать состояние "ещё ничего не играет" вместо надписи по
+  /// умолчанию. Нужно «Потоку» (05.09.2026, Alex: не начинать играть само
+  /// при открытии вкладки) — там вместо текста кнопка «начать».
+  final Widget? emptyState;
 
   @override
   State<PlayerView> createState() => _PlayerViewState();
@@ -87,9 +92,10 @@ class _PlayerViewState extends State<PlayerView> {
       valueListenable: _p.now,
       builder: (context, now, _) {
         if (now == null) {
-          return const Center(
-            child: Text('Ничего не играет', style: TextStyle(color: Afisha.inkDim)),
-          );
+          return widget.emptyState ??
+              const Center(
+                child: Text('Ничего не играет', style: TextStyle(color: Afisha.inkDim)),
+              );
         }
         final coverPath = now.coverPath;
         final hasCover = coverPath != null && File(coverPath).existsSync();

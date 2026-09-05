@@ -59,7 +59,8 @@ void main() {
     expect(find.text('Пока ничего не скачано'), findsOneWidget);
   });
 
-  testWidgets('Поток со скачанным — сразу плеер, без списка и кнопок (05.09.2026)',
+  testWidgets(
+      'Поток со скачанным — сразу плеер с кнопкой «начать», без списка (05.09.2026)',
       (tester) async {
     await tester.pumpWidget(await _app(downloaded: [
       DownloadedTrack(
@@ -70,12 +71,12 @@ void main() {
     await tester.pumpAndSettle();
 
     // Старый список и его кнопки убраны по просьбе Alex — «Поток» теперь
-    // сразу полноэкранный плеер (см. player_view.dart). Само содержимое
-    // плеера (играет / «Ничего не играет») здесь не проверяем — зависит от
-    // того, ответит ли just_audio в тестовом окружении без телефона, это
-    // не то, что этот тест должен ловить.
-    expect(find.text('Слушать вперемешку'), findsNothing);
+    // сразу полноэкранный плеер (см. player_view.dart). Само вперемешку не
+    // заводит при открытии (тоже просьба Alex, 05.09.2026) — ждёт тапа по
+    // кнопке «начать».
     expect(find.text('2 песен на телефоне'), findsNothing);
     expect(find.byIcon(Icons.radio), findsNothing);
+    expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
+    expect(find.text('Слушать вперемешку — 2 песен'), findsOneWidget);
   });
 }

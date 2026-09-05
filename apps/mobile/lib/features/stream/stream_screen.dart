@@ -34,17 +34,20 @@ class _StreamScreenState extends State<StreamScreen> {
     final items = await AppScope.of(context).downloads.list();
     if (!mounted) return;
     setState(() => _items = items);
-    final player = AppScope.of(context).player;
-    // Уже что-то играет (пришли из «Моей музыки» и переключились сюда) —
-    // не перебиваем. Иначе — заводим вперемешку сразу, не дожидаясь: экран
-    // (PlayerView) сам покажет обложку и название, как только реально заиграет.
-    if (items.isNotEmpty && player.now.value == null) {
-      final queue = [
-        for (final t in items)
-          NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
-      ];
-      player.playQueue(queue, shuffle: true).catchError((_) {});
-    }
+  }
+
+  /// Тап по кнопке «начать» — раньше заводили вперемешку сами при открытии
+  /// вкладки, Alex попросил убрать (05.09.2026): не играть само при запуске.
+  void _start() {
+    final items = _items;
+    if (items == null || items.isEmpty) return;
+    final queue = [
+      for (final t in items)
+        NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
+    ];
+    // Не ждём: экран (PlayerView) сам покажет обложку и название, как
+    // только реально заиграет.
+    AppScope.of(context).player.playQueue(queue, shuffle: true).catchError((_) {});
   }
 
   @override
@@ -56,9 +59,26 @@ class _StreamScreenState extends State<StreamScreen> {
           ? const Center(child: CircularProgressIndicator())
           : items.isEmpty
               ? _empty()
-              : const PlayerView(),
+              : PlayerView(emptyState: _startView(items.length)),
     );
   }
+
+  Widget _startView(int count) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              iconSize: 96,
+              color: Afisha.lime,
+              icon: const Icon(Icons.play_circle_filled),
+              onPressed: _start,
+            ),
+            const SizedBox(height: 12),
+            Text('Слушать вперемешку — $count песен',
+                style: const TextStyle(color: Afisha.inkDim)),
+          ],
+        ),
+      );
 
   Widget _empty() => Center(
         child: Padding(
