@@ -1,6 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/config.dart';
+import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/player_controller.dart';
@@ -23,6 +27,11 @@ class StreamScreen extends StatefulWidget {
 
 class _StreamScreenState extends State<StreamScreen> {
   List<DownloadedTrack>? _items;
+  // Какая-то одна песня "на витрине" стартового экрана — просьба Alex
+  // 05.09.2026: вместо голого значка play сразу видно, что вот-вот
+  // заиграет. Выбирается один раз при загрузке экрана, не на каждую
+  // перерисовку — иначе картинка бы дёргалась.
+  DownloadedTrack? _preview;
 
   @override
   void didChangeDependencies() {
@@ -33,7 +42,10 @@ class _StreamScreenState extends State<StreamScreen> {
   Future<void> _load() async {
     final items = await AppScope.of(context).downloads.list();
     if (!mounted) return;
-    setState(() => _items = items);
+    setState(() {
+      _items = items;
+      _preview = items.isEmpty ? null : items[Random().nextInt(items.length)];
+    });
   }
 
   /// Тап по кнопке «начать» — раньше заводили вперемешку сами при открытии
@@ -63,12 +75,32 @@ class _StreamScreenState extends State<StreamScreen> {
     );
   }
 
-  Widget _startView(int count) => Center(
+  Widget _startView(int count) {
+    final t = _preview;
+    return Center(
+      child: SizedBox(
+        width: 260,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (t != null) ...[
+              CoverThumb(path: t.coverPath, url: coverUrlFor(t.id), size: 220, radius: 16),
+              const SizedBox(height: 16),
+              Text(t.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Afisha.ink, fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(t.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Afisha.inkDim)),
+              const SizedBox(height: 20),
+            ],
             IconButton(
-              iconSize: 96,
+              iconSize: 72,
               color: Afisha.lime,
               icon: const Icon(Icons.play_circle_filled),
               onPressed: _start,
@@ -78,7 +110,9 @@ class _StreamScreenState extends State<StreamScreen> {
                 style: const TextStyle(color: Afisha.inkDim)),
           ],
         ),
-      );
+      ),
+    );
+  }
 
   Widget _empty() => Center(
         child: Padding(
