@@ -8,7 +8,7 @@ import 'app_scope.dart';
 
 /// Каркас приложения. Вкладки (решение Alex 04.09.2026): Поток · Моя музыка ·
 /// Профиль. Настройки — внутри профиля. Чарты и альбомы убраны.
-/// Мини-плеер над вкладками.
+/// Мини-плеер над вкладками — кроме «Потока», там и так плеер на весь экран.
 class Shell extends StatefulWidget {
   const Shell({super.key});
 
@@ -36,7 +36,9 @@ class _ShellState extends State<Shell> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          MiniPlayer(controller: AppScope.of(context).player),
+          // На «Потоке» и так на весь экран управление плеером — полоска
+          // здесь была бы тем же самым второй раз (05.09.2026).
+          if (_tab != 0) MiniPlayer(controller: AppScope.of(context).player),
           NavigationBar(
             selectedIndex: _tab,
             onDestinationSelected: (i) => setState(() => _tab = i),

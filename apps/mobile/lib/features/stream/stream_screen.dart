@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
-import '../player/now_playing_screen.dart';
 import '../player/player_controller.dart';
+import '../player/player_view.dart';
 
-/// Поток — простое офлайн-радио по скачанной музыке. Умного подбора по звуку
-/// и фильтров по жанрам здесь нет (следующие шаги).
+/// Поток — простое офлайн-радио по скачанной музыке. С 05.09.2026 (просьба
+/// Alex) это не список, а сразу полноэкранный плеер («вариант C»): открыл
+/// вкладку — играет. Список убран целиком; переключить порядок песен можно
+/// иконкой "перемешать" в самом плеере. Умного подбора по звуку и фильтров
+/// по жанрам здесь нет (следующие шаги).
 class StreamScreen extends StatefulWidget {
   const StreamScreen({super.key, this.onOpenLibrary});
 
@@ -21,7 +23,6 @@ class StreamScreen extends StatefulWidget {
 
 class _StreamScreenState extends State<StreamScreen> {
   List<DownloadedTrack>? _items;
-  bool _shuffle = true;
 
   @override
   void didChangeDependencies() {
@@ -33,78 +34,29 @@ class _StreamScreenState extends State<StreamScreen> {
     final items = await AppScope.of(context).downloads.list();
     if (!mounted) return;
     setState(() => _items = items);
-  }
-
-  List<NowPlaying> get _queue => [
-        for (final t in _items ?? const <DownloadedTrack>[])
+    final player = AppScope.of(context).player;
+    // Уже что-то играет (пришли из «Моей музыки» и переключились сюда) —
+    // не перебиваем. Иначе — заводим вперемешку сразу, не дожидаясь: экран
+    // (PlayerView) сам покажет обложку и название, как только реально заиграет.
+    if (items.isNotEmpty && player.now.value == null) {
+      final queue = [
+        for (final t in items)
           NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
       ];
-
-  Future<void> _listen({int startIndex = 0, bool? shuffle}) async {
-    final q = _queue;
-    if (q.isEmpty) return;
-    await AppScope.of(context)
-        .player
-        .playQueue(q, startIndex: startIndex, shuffle: shuffle ?? _shuffle);
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const NowPlayingScreen()),
-    );
-  }
-
-  /// «Радио по этой песне»: сервер выстраивает остальное скачанное по близости
-  /// звучания к seed. Сервер недоступен — просто перемешиваем остальное.
-  Future<void> _smartRadio(DownloadedTrack seed) async {
-    final all = _items ?? const <DownloadedTrack>[];
-    if (all.length < 2) return _listen(startIndex: all.indexOf(seed), shuffle: false);
-
-    final scope = AppScope.of(context);
-    final byId = {for (final t in all) t.id: t};
-    List<String>? order;
-    try {
-      order = await scope.api.streamOrder(
-        seedId: seed.id,
-        candidateIds: [for (final t in all) t.id],
-      );
-    } catch (_) {
-      order = null;
+      player.playQueue(queue, shuffle: true).catchError((_) {});
     }
-    if (!mounted) return;
-
-    final rest = <DownloadedTrack>[];
-    if (order != null) {
-      for (final id in order) {
-        final t = byId[id];
-        if (t != null && t.id != seed.id) rest.add(t);
-      }
-    }
-    if (rest.isEmpty) {
-      rest.addAll([for (final t in all) if (t.id != seed.id) t]..shuffle());
-    }
-
-    final queue = [
-      NowPlaying(
-          id: seed.id, title: seed.title, artist: seed.artist, path: seed.path, coverPath: seed.coverPath),
-      for (final t in rest)
-        NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
-    ];
-    await scope.player.playQueue(queue, startIndex: 0, shuffle: false);
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const NowPlayingScreen()),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final items = _items;
     return Scaffold(
-      appBar: AppBar(title: const Text('Поток')),
+      backgroundColor: Afisha.bg,
       body: items == null
           ? const Center(child: CircularProgressIndicator())
           : items.isEmpty
               ? _empty()
-              : _list(items),
+              : const PlayerView(),
     );
   }
 
@@ -133,83 +85,4 @@ class _StreamScreenState extends State<StreamScreen> {
           ),
         ),
       );
-
-  Widget _list(List<DownloadedTrack> items) {
-    final player = AppScope.of(context).player;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _listen(),
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(_shuffle ? 'Слушать вперемешку' : 'Слушать по порядку'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Вперемешку',
-                onPressed: () => setState(() => _shuffle = !_shuffle),
-                icon: Icon(Icons.shuffle, color: _shuffle ? Afisha.lime : Afisha.inkDim),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text('${items.length} песен на телефоне',
-                style: const TextStyle(color: Afisha.inkDim)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Divider(height: 1, color: Afisha.line),
-        Expanded(
-          child: ValueListenableBuilder<NowPlaying?>(
-            valueListenable: player.now,
-            builder: (context, now, _) => ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const Divider(height: 1, color: Afisha.line),
-              itemBuilder: (_, i) {
-                final t = items[i];
-                final active = now?.id == t.id;
-                return ListTile(
-                  leading: CoverThumb(path: t.coverPath, size: 40),
-                  title: Text(t.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: active ? Afisha.lime : Afisha.ink)),
-                  subtitle: Text(t.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Afisha.inkDim)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (active)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 4),
-                          child: Icon(Icons.equalizer, color: Afisha.lime, size: 20),
-                        ),
-                      IconButton(
-                        tooltip: 'Радио по этой песне',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.radio, color: Afisha.inkDim, size: 22),
-                        onPressed: () => _smartRadio(t),
-                      ),
-                    ],
-                  ),
-                  onTap: () => _listen(startIndex: i, shuffle: false),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
