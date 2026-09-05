@@ -256,38 +256,49 @@ class _PlayerViewState extends State<PlayerView> {
                       ],
                     ),
                   ),
-                  // Отдельный, более узкий отступ — шесть кнопок (после того как
-                  // корзина переехала сюда) на 24px с каждой стороны, как у
-                  // текста, не влезали (реально поймано на скриншоте
-                  // эмулятора: "RIGHT OVERFLOWED"), тексту столько не нужно.
+                  // Ряд управления. Кнопка play должна стоять РОВНО по центру
+                  // экрана (05.09.2026, просьба Alex — после переезда корзины
+                  // сюда шесть кнопок в общем ряду сдвигали play влево). Приём:
+                  // play — фиксированный средний ребёнок, а по бокам два
+                  // Expanded одинаковой ширины со своими кнопками. Сколько бы
+                  // кнопок ни было слева/справа — центр не уезжает. Корзина
+                  // осталась там же, у правого края.
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        ValueListenableBuilder<bool>(
-                          valueListenable: _p.shuffle,
-                          builder: (_, sh, _) => IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: Icon(
-                              Icons.shuffle,
-                              color: sh ? Afisha.lime : Colors.white70,
-                            ),
-                            onPressed: _p.toggleShuffle,
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _p.shuffle,
+                                builder: (_, sh, _) => IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  icon: Icon(
+                                    Icons.shuffle,
+                                    color: sh ? Afisha.lime : Colors.white70,
+                                  ),
+                                  onPressed: _p.toggleShuffle,
+                                ),
+                              ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                iconSize: 34,
+                                color: Colors.white,
+                                icon: const Icon(Icons.skip_previous),
+                                onPressed: _p.prev,
+                              ),
+                            ],
                           ),
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          iconSize: 36,
-                          color: Colors.white,
-                          icon: const Icon(Icons.skip_previous),
-                          onPressed: _p.prev,
                         ),
                         ValueListenableBuilder<bool>(
                           valueListenable: _p.playing,
                           builder: (_, pl, _) => IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                             iconSize: 64,
                             color: Afisha.lime,
                             icon: Icon(
@@ -298,31 +309,40 @@ class _PlayerViewState extends State<PlayerView> {
                             onPressed: _p.toggle,
                           ),
                         ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          iconSize: 36,
-                          color: Colors.white,
-                          icon: const Icon(Icons.skip_next),
-                          onPressed: _p.next,
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: Icon(
-                            _fav ? Icons.favorite : Icons.favorite_border,
-                            color: _fav ? Afisha.lime : Colors.white70,
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                iconSize: 34,
+                                color: Colors.white,
+                                icon: const Icon(Icons.skip_next),
+                                onPressed: _p.next,
+                              ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                icon: Icon(
+                                  _fav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: _fav ? Afisha.lime : Colors.white70,
+                                ),
+                                onPressed: _toggleFav,
+                              ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.white70,
+                                ),
+                                onPressed: () => _confirmDelete(now),
+                              ),
+                            ],
                           ),
-                          onPressed: _toggleFav,
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.white70,
-                          ),
-                          onPressed: () => _confirmDelete(now),
                         ),
                       ],
                     ),
