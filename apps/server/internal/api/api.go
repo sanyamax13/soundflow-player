@@ -51,6 +51,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/events", s.adminEvents)
 				r.Post("/reanalyze", s.adminReanalyze)
 				r.Post("/sweep-junk", s.adminSweepJunk)
+				r.Post("/backfill-covers", s.adminBackfillCovers)
 				r.Post("/import-library", s.adminImportLibrary)
 			})
 		})

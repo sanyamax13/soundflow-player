@@ -315,3 +315,78 @@ func TestOrderBySimilaritySeedWithoutVector(t *testing.T) {
 		t.Fatalf("ждал [a b], получил %v", got)
 	}
 }
+
+func TestTracksMissingCoverURL(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "cov-" + time.Now().Format("150405.000000")
+	withCover := "t_" + tag + "_has"
+	noCover := "t_" + tag + "_none"
+	t.Cleanup(func() {
+		for _, id := range []string{withCover, noCover} {
+			_, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id)
+		}
+	})
+	mk := func(id, cover string) {
+		nk := tag + "__" + id
+		if err := p.InsertTrackWithFile(ctx,
+			NewTrack{ID: id, Artist: tag, Title: id, NormalizedKey: nk, ReleaseKind: "studio", CoverURL: cover},
+			NewTrackFile{ID: id + "_f", NormalizedKey: nk, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+		); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	mk(withCover, "https://already-known")
+	mk(noCover, "")
+
+	list, err := p.TracksMissingCoverURL(ctx, 10000)
+	if err != nil {
+		t.Fatalf("TracksMissingCoverURL: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, c := range list {
+		seen[c.ID] = true
+	}
+	if !seen[noCover] {
+		t.Errorf("трек без cover_url должен быть кандидатом: %+v", list)
+	}
+	if seen[withCover] {
+		t.Error("трек с уже известным cover_url не должен быть кандидатом")
+	}
+}
+
+func TestSetCoverURLAndTrackCoverURL(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "cov2-" + time.Now().Format("150405.000000")
+	id := "t_" + tag
+	nk := tag + "__x"
+	t.Cleanup(func() { _, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id) })
+	if err := p.InsertTrackWithFile(ctx,
+		NewTrack{ID: id, Artist: tag, Title: id, NormalizedKey: nk, ReleaseKind: "studio"},
+		NewTrackFile{ID: id + "_f", NormalizedKey: nk, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+	); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	if url, found, err := p.TrackCoverURL(ctx, id); err != nil || found || url != "" {
+		t.Fatalf("свежий трек без обложки: url=%q found=%v err=%v", url, found, err)
+	}
+
+	if err := p.SetCoverURL(ctx, id, "https://cover.example/x.jpg"); err != nil {
+		t.Fatalf("SetCoverURL: %v", err)
+	}
+	if url, found, err := p.TrackCoverURL(ctx, id); err != nil || !found || url != "https://cover.example/x.jpg" {
+		t.Fatalf("после SetCoverURL: url=%q found=%v err=%v", url, found, err)
+	}
+}

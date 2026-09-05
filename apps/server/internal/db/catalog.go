@@ -384,6 +384,72 @@ func (d *Pool) TracksForSweep(ctx context.Context) ([]SweepRow, error) {
 	return out, rows.Err()
 }
 
+// CoverCandidate — трек без обложки (ни своей в файле, ни найденной снаружи
+// пока не проверяли) — кандидат на догон через Яндекс (см. adminBackfillCovers).
+type CoverCandidate struct {
+	ID       string
+	Artist   string
+	Title    string
+	FilePath string
+}
+
+// TracksMissingCoverURL — треки, у которых cover_url ещё пустой (никогда не
+// искали). Догон сам решает, помечать ли трек: "" — не смотрели,
+// "embedded" — обложка своя, в файле (см. coverart.Embedded, в БД её не
+// храним, ручка /v1/cover/{id} достаёт из файла заново), "none" — смотрели
+// в Яндексе, не нашли, http(s)-ссылка — нашли внешнюю. Так один и тот же
+// трек не проверяется по кругу бесконечно.
+func (d *Pool) TracksMissingCoverURL(ctx context.Context, limit int) ([]CoverCandidate, error) {
+	if d == nil || d.p == nil {
+		return nil, errNoDB
+	}
+	rows, err := d.p.Query(ctx, `
+		SELECT t.id, t.artist, t.title, tf.file_path
+		FROM tracks t
+		JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
+		WHERE t.cover_url = ''
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]CoverCandidate, 0, limit)
+	for rows.Next() {
+		var c CoverCandidate
+		if err := rows.Scan(&c.ID, &c.Artist, &c.Title, &c.FilePath); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// SetCoverURL — записать результат проверки обложки трека (см.
+// TracksMissingCoverURL про значения-метки).
+func (d *Pool) SetCoverURL(ctx context.Context, id, url string) error {
+	if d == nil || d.p == nil {
+		return errNoDB
+	}
+	_, err := d.p.Exec(ctx, `UPDATE tracks SET cover_url = $1 WHERE id = $2`, url, id)
+	return err
+}
+
+// TrackCoverURL — cover_url трека как есть (может быть меткой "embedded"/
+// "none", а не настоящей ссылкой — вызывающий сам решает, что с ней делать).
+func (d *Pool) TrackCoverURL(ctx context.Context, id string) (url string, found bool, err error) {
+	if d == nil || d.p == nil {
+		return "", false, errNoDB
+	}
+	err = d.p.QueryRow(ctx, `SELECT cover_url FROM tracks WHERE id = $1`, id).Scan(&url)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return url, url != "", nil
+}
+
 func nullInt(v int) any {
 	if v <= 0 {
 		return nil

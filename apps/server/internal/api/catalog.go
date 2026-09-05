@@ -6,15 +6,15 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/dhowden/tag"
 	"github.com/go-chi/chi/v5"
 
 	"soundflow/server/internal/acquire"
+	"soundflow/server/internal/coverart"
 	"soundflow/server/internal/importer"
 	"soundflow/server/internal/pathmap"
 )
@@ -141,13 +141,14 @@ func (s *Server) trashRestore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"restored": true})
 }
 
-// GET /v1/cover/{id} — обложка прямо из файла трека (кто рипал альбом,
-// обычно её туда и зашивал). Добавлено 05.09.2026: Alex спросил, почему у
-// перенесённой старой библиотеки (этап 12) нет обложек — потому что при
-// переносе (importer.Scan) их никто не искал, cover_url заполняется только
-// для треков через acquire (там ищем в Яндексе). Тут — без похода в сеть,
-// сразу из уже лежащего на диске файла. У кого в файле обложки нет — 404,
-// телефон это уже умеет проглатывать (серый плейсхолдер), ничего не ломает.
+// GET /v1/cover/{id} — обложка трека. Сперва пробуем прямо из файла (кто
+// рипал альбом, обычно её туда и зашивал) — быстро, без сети. Не нашлось —
+// смотрим, не нашёл ли её догон по Яндексу (см. adminBackfillCovers) и
+// перенаправляем туда. Ни того ни другого — 404, телефон это умеет
+// проглатывать (серый плейсхолдер), ничего не ломает.
+// Добавлено 05.09.2026: Alex спросил, почему у перенесённой старой
+// библиотеки (этап 12) нет обложек — при переносе (importer.Scan) их никто
+// не искал, cover_url заполняется только для треков через acquire.
 func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if s.DB.Ping(r.Context()) != nil {
@@ -159,29 +160,17 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(s.PathMap.ToLocal(canonical))
-	if err != nil {
-		http.NotFound(w, r)
+	if data, mime, ok := coverart.Embedded(s.PathMap.ToLocal(canonical)); ok {
+		w.Header().Set("Content-Type", mime)
+		w.Header().Set("Cache-Control", "public, max-age=604800") // неделя — обложка файла не меняется
+		_, _ = w.Write(data)
 		return
 	}
-	defer f.Close()
-	m, err := tag.ReadFrom(f)
-	if err != nil {
-		http.NotFound(w, r)
+	if url, found, err := s.DB.TrackCoverURL(r.Context(), id); err == nil && found && strings.HasPrefix(url, "http") {
+		http.Redirect(w, r, url, http.StatusFound)
 		return
 	}
-	pic := m.Picture()
-	if pic == nil || len(pic.Data) == 0 {
-		http.NotFound(w, r)
-		return
-	}
-	ct := pic.MIMEType
-	if ct == "" {
-		ct = "image/jpeg"
-	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Cache-Control", "public, max-age=604800") // неделя — обложка файла не меняется
-	_, _ = w.Write(pic.Data)
+	http.NotFound(w, r)
 }
 
 type nextBatchReq struct {
@@ -305,6 +294,68 @@ func (s *Server) adminSweepJunk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"checked": res.Checked, "removed": res.Removed, "errors": res.Errors, "removed_list": list,
 	})
+}
+
+// backfillCoversRunning — не даём двум догонам обложек идти параллельно
+// (сайдкар и так спрашивает Яндекс по одному запросу за раз).
+var backfillCoversRunning atomic.Bool
+
+// POST /v1/admin/backfill-covers — досчитать обложки трекам без своей в
+// файле: спросить Яндекс.Музыку по артисту/названию (тот же сайдкар, что и
+// acquire). Добавлено 05.09.2026 по просьбе Alex — "давай найдём обложку у
+// тех, у кого её нет" (после того как выяснилось, что 57% старой библиотеки
+// несёт обложку прямо в файле, остальным нужен внешний поиск). Файл со
+// своей обложкой не трогаем (Яндекс не нужен, ручка /v1/cover уже отдаёт её
+// из файла) — только помечаем "embedded", чтобы не проверять по кругу.
+// Сеть — не быстро; работает фоном, как /v1/admin/reanalyze.
+func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
+	if s.Acquire == nil || s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "сервер не готов"})
+		return
+	}
+	if !backfillCoversRunning.CompareAndSwap(false, true) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "догон обложек уже идёт"})
+		return
+	}
+	go func() {
+		defer backfillCoversRunning.Store(false)
+		start := time.Now()
+		var checked, embedded, found, none int
+		for {
+			batch, err := s.DB.TracksMissingCoverURL(context.Background(), 200)
+			if err != nil {
+				log.Printf("backfill-covers: список треков: %v", err)
+				return
+			}
+			if len(batch) == 0 {
+				break
+			}
+			for _, c := range batch {
+				bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				checked++
+				if _, _, ok := coverart.Embedded(s.PathMap.ToLocal(c.FilePath)); ok {
+					_ = s.DB.SetCoverURL(bg, c.ID, "embedded")
+					embedded++
+					cancel()
+					continue
+				}
+				url, err := s.Acquire.Finder.YandexTrackCover(bg, c.Artist, c.Title)
+				cancel()
+				if err != nil || url == "" {
+					_ = s.DB.SetCoverURL(context.Background(), c.ID, "none")
+					none++
+					continue
+				}
+				_ = s.DB.SetCoverURL(context.Background(), c.ID, url)
+				found++
+			}
+			log.Printf("backfill-covers: пока %d проверено (своя в файле: %d, нашли внешнюю: %d, не нашли: %d)",
+				checked, embedded, found, none)
+		}
+		log.Printf("backfill-covers: готово за %s — проверено %d, своя в файле %d, нашли внешнюю %d, не нашли %d",
+			time.Since(start).Round(time.Second), checked, embedded, found, none)
+	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }
 
 // POST /v1/admin/reanalyze — досчитать «звуковой отпечаток» трекам, у которых
