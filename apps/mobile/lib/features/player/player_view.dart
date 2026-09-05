@@ -144,6 +144,20 @@ class _PlayerViewState extends State<PlayerView> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  /// «Не та версия» одним тапом: убрать этот трек (причина wrong_version —
+  /// сервер потом сам подтянет другую версию, см. deleteAndReacquire) и
+  /// перейти к следующему. Без листа причин, в отличие от корзины.
+  Future<void> _replaceVersion(NowPlaying now) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await AppScope.of(context).downloads.delete(now.id, reason: 'wrong_version');
+    if (!mounted) return;
+    await _p.next();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Убрал — сервер поищет версию получше')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<NowPlaying?>(
@@ -239,7 +253,26 @@ class _PlayerViewState extends State<PlayerView> {
                           now.artist,
                           style: const TextStyle(color: Colors.white70),
                         ),
-                        const SizedBox(height: 20),
+                        // Быстрая кнопка «не та версия» (Alex 06.09.2026): один
+                        // тап — трек уходит в корзину с причиной wrong_version,
+                        // сервер сам ищет другую версию, играем дальше. То же
+                        // самое есть в списке причин у корзины, но там на три
+                        // тапа больше.
+                        TextButton.icon(
+                          onPressed: () => _replaceVersion(now),
+                          icon: const Icon(Icons.sync_problem, size: 18),
+                          label: const Text('Не та версия'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white54,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
                         _ProgressBar(controller: _p, label: _mmss),
                       ],
                     ),
