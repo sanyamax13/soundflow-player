@@ -23,6 +23,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
   List<DownloadedTrack>? _items;
   int _count = 0;
   int _bytes = 0;
+  int _covers = 0;
 
   @override
   void didChangeDependencies() {
@@ -39,6 +40,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
       _items = items;
       _count = s.count;
       _bytes = s.bytes;
+      _covers = s.covers;
     });
   }
 
@@ -107,29 +109,41 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
-                  child: Text('$_count песен · ${_mb(_bytes)}',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Afisha.inkDim)),
-                ),
-                const SizedBox(width: 12),
-                SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Все')),
-                    ButtonSegment(value: true, label: Text('Избранное')),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text('$_count песен · ${_mb(_bytes)}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Afisha.inkDim)),
+                    ),
+                    const SizedBox(width: 12),
+                    SegmentedButton<bool>(
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('Все')),
+                        ButtonSegment(value: true, label: Text('Избранное')),
+                      ],
+                      selected: {_onlyFav},
+                      onSelectionChanged: (s) {
+                        setState(() => _onlyFav = s.first);
+                        _refresh();
+                      },
+                    ),
                   ],
-                  selected: {_onlyFav},
-                  onSelectionChanged: (s) {
-                    setState(() => _onlyFav = s.first);
-                    _refresh();
-                  },
+                ),
+                // Отдельной строкой — просьба Alex 05.09.2026 видеть, сколько
+                // из скачанного уже с обложкой, не гадая по логам сервера.
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('Обложки: $_covers/$_count',
+                      style: const TextStyle(color: Afisha.inkDim, fontSize: 12)),
                 ),
               ],
             ),

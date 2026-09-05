@@ -76,6 +76,7 @@ void main() {
 
     expect(find.text('Пока ничего не скачано'), findsOneWidget);
     expect(find.text('0 песен · 0.0 МБ'), findsOneWidget);
+    expect(find.text('Обложки: 0/0'), findsOneWidget);
   });
 
   testWidgets('мини-плеер скрыт, пока ничего не играет', (tester) async {

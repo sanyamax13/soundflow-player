@@ -142,9 +142,13 @@ class DownloadsRepo {
   Future<List<DownloadedTrack>> list({bool onlyFavorite = false}) =>
       _db.allDownloaded(onlyFavorite: onlyFavorite);
 
-  Future<({int count, int bytes})> summary() async {
+  /// [covers] — сколько из скачанных песен уже с обложкой на диске (просьба
+  /// Alex 05.09.2026: видеть счётчик обложек рядом со счётчиком песен, а не
+  /// гадать по логам сервера).
+  Future<({int count, int bytes, int covers})> summary() async {
     final all = await _db.allDownloaded();
-    return (count: all.length, bytes: await _db.totalBytes());
+    final covers = all.where((t) => t.coverPath != null && File(t.coverPath!).existsSync()).length;
+    return (count: all.length, bytes: await _db.totalBytes(), covers: covers);
   }
 
   /// Поиск по каталогу сервера (что уже скачано на домашний компьютер).
