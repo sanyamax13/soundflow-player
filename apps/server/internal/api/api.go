@@ -22,6 +22,10 @@ type Server struct {
 	Acquire   *acquire.Service
 	PathMap   pathmap.Mapper
 	StartedAt time.Time
+
+	// GeneratedCoversDir — папка со сгенерированными обложками (этап 28,
+	// 05.09.2026), отдаётся статикой. Пусто — ручка выключена (404 всем).
+	GeneratedCoversDir string
 }
 
 func (s *Server) Router() http.Handler {
@@ -42,6 +46,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/trash", s.trashList)
 			r.Post("/trash/restore", s.trashRestore)
 			r.Get("/cover/{id}", s.cover)
+			r.Get("/generated-covers/{file}", s.generatedCover)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Get("/sync/report", s.syncReport)

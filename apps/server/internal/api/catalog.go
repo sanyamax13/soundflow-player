@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -173,6 +174,21 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// GET /v1/generated-covers/{file} — отдаёт ИИ-нарисованную обложку (этап 28,
+// 05.09.2026: у 499 треков не нашлось обложки нигде — ни своей в файле, ни
+// у Яндекса/iTunes/Deezer, нарисовали локально на brain, ComfyUI/SDXL,
+// бесплатно). filepath.Base режет любые "../" — {file} приходит с URL,
+// доверять ему нельзя. GeneratedCoversDir пуст — ручка выключена (404 всем).
+func (s *Server) generatedCover(w http.ResponseWriter, r *http.Request) {
+	if s.GeneratedCoversDir == "" {
+		http.NotFound(w, r)
+		return
+	}
+	file := filepath.Base(chi.URLParam(r, "file"))
+	w.Header().Set("Cache-Control", "public, max-age=604800") // неделя — сгенерированная обложка не меняется
+	http.ServeFile(w, r, filepath.Join(s.GeneratedCoversDir, file))
 }
 
 type nextBatchReq struct {

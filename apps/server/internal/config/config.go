@@ -16,14 +16,20 @@ type Config struct {
 
 	SidecarURL string         // Python-сайдкар на fg (Яндекс/musify/торренты)
 	PathMap    pathmap.Mapper // канонический путь из сайдкара/БД → реальный на этой машине
+
+	// GeneratedCoversDir — папка со сгенерированными (ИИ-рисованными на brain,
+	// ComfyUI/SDXL) обложками для треков, у которых не нашлось нигде (этап 28,
+	// 05.09.2026). Отдаётся статикой по /v1/generated-covers/<файл>.
+	GeneratedCoversDir string
 }
 
 func Load() Config {
 	return Config{
-		Addr:        env("SOUNDFLOW_ADDR", ":8090"),
-		DatabaseURL: env("DATABASE_URL", "postgres://soundflow:soundflow_dev@localhost:5433/soundflow?sslmode=disable"),
-		MusicDir:    env("SOUNDFLOW_MUSIC_DIR", ""),
-		SidecarURL:  env("SOUNDFLOW_SIDECAR_URL", "http://127.0.0.1:8001"),
+		Addr:               env("SOUNDFLOW_ADDR", ":8090"),
+		DatabaseURL:        env("DATABASE_URL", "postgres://soundflow:soundflow_dev@localhost:5433/soundflow?sslmode=disable"),
+		MusicDir:           env("SOUNDFLOW_MUSIC_DIR", ""),
+		SidecarURL:         env("SOUNDFLOW_SIDECAR_URL", "http://127.0.0.1:8001"),
+		GeneratedCoversDir: env("SOUNDFLOW_GENERATED_COVERS_DIR", ""),
 		PathMap: pathmap.New(
 			pathmap.Pair{
 				Canonical: env("SIDECAR_CANONICAL_CACHE_DIR", ""),

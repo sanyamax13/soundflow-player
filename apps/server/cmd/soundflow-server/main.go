@@ -48,11 +48,12 @@ func main() {
 	}
 
 	srv := &api.Server{
-		DB:        pool,
-		Music:     music.New(cfg.MusicDir),
-		Acquire:   &acquire.Service{DB: pool, Finder: sc},
-		PathMap:   cfg.PathMap,
-		StartedAt: time.Now(),
+		DB:                 pool,
+		Music:              music.New(cfg.MusicDir),
+		Acquire:            &acquire.Service{DB: pool, Finder: sc},
+		PathMap:            cfg.PathMap,
+		StartedAt:          time.Now(),
+		GeneratedCoversDir: cfg.GeneratedCoversDir,
 	}
 
 	httpSrv := &http.Server{
