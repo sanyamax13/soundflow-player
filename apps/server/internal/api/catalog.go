@@ -16,6 +16,7 @@ import (
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/coverart"
 	"soundflow/server/internal/importer"
+	"soundflow/server/internal/itunes"
 	"soundflow/server/internal/pathmap"
 )
 
@@ -301,12 +302,16 @@ func (s *Server) adminSweepJunk(w http.ResponseWriter, r *http.Request) {
 var backfillCoversRunning atomic.Bool
 
 // POST /v1/admin/backfill-covers — досчитать обложки трекам без своей в
-// файле: спросить Яндекс.Музыку по артисту/названию (тот же сайдкар, что и
-// acquire). Добавлено 05.09.2026 по просьбе Alex — "давай найдём обложку у
-// тех, у кого её нет" (после того как выяснилось, что 57% старой библиотеки
-// несёт обложку прямо в файле, остальным нужен внешний поиск). Файл со
-// своей обложкой не трогаем (Яндекс не нужен, ручка /v1/cover уже отдаёт её
-// из файла) — только помечаем "embedded", чтобы не проверять по кругу.
+// файле: спросить Яндекс.Музыку (тот же сайдкар, что и acquire), не нашлось —
+// спросить iTunes Search (открытый API, без ключа). Добавлено 05.09.2026 по
+// просьбе Alex — сперва "давай найдём обложку у тех, у кого её нет" (после
+// того как выяснилось, что 57% старой библиотеки несёт обложку прямо в
+// файле), затем "для тех, у кого не нашлось, поищи в интернете" — добавлен
+// iTunes вторым источником. Трек, для которого раньше уже смотрели везде и
+// не нашли (метка "none"), Яндекс второй раз не спрашиваем — сразу iTunes,
+// незачем повторять источник, который уже точно ничего не даст. Файл со
+// своей обложкой не трогаем (ручка /v1/cover уже отдаёт её из файла) —
+// только помечаем "embedded", чтобы не проверять по кругу.
 // Сеть — не быстро; работает фоном, как /v1/admin/reanalyze.
 func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
 	if s.Acquire == nil || s.DB.Ping(r.Context()) != nil {
@@ -331,17 +336,24 @@ func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			for _, c := range batch {
-				bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				checked++
 				if _, _, ok := coverart.Embedded(s.PathMap.ToLocal(c.FilePath)); ok {
-					_ = s.DB.SetCoverURL(bg, c.ID, "embedded")
+					_ = s.DB.SetCoverURL(context.Background(), c.ID, "embedded")
 					embedded++
-					cancel()
 					continue
 				}
-				url, err := s.Acquire.Finder.YandexTrackCover(bg, c.Artist, c.Title)
-				cancel()
-				if err != nil || url == "" {
+				url := ""
+				if c.CoverURL != "none" { // раньше не смотрели вообще — пробуем Яндекс
+					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					url, _ = s.Acquire.Finder.YandexTrackCover(bg, c.Artist, c.Title)
+					cancel()
+				}
+				if url == "" { // Яндекс не нашёл (или уже не спрашивали) — пробуем iTunes
+					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					url, _ = itunes.Cover(bg, c.Artist, c.Title)
+					cancel()
+				}
+				if url == "" {
 					_ = s.DB.SetCoverURL(context.Background(), c.ID, "none")
 					none++
 					continue

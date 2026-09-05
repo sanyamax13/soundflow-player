@@ -360,6 +360,74 @@ func TestTracksMissingCoverURL(t *testing.T) {
 	}
 }
 
+func TestTrackArtistTitle(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "artitle-" + time.Now().Format("150405.000000")
+	id := "t_" + tag
+	t.Cleanup(func() { _, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id) })
+	if err := p.InsertTrackWithFile(ctx,
+		NewTrack{ID: id, Artist: "Кто-то", Title: "Песня", NormalizedKey: tag, ReleaseKind: "studio"},
+		NewTrackFile{ID: id + "_f", NormalizedKey: tag, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+	); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	artist, title, ok, err := p.TrackArtistTitle(ctx, id)
+	if err != nil || !ok || artist != "Кто-то" || title != "Песня" {
+		t.Fatalf("ждал (Кто-то, Песня, true), получил (%q, %q, %v), err=%v", artist, title, ok, err)
+	}
+
+	_, _, ok, err = p.TrackArtistTitle(ctx, "t_нет-такого")
+	if err != nil || ok {
+		t.Fatalf("несуществующий id: ждал ok=false, получил ok=%v err=%v", ok, err)
+	}
+}
+
+func TestDeleteTrackFreesNormalizedKey(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "deltrack-" + time.Now().Format("150405.000000")
+	id := "t_" + tag
+	t.Cleanup(func() { _, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id=$1`, id) })
+	if err := p.InsertTrackWithFile(ctx,
+		NewTrack{ID: id, Artist: "A", Title: "B", NormalizedKey: tag, ReleaseKind: "studio"},
+		NewTrackFile{ID: id + "_f", NormalizedKey: tag, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+	); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	if err := p.DeleteTrack(ctx, id); err != nil {
+		t.Fatalf("DeleteTrack: %v", err)
+	}
+
+	got, err := p.TrackByKey(ctx, tag)
+	if err != nil {
+		t.Fatalf("TrackByKey: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("normalized_key должен освободиться, а трек нашёлся: %+v", got)
+	}
+
+	var n int
+	if err := p.p.QueryRow(ctx, `SELECT count(*) FROM track_files WHERE track_id=$1`, id).Scan(&n); err != nil {
+		t.Fatalf("check track_files: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("track_files должны были уйти каскадом, осталось %d", n)
+	}
+}
+
 func TestSetCoverURLAndTrackCoverURL(t *testing.T) {
 	p := testPool(t)
 	ctx := context.Background()

@@ -384,6 +384,40 @@ func (d *Pool) TracksForSweep(ctx context.Context) ([]SweepRow, error) {
 	return out, rows.Err()
 }
 
+// TrackArtistTitle — артист/название трека по id. Нужно, когда после
+// удаления с причиной "плохое качество"/"не та версия" сервер сам пробует
+// найти замену получше (см. handleDeleteEvents, 05.09.2026) — для нового
+// поиска через acquire нужны именно артист+название, не canonical-путь.
+func (d *Pool) TrackArtistTitle(ctx context.Context, trackID string) (artist, title string, ok bool, err error) {
+	if d == nil || d.p == nil {
+		return "", "", false, errNoDB
+	}
+	err = d.p.QueryRow(ctx, `SELECT artist, title FROM tracks WHERE id = $1`, trackID).Scan(&artist, &title)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return artist, title, true, nil
+}
+
+// DeleteTrack — стереть строку трека из каталога насовсем (track_files
+// уходят каскадом). НЕ трогает файл на диске — это отдельно, через
+// pathmap.MoveToTrash. Нужно для "переудаления" с причиной "плохое
+// качество"/"не та версия" (05.09.2026): обычное удаление помечает
+// blocked и трек больше никогда не всплывёт (это то, что нужно для
+// "не нравится"/"надоела"), а тут наоборот — освобождаем normalized_key,
+// чтобы acquire мог честно поискать замену, а не отдать эту же старую
+// запись из каталога.
+func (d *Pool) DeleteTrack(ctx context.Context, trackID string) error {
+	if d == nil || d.p == nil {
+		return errNoDB
+	}
+	_, err := d.p.Exec(ctx, `DELETE FROM tracks WHERE id = $1`, trackID)
+	return err
+}
+
 // CoverCandidate — трек без обложки (ни своей в файле, ни найденной снаружи
 // пока не проверяли) — кандидат на догон через Яндекс (см. adminBackfillCovers).
 type CoverCandidate struct {
@@ -391,23 +425,28 @@ type CoverCandidate struct {
 	Artist   string
 	Title    string
 	FilePath string
+	// CoverURL — значение до этого догона ("" — впервые, "none" — уже
+	// смотрели раньше во всех источниках того раза, не нашли). Позволяет
+	// догону не повторять источники, которые уже точно ничего не дали.
+	CoverURL string
 }
 
-// TracksMissingCoverURL — треки, у которых cover_url ещё пустой (никогда не
-// искали). Догон сам решает, помечать ли трек: "" — не смотрели,
-// "embedded" — обложка своя, в файле (см. coverart.Embedded, в БД её не
-// храним, ручка /v1/cover/{id} достаёт из файла заново), "none" — смотрели
-// в Яндексе, не нашли, http(s)-ссылка — нашли внешнюю. Так один и тот же
-// трек не проверяется по кругу бесконечно.
+// TracksMissingCoverURL — треки, у которых обложки ещё нет и стоит
+// попробовать ещё раз. Догон сам решает, помечать ли трек: "" — не
+// смотрели, "embedded" — обложка своя, в файле (см. coverart.Embedded, в БД
+// её не храним, ручка /v1/cover/{id} достаёт из файла заново), "none" —
+// смотрели во всех известных источниках, не нашли (но следующий догон,
+// если появится новый источник, попробует снова — оттого и "none" тоже в
+// выборке), http(s)-ссылка — нашли внешнюю (эти уже не трогаем).
 func (d *Pool) TracksMissingCoverURL(ctx context.Context, limit int) ([]CoverCandidate, error) {
 	if d == nil || d.p == nil {
 		return nil, errNoDB
 	}
 	rows, err := d.p.Query(ctx, `
-		SELECT t.id, t.artist, t.title, tf.file_path
+		SELECT t.id, t.artist, t.title, tf.file_path, t.cover_url
 		FROM tracks t
 		JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
-		WHERE t.cover_url = ''
+		WHERE t.cover_url IN ('', 'none')
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -416,7 +455,7 @@ func (d *Pool) TracksMissingCoverURL(ctx context.Context, limit int) ([]CoverCan
 	out := make([]CoverCandidate, 0, limit)
 	for rows.Next() {
 		var c CoverCandidate
-		if err := rows.Scan(&c.ID, &c.Artist, &c.Title, &c.FilePath); err != nil {
+		if err := rows.Scan(&c.ID, &c.Artist, &c.Title, &c.FilePath, &c.CoverURL); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
