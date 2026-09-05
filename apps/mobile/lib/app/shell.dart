@@ -32,29 +32,20 @@ class _ShellState extends State<Shell> {
 
   @override
   Widget build(BuildContext context) {
+    // На «Потоке» плеер занимает весь экран — пускаем его и под меню, а само
+    // меню делаем прозрачным: низ сам «подстраивается под обложку», без
+    // серой полосы и стыка (Alex 06.09.2026). На других вкладках меню
+    // обычное, на чёрном фоне.
+    final onStream = _tab == 0;
     return Scaffold(
+      extendBody: onStream,
       body: _screen(_tab),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // На «Потоке» и так на весь экран управление плеером — полоска
-          // здесь была бы тем же самым второй раз (05.09.2026).
           if (_tab != 0) MiniPlayer(controller: AppScope.of(context).player),
-          // Плавный переход от полноэкранного плеера к нижнему меню — мягкая
-          // полоса-градиент вместо резкого стыка чёрного низа плеера и
-          // панели #0F0F0F (Alex 06.09.2026).
-          if (_tab == 0)
-            Container(
-              height: 36,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Afisha.surface],
-                ),
-              ),
-            ),
           NavigationBar(
+            backgroundColor: onStream ? Colors.transparent : Afisha.surface,
             selectedIndex: _tab,
             onDestinationSelected: (i) => setState(() => _tab = i),
             destinations: [

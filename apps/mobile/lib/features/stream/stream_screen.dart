@@ -56,9 +56,14 @@ class _StreamScreenState extends State<StreamScreen> {
       for (final t in items)
         NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
     ];
-    // Не ждём: экран (PlayerView) сам покажет обложку и название, как
-    // только реально заиграет.
-    AppScope.of(context).player.playQueue(queue, shuffle: true).catchError((_) {});
+    // Заводим именно ту песню, что показана на заставке, дальше — вперемешку.
+    // Без этого play запускал случайную из вперемешку, а не показанную
+    // (Alex 06.09.2026: «нажимаю — играет другая песня»).
+    final start = _preview == null ? 0 : items.indexOf(_preview!);
+    AppScope.of(context)
+        .player
+        .playQueue(queue, startIndex: start < 0 ? 0 : start, shuffle: true)
+        .catchError((_) {});
   }
 
   @override
@@ -92,13 +97,17 @@ class _StreamScreenState extends State<StreamScreen> {
         t == null
             ? placeholder
             : CoverBackdrop(trackId: t.id, localPath: t.coverPath),
-        const DecoratedBox(
+        DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black],
-              stops: [0.35, 1.0],
+              colors: [
+                Colors.transparent,
+                Colors.black,
+                Colors.black.withValues(alpha: 0.7),
+              ],
+              stops: const [0.30, 0.82, 1.0],
             ),
           ),
         ),

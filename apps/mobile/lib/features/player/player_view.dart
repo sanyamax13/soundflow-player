@@ -168,13 +168,19 @@ class _PlayerViewState extends State<PlayerView> {
             // или из iTunes/Deezer/нарисованных). Нет нигде — заглушка с нотой.
             CoverBackdrop(trackId: now.id, localPath: now.coverPath),
             // Градиент снизу — чтобы текст и кнопки читались на любой обложке.
-            const DecoratedBox(
+            // К самому низу отпускаем обратно (0.7), чтобы под прозрачным
+            // меню был виден цвет обложки, а не глухой чёрный (Alex 06.09.2026).
+            DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black],
-                  stops: [0.35, 1.0],
+                  colors: [
+                    Colors.transparent,
+                    Colors.black,
+                    Colors.black.withValues(alpha: 0.7),
+                  ],
+                  stops: const [0.30, 0.82, 1.0],
                 ),
               ),
             ),
