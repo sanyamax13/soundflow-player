@@ -1,10 +1,10 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/config.dart';
-import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/player_controller.dart';
@@ -75,42 +75,79 @@ class _StreamScreenState extends State<StreamScreen> {
     );
   }
 
+  // Во весь экран, как настоящий плеер (PlayerView) — просьба Alex
+  // 05.09.2026: "почему не во весь экран?" после первой версии с маленькой
+  // карточкой посередине. Так до и после нажатия play экран выглядит
+  // одинаково, без скачка.
   Widget _startView(int count) {
     final t = _preview;
-    return Center(
-      child: SizedBox(
-        width: 260,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (t != null) ...[
-              CoverThumb(path: t.coverPath, url: coverUrlFor(t.id), size: 220, radius: 16),
-              const SizedBox(height: 16),
-              Text(t.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Afisha.ink, fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(t.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Afisha.inkDim)),
-              const SizedBox(height: 20),
-            ],
-            IconButton(
-              iconSize: 72,
-              color: Afisha.lime,
-              icon: const Icon(Icons.play_circle_filled),
-              onPressed: _start,
+    final coverPath = t?.coverPath;
+    final hasCover = coverPath != null && File(coverPath).existsSync();
+    final placeholder = Container(
+      color: Afisha.surfaceHi,
+      child: const Center(child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96)),
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (t == null)
+          placeholder
+        else if (hasCover)
+          Image.file(File(coverPath), fit: BoxFit.cover)
+        else
+          Image.network(
+            coverUrlFor(t.id),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => placeholder,
+            loadingBuilder: (context, child, progress) => progress == null ? child : placeholder,
+          ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.transparent, Colors.black],
+              stops: [0.35, 1.0],
             ),
-            const SizedBox(height: 12),
-            Text('Слушать вперемешку — $count песен',
-                style: const TextStyle(color: Afisha.inkDim)),
-          ],
+          ),
         ),
-      ),
+        SafeArea(
+          child: Column(
+            children: [
+              const Spacer(),
+              if (t != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                  child: Column(
+                    children: [
+                      Text(t.title,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      Text(t.artist, style: const TextStyle(color: Colors.white70)),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 12),
+              IconButton(
+                iconSize: 72,
+                color: Afisha.lime,
+                icon: const Icon(Icons.play_circle_filled),
+                onPressed: _start,
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: Text('Слушать вперемешку — $count песен',
+                    style: const TextStyle(color: Colors.white70)),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
