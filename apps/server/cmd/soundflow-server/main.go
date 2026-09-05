@@ -29,15 +29,11 @@ func main() {
 		log.Printf("база недоступна на старте (%v) — продолжаю, health скажет down", err)
 	}
 	if pool != nil {
-		if err := pool.Migrate(ctx); err != nil {
-			// Тоже не фатально: без базы сервер живёт, синк вернёт 503.
-			log.Printf("миграции не применились (%v) — продолжаю", err)
-		}
-		if n, err := legacy.Seed(ctx, pool); err != nil {
-			log.Printf("перенос старой разметки не удался (%v) — продолжаю", err)
-		} else if n > 0 {
-			log.Printf("перенесена разметка старого плеера: %d записей", n)
-		}
+		// Миграции и перенос разметки — в фоне с повторами, пока не выйдет.
+		// После ребута fg docker поднимается не сразу; раньше сервер стартовал
+		// с базой down и так и висел без схемы до ручного перезапуска
+		// (06.09.2026). Теперь докатывает сам, как только база отвечает.
+		go ensureSchema(ctx, pool)
 	}
 
 	sc := sidecar.New(cfg.SidecarURL)
@@ -85,4 +81,34 @@ func main() {
 		pool.Close()
 	}
 	log.Println("остановлен")
+}
+
+// ensureSchema накатывает миграции и перенос старой разметки, повторяя
+// попытки, пока база не станет доступна (после ребута fg docker поднимается
+// с задержкой). Бэкофф 5с → 1 мин. Перенос разметки не критичен — из-за
+// него не зацикливаемся.
+func ensureSchema(ctx context.Context, pool *db.Pool) {
+	for attempt := 1; ; attempt++ {
+		wait := time.Duration(attempt) * 5 * time.Second
+		if wait > time.Minute {
+			wait = time.Minute
+		}
+		if err := pool.Ping(ctx); err != nil {
+			log.Printf("схема: база пока недоступна (попытка %d, ещё через %s): %v", attempt, wait, err)
+			time.Sleep(wait)
+			continue
+		}
+		if err := pool.Migrate(ctx); err != nil {
+			log.Printf("схема: миграции не применились (попытка %d, ещё через %s): %v", attempt, wait, err)
+			time.Sleep(wait)
+			continue
+		}
+		if n, err := legacy.Seed(ctx, pool); err != nil {
+			log.Printf("схема: перенос разметки старого плеера не удался (%v) — не критично", err)
+		} else if n > 0 {
+			log.Printf("схема: перенесена разметка старого плеера: %d записей", n)
+		}
+		log.Printf("схема готова (попытка %d)", attempt)
+		return
+	}
 }
