@@ -171,6 +171,9 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
         title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text('${t.artist} · ${_mb(t.bytes)}',
             maxLines: 1, overflow: TextOverflow.ellipsis),
+        // Тап по всей строке — тоже играть, не только по стрелке (просьба
+        // Alex 05.09.2026: "на название нажал и заиграло").
+        onTap: () => _play(t),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
