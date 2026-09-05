@@ -43,6 +43,7 @@ dependencies:
   sqflite: ^2.4.1
   # Проигрывание аудиофайлов.
   just_audio: ^0.9.42
+  audio_service: ^0.18.19
 
 dev_dependencies:
   flutter_test:

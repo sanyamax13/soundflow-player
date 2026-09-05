@@ -111,13 +111,22 @@ class PlayerController {
     shuffle.value = v;
   }
 
+  /// Строго "играть" (не переключатель) — нужно внешнему управлению
+  /// (Bluetooth-магнитола, наушники, экран блокировки — см. audio_handler.dart,
+  /// 05.09.2026), которое присылает раздельные команды play/pause, а не тап
+  /// по одной кнопке.
+  Future<void> play() async => _player?.play();
+
+  /// Строго "пауза" — см. play().
+  Future<void> pause() async => _player?.pause();
+
   Future<void> toggle() async {
     final p = _player;
     if (p == null) return;
     if (p.playing) {
-      await p.pause();
+      await pause();
     } else {
-      await p.play();
+      await play();
     }
   }
 
