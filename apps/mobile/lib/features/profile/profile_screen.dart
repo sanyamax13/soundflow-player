@@ -36,7 +36,7 @@ class ProfileScreen extends StatelessWidget {
           _Row(
             icon: Icons.sync,
             title: 'Синхронизация',
-            subtitle: 'отправить события на сервер',
+            subtitle: 'уходит на сервер сама; можно и вручную',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SyncScreen()),
             ),

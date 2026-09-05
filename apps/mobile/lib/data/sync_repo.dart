@@ -21,6 +21,13 @@ class SyncRepo {
 
   final _rnd = Random.secure();
 
+  /// Дёргается после каждого нового события — [AutoSync] вешает сюда
+  /// отложенную попытку отправки (06.09.2026).
+  void Function()? onEnqueued;
+
+  /// Чтобы ручная кнопка и авто-синк не слали один и тот же батч дважды.
+  bool _inFlight = false;
+
   String _uuid() {
     final b = List<int>.generate(16, (_) => _rnd.nextInt(256));
     return b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
@@ -41,15 +48,18 @@ class SyncRepo {
     return s == null ? null : DateTime.tryParse(s);
   }
 
-  /// Записать событие в очередь. Уйдёт на сервер при следующей синхронизации.
-  Future<void> record(String kind, {String trackId = '', Map<String, Object?>? payload}) =>
-      _db.enqueueEvent(
-        uuid: _uuid(),
-        kind: kind,
-        trackId: trackId,
-        payload: jsonEncode(payload ?? const <String, Object?>{}),
-        clientTs: DateTime.now().millisecondsSinceEpoch,
-      );
+  /// Записать событие в очередь. Уйдёт на сервер при следующей синхронизации
+  /// (авто — как появится связь, либо руками кнопкой).
+  Future<void> record(String kind, {String trackId = '', Map<String, Object?>? payload}) async {
+    await _db.enqueueEvent(
+      uuid: _uuid(),
+      kind: kind,
+      trackId: trackId,
+      payload: jsonEncode(payload ?? const <String, Object?>{}),
+      clientTs: DateTime.now().millisecondsSinceEpoch,
+    );
+    onEnqueued?.call();
+  }
 
   Future<int> pendingCount() => _db.pendingCount();
 
@@ -57,6 +67,16 @@ class SyncRepo {
   /// принял как новые и сколько осталось в очереди. Бросает исключение,
   /// если сервер недоступен.
   Future<({int sent, int pending})> sync({int musicBytes = 0}) async {
+    if (_inFlight) return (sent: 0, pending: await _db.pendingCount());
+    _inFlight = true;
+    try {
+      return await _syncOnce(musicBytes);
+    } finally {
+      _inFlight = false;
+    }
+  }
+
+  Future<({int sent, int pending})> _syncOnce(int musicBytes) async {
     final pending = await _db.pendingEvents();
     if (pending.isEmpty) {
       await _db.kvSet(_kLastSync, DateTime.now().toIso8601String());

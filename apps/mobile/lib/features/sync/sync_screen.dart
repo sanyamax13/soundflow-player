@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme.dart';
 
 /// Карточка «Синхронизация»: сколько событий ждут отправки, когда синхронились
-/// в последний раз, кнопка отправить сейчас. Отправка — только руками
-/// (дома по Wi-Fi); авто-синк по сети — потом.
+/// в последний раз, кнопка отправить сейчас. Отправляется само, как появится
+/// связь (см. [AutoSync], 06.09.2026); кнопка — на всякий случай.
 class SyncScreen extends StatefulWidget {
   const SyncScreen({super.key});
 
@@ -17,11 +19,21 @@ class _SyncScreenState extends State<SyncScreen> {
   int? _pending;
   DateTime? _last;
   bool _busy = false;
+  Timer? _tick;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_pending == null) _load();
+    // Пока экран открыт — обновляем цифры, чтобы было видно, как авто-синк
+    // сам разгребает очередь.
+    _tick ??= Timer.periodic(const Duration(seconds: 3), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -90,7 +102,9 @@ class _SyncScreenState extends State<SyncScreen> {
           const SizedBox(height: 24),
           const Text(
             'Лайки, удаления и что слушал копятся на телефоне и работают без сети. '
-            'Дома по кнопке уходят на сервер. Одно и то же событие второй раз не задвоится.',
+            'Отправляются на сервер сами, как появляется связь с ним — обычно дома. '
+            'Кнопка выше — если хочется прямо сейчас. Одно и то же событие второй '
+            'раз не задвоится.',
             style: TextStyle(color: Afisha.inkDim, height: 1.4),
           ),
         ],

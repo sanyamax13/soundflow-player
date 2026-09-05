@@ -7,6 +7,7 @@ import 'app/app_scope.dart';
 import 'app/shell.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
+import 'data/auto_sync.dart';
 import 'data/db.dart';
 import 'data/downloads_repo.dart';
 import 'data/sync_repo.dart';
@@ -37,6 +38,9 @@ Future<void> main() async {
   // Докачать обложки уже скачанным трекам без неё — фоном, не ждём (может
   // быть небыстро на большой библиотеке). См. downloads_repo.dart, 05.09.2026.
   unawaited(downloads.backfillCovers());
+  // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
+  // (06.09.2026). Живёт всё время работы приложения.
+  AutoSync(sync, downloads).start();
   runApp(SoundFlowApp(api: api, downloads: downloads, player: player, sync: sync));
 }
 
