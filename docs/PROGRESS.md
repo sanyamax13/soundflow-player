@@ -9,6 +9,12 @@
 
 - `E:\soundflow` — этот репозиторий (создан 04.09.2026).
 - `apps/mobile` — Flutter, только Android. Разработка и сборка APK на brain.
+  **Собирать всегда `flutter build apk --release --split-per-abi`** (брать
+  `app-arm64-v8a-release.apk`). Флаг даёт versionCode со сдвигом по ABI
+  (arm64 = 2000 + номер сборки из pubspec); без него — versionCode 1, и
+  Android не ставит поверх уже стоящей у Alex сборки 2001+ («Приложение не
+  установлено», поймано 05.09.2026). Подпись — debug-ключ
+  (`E:\android-home\debug.keystore`, он же `~/.android/debug.keystore`).
 - `apps/server` — Go. Разработка на brain, деплой на fg (заменит старый Bun).
 - `docker-compose.yml` — PostgreSQL 17 + pgvector, порт 5433.
 - `migration/` — выгруженные со старого сервера списки (избранное, удалённое).
