@@ -107,12 +107,21 @@ class _PlayerViewState extends State<PlayerView> {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Text('Почему убираешь песню?',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+              child: Text(
+                'Почему убираешь песню?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
             for (final e in _deleteReasons.entries)
               ListTile(
-                title: Text(e.value, style: const TextStyle(color: Colors.white)),
+                title: Text(
+                  e.value,
+                  style: const TextStyle(color: Colors.white),
+                ),
                 onTap: () => Navigator.pop(ctx, e.key),
               ),
             const SizedBox(height: 8),
@@ -125,9 +134,9 @@ class _PlayerViewState extends State<PlayerView> {
     if (!mounted) return;
     await _p.next();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Убрал с телефона')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Убрал с телефона')));
   }
 
   String _mmss(Duration d) {
@@ -144,7 +153,10 @@ class _PlayerViewState extends State<PlayerView> {
         if (now == null) {
           return widget.emptyState ??
               const Center(
-                child: Text('Ничего не играет', style: TextStyle(color: Afisha.inkDim)),
+                child: Text(
+                  'Ничего не играет',
+                  style: TextStyle(color: Afisha.inkDim),
+                ),
               );
         }
         final coverPath = now.coverPath;
@@ -209,7 +221,10 @@ class _PlayerViewState extends State<PlayerView> {
                       child: Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Colors.white,
+                            ),
                             onPressed: widget.onDismiss,
                           ),
                         ],
@@ -217,62 +232,97 @@ class _PlayerViewState extends State<PlayerView> {
                     ),
                   const Spacer(),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
                     child: Column(
                       children: [
-                        Text(now.title,
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600)),
+                        Text(
+                          now.title,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         const SizedBox(height: 6),
-                        Text(now.artist, style: const TextStyle(color: Colors.white70)),
+                        Text(
+                          now.artist,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
                         const SizedBox(height: 20),
                         _ProgressBar(controller: _p, label: _mmss),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _p.shuffle,
-                              builder: (_, sh, _) => IconButton(
-                                icon: Icon(Icons.shuffle,
-                                    color: sh ? Afisha.lime : Colors.white70),
-                                onPressed: _p.toggleShuffle,
-                              ),
+                      ],
+                    ),
+                  ),
+                  // Отдельный, более узкий отступ — шесть кнопок (после того как
+                  // корзина переехала сюда) на 24px с каждой стороны, как у
+                  // текста, не влезали (реально поймано на скриншоте
+                  // эмулятора: "RIGHT OVERFLOWED"), тексту столько не нужно.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _p.shuffle,
+                          builder: (_, sh, _) => IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            icon: Icon(
+                              Icons.shuffle,
+                              color: sh ? Afisha.lime : Colors.white70,
                             ),
-                            IconButton(
-                              iconSize: 40,
-                              color: Colors.white,
-                              icon: const Icon(Icons.skip_previous),
-                              onPressed: _p.prev,
+                            onPressed: _p.toggleShuffle,
+                          ),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          iconSize: 36,
+                          color: Colors.white,
+                          icon: const Icon(Icons.skip_previous),
+                          onPressed: _p.prev,
+                        ),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _p.playing,
+                          builder: (_, pl, _) => IconButton(
+                            iconSize: 64,
+                            color: Afisha.lime,
+                            icon: Icon(
+                              pl
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_filled,
                             ),
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _p.playing,
-                              builder: (_, pl, _) => IconButton(
-                                iconSize: 64,
-                                color: Afisha.lime,
-                                icon: Icon(pl ? Icons.pause_circle_filled : Icons.play_circle_filled),
-                                onPressed: _p.toggle,
-                              ),
-                            ),
-                            IconButton(
-                              iconSize: 40,
-                              color: Colors.white,
-                              icon: const Icon(Icons.skip_next),
-                              onPressed: _p.next,
-                            ),
-                            IconButton(
-                              icon: Icon(_fav ? Icons.favorite : Icons.favorite_border,
-                                  color: _fav ? Afisha.lime : Colors.white70),
-                              onPressed: _toggleFav,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.white70),
-                              onPressed: () => _confirmDelete(now),
-                            ),
-                          ],
+                            onPressed: _p.toggle,
+                          ),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          iconSize: 36,
+                          color: Colors.white,
+                          icon: const Icon(Icons.skip_next),
+                          onPressed: _p.next,
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: Icon(
+                            _fav ? Icons.favorite : Icons.favorite_border,
+                            color: _fav ? Afisha.lime : Colors.white70,
+                          ),
+                          onPressed: _toggleFav,
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.white70,
+                          ),
+                          onPressed: () => _confirmDelete(now),
                         ),
                       ],
                     ),
@@ -300,21 +350,27 @@ class _ProgressBar extends StatelessWidget {
         valueListenable: controller.position,
         builder: (context, pos, _) {
           final total = dur.inMilliseconds;
-          final value = total <= 0 ? 0.0 : pos.inMilliseconds.clamp(0, total).toDouble();
+          final value = total <= 0
+              ? 0.0
+              : pos.inMilliseconds.clamp(0, total).toDouble();
           return Column(
             children: [
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 3,
-                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 12,
+                  ),
                 ),
                 child: Slider(
                   value: value,
                   max: total <= 0 ? 1 : total.toDouble(),
                   activeColor: Afisha.lime,
                   inactiveColor: Colors.white24,
-                  onChanged:
-                      total <= 0 ? null : (v) => controller.seek(Duration(milliseconds: v.round())),
+                  onChanged: total <= 0
+                      ? null
+                      : (v) =>
+                            controller.seek(Duration(milliseconds: v.round())),
                 ),
               ),
               Padding(
@@ -322,8 +378,20 @@ class _ProgressBar extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(label(pos), style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                    Text(label(dur), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    Text(
+                      label(pos),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                    Text(
+                      label(dur),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
