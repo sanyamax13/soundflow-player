@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 
@@ -32,6 +34,9 @@ Future<void> main() async {
       androidNotificationOngoing: true,
     ),
   );
+  // Докачать обложки уже скачанным трекам без неё — фоном, не ждём (может
+  // быть небыстро на большой библиотеке). См. downloads_repo.dart, 05.09.2026.
+  unawaited(downloads.backfillCovers());
   runApp(SoundFlowApp(api: api, downloads: downloads, player: player, sync: sync));
 }
 

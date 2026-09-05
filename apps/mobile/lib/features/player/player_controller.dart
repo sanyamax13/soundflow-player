@@ -1,13 +1,39 @@
 import 'dart:async';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 /// Обёртка над проигрывателем. Держит очередь локальных файлов (офлайн),
-/// отдаёт наружу простые ValueNotifier'ы для UI. Фон/локскрин
-/// (`audio_service`), гэплесс, нормализация — следующими шагами.
+/// отдаёт наружу простые ValueNotifier'ы для UI. Фон/локскрин — через
+/// `audio_service` (см. audio_handler.dart). Гэплесс, нормализация —
+/// следующими шагами.
 class PlayerController {
-  PlayerController({this.onPlay, this.onSkip});
+  PlayerController({this.onPlay, this.onSkip}) {
+    _initSession();
+  }
+
+  // Пришло что-то поверх музыки (голосовое в мессенджере, звонок) и это
+  // временно (не насовсем отдали фокус другому приложению) — запоминаем,
+  // что играли, чтобы вернуть звук, когда прерывание закончится. Без этого
+  // музыка просто остаётся на паузе навсегда — баг, который Alex поймал в
+  // реальной жизни 05.09.2026 (дослушал голосовое, музыка не продолжилась).
+  bool _resumeAfterInterruption = false;
+
+  Future<void> _initSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+    session.interruptionEventStream.listen((event) {
+      if (event.begin) {
+        _resumeAfterInterruption = playing.value &&
+            (event.type == AudioInterruptionType.pause ||
+                event.type == AudioInterruptionType.duck);
+      } else if (_resumeAfterInterruption) {
+        _resumeAfterInterruption = false;
+        play();
+      }
+    });
+  }
 
   /// Вызывается, когда трек начал играть (в т.ч. авто-переход к следующему) —
   /// сюда вешаем запись события «слушал».

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../core/config.dart';
 import 'api.dart';
 import 'db.dart';
 import 'sync_repo.dart';
@@ -91,6 +92,43 @@ class DownloadsRepo {
     await _db.deleteDownloaded(id);
     await _sync?.record('delete',
         trackId: id, payload: reason == null ? null : {'reason': reason});
+  }
+
+  /// Докачать обложки уже скачанным трекам, у которых их пока нет — чтобы
+  /// показывались сразу с диска, без подгрузки по сети каждый раз (05.09.2026,
+  /// просьба Alex после того как обложки заработали: "надо сделать всё
+  /// офлайн, чтобы обложки не подгружались"). Вызывается фоном при старте
+  /// приложения (main.dart) — не мешает пользоваться, пока идёт; не нашлась
+  /// обложка сейчас — трек просто остаётся без нее до следующего запуска
+  /// (сервер может позже сам найти через другой источник, см. этап 24).
+  Future<void> backfillCovers({int concurrency = 5}) async {
+    final rows = await _db.allDownloaded();
+    final pending = [
+      for (final t in rows)
+        if (t.coverPath == null || !File(t.coverPath!).existsSync()) t,
+    ];
+    for (var i = 0; i < pending.length; i += concurrency) {
+      await Future.wait(pending.skip(i).take(concurrency).map(_fetchCoverFor));
+    }
+  }
+
+  Future<void> _fetchCoverFor(DownloadedTrack t) async {
+    try {
+      final cp = '${(await _coversDir()).path}/${t.id}.jpg';
+      await _api.downloadCover(coverUrlFor(t.id), cp);
+      await _db.upsertDownloaded(DownloadedTrack(
+        id: t.id,
+        title: t.title,
+        artist: t.artist,
+        path: t.path,
+        bytes: t.bytes,
+        addedAt: t.addedAt,
+        favorite: t.favorite,
+        coverPath: cp,
+      ));
+    } catch (_) {
+      // не нашлась — не страшно, попробуем в другой раз при следующем запуске
+    }
   }
 
   Future<void> setFavorite(String id, bool value) async {
