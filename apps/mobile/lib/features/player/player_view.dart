@@ -35,6 +35,19 @@ class _PlayerViewState extends State<PlayerView> {
   bool _wired = false;
   String? _favTrackId;
   bool _fav = false;
+
+  // Причины удаления (05.09.2026, просьба Alex): чтобы потом было видно,
+  // какие песни объективно плохие (качество, не та версия, не музыка), а
+  // какие просто не по вкусу — это разные сигналы для будущей настройки
+  // фильтров/подбора, их стоит различать сразу, не задним числом.
+  static const _deleteReasons = <String, String>{
+    'dislike': 'Не нравится песня',
+    'bad_quality': 'Плохое качество звука',
+    'wrong_version': 'Не та версия (кавер, ремикс и т.п.)',
+    'not_music': 'Это не музыка (подкаст, интервью)',
+    'tired': 'Просто надоела',
+    'other': 'Другая причина',
+  };
   // Ссылку на контроллер держим в поле, а не берём через AppScope.of(context)
   // по требованию — в dispose() контекст уже недействителен (баг вылез,
   // когда этот экран впервые стал не только пуш-маршрутом, а телом вкладки
@@ -79,6 +92,42 @@ class _PlayerViewState extends State<PlayerView> {
     final v = !_fav;
     setState(() => _fav = v);
     await AppScope.of(context).downloads.setFavorite(cur.id, v);
+  }
+
+  /// Спросить причину и убрать трек с телефона (и с сервера — через обычную
+  /// синхронизацию, как и раньше). Играющий сейчас трек — переходим на
+  /// следующий, чтобы не залипнуть на убранном.
+  Future<void> _confirmDelete(NowPlaying now) async {
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Afisha.surfaceHi,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('Почему убираешь песню?',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+            for (final e in _deleteReasons.entries)
+              ListTile(
+                title: Text(e.value, style: const TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(ctx, e.key),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+    await AppScope.of(context).downloads.delete(now.id, reason: reason);
+    if (!mounted) return;
+    await _p.next();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Убрал с телефона')),
+    );
   }
 
   String _mmss(Duration d) {
@@ -150,14 +199,24 @@ class _PlayerViewState extends State<PlayerView> {
             SafeArea(
               child: Column(
                 children: [
-                  if (widget.onDismiss != null)
-                    Align(
-                      alignment: Alignment.topLeft,
-                      child: IconButton(
-                        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-                        onPressed: widget.onDismiss,
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        widget.onDismiss != null
+                            ? IconButton(
+                                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                                onPressed: widget.onDismiss,
+                              )
+                            : const SizedBox(width: 48),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.white70),
+                          onPressed: () => _confirmDelete(now),
+                        ),
+                      ],
                     ),
+                  ),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),

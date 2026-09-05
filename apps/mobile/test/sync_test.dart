@@ -1,6 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
+import 'package:soundflow/data/downloads_repo.dart';
+import 'package:soundflow/data/sync_repo.dart';
 
 void main() {
   setUpAll(sqfliteFfiInit);
@@ -37,6 +42,42 @@ void main() {
     final db = await freshDb();
     await db.markSynced([]);
     expect(await db.pendingCount(), 0);
+    await db.close();
+  });
+
+  test('удаление трека с причиной кладёт её в очередь событий (05.09.2026)', () async {
+    final db = await freshDb();
+    final sync = SyncRepo(Api(), db);
+    final downloads = DownloadsRepo(Api(), db, sync);
+
+    await db.upsertDownloaded(DownloadedTrack(
+      id: 't1', title: 'Песня', artist: 'Кто-то', path: '/tmp/does-not-exist', bytes: 1, addedAt: 1,
+    ));
+
+    await downloads.delete('t1', reason: 'dislike');
+
+    final pend = await db.pendingEvents();
+    final del = pend.singleWhere((e) => e['kind'] == 'delete');
+    expect(jsonDecode('${del['payload']}'), {'reason': 'dislike'});
+
+    await db.close();
+  });
+
+  test('удаление без причины — payload пустой (свайп в «Моей музыке»)', () async {
+    final db = await freshDb();
+    final sync = SyncRepo(Api(), db);
+    final downloads = DownloadsRepo(Api(), db, sync);
+
+    await db.upsertDownloaded(DownloadedTrack(
+      id: 't1', title: 'Песня', artist: 'Кто-то', path: '/tmp/does-not-exist', bytes: 1, addedAt: 1,
+    ));
+
+    await downloads.delete('t1');
+
+    final pend = await db.pendingEvents();
+    final del = pend.singleWhere((e) => e['kind'] == 'delete');
+    expect(jsonDecode('${del['payload']}'), <String, Object?>{});
+
     await db.close();
   });
 

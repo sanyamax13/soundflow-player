@@ -107,6 +107,9 @@ type EventInfo struct {
 	DeviceID  string    `json:"device_id"`
 	ClientTS  int64     `json:"client_ts"`
 	AppliedAt time.Time `json:"applied_at"`
+	// Reason — причина удаления (см. PlayerView, 05.09.2026), пусто для
+	// остальных видов событий и для удалений без выбранной причины.
+	Reason string `json:"reason,omitempty"`
 }
 
 func (d *Pool) RecentEvents(ctx context.Context, limit int) ([]EventInfo, error) {
@@ -114,7 +117,7 @@ func (d *Pool) RecentEvents(ctx context.Context, limit int) ([]EventInfo, error)
 		return nil, errNoDB
 	}
 	rows, err := d.p.Query(ctx, `
-		SELECT kind, track_id, device_id, client_ts, applied_at
+		SELECT kind, track_id, device_id, client_ts, applied_at, COALESCE(payload->>'reason', '')
 		FROM sync_events ORDER BY applied_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -123,7 +126,7 @@ func (d *Pool) RecentEvents(ctx context.Context, limit int) ([]EventInfo, error)
 	out := make([]EventInfo, 0)
 	for rows.Next() {
 		var e EventInfo
-		if err := rows.Scan(&e.Kind, &e.TrackID, &e.DeviceID, &e.ClientTS, &e.AppliedAt); err != nil {
+		if err := rows.Scan(&e.Kind, &e.TrackID, &e.DeviceID, &e.ClientTS, &e.AppliedAt, &e.Reason); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

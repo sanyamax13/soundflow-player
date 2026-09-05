@@ -174,12 +174,32 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
 		}
 		local := s.PathMap.ToLocal(canonical)
+		reason := deleteReason(e.Payload)
 		if err := pathmap.MoveToTrash(s.PathMap, local); err != nil {
 			log.Printf("delete-event %s: файл в корзину (%s): %v", e.TrackID, local, err)
+		} else if reason != "" {
+			log.Printf("delete-event %s: убран у себя (%s), причина: %s", e.TrackID, local, reason)
 		} else {
 			log.Printf("delete-event %s: убран у себя (%s)", e.TrackID, local)
 		}
 	}
+}
+
+// deleteReason — причина удаления из payload события (см. PlayerView на
+// телефоне, 05.09.2026: Alex попросил спрашивать, почему убирает песню, —
+// "не нравится"/"плохое качество"/"не музыка" и т.п.). Пусто — телефон
+// постарше, не присылал причину, или причина не выбрана.
+func deleteReason(payload json.RawMessage) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	var v struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return ""
+	}
+	return v.Reason
 }
 
 func (s *Server) syncReport(w http.ResponseWriter, r *http.Request) {

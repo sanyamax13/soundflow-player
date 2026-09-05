@@ -89,6 +89,54 @@ func TestSaveSyncDedupe(t *testing.T) {
 	}
 }
 
+func TestRecentEventsIncludesReason(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	dev := Device{ID: "test-dev-reason-" + time.Now().Format("150405.000000")}
+	t.Cleanup(func() {
+		_, _ = p.p.Exec(ctx, `DELETE FROM sync_events WHERE device_id = $1`, dev.ID)
+		_, _ = p.p.Exec(ctx, `DELETE FROM devices WHERE id = $1`, dev.ID)
+	})
+
+	// Удаление с причиной (см. PlayerView, 05.09.2026) — payload несёт
+	// {"reason": "..."}; обычное событие без payload — reason пустой.
+	ev := []SyncEvent{
+		{UUID: dev.ID + "-del", Kind: "delete", TrackID: "t1", Payload: []byte(`{"reason":"dislike"}`)},
+		{UUID: dev.ID + "-like", Kind: "like", TrackID: "t2"},
+	}
+	if _, err := p.SaveSync(ctx, dev, ev); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	list, err := p.RecentEvents(ctx, 1000)
+	if err != nil {
+		t.Fatalf("RecentEvents: %v", err)
+	}
+	var gotDelete, gotLike bool
+	for _, e := range list {
+		switch e.TrackID {
+		case "t1":
+			gotDelete = true
+			if e.Reason != "dislike" {
+				t.Errorf("удаление t1: ждал reason=dislike, получил %q", e.Reason)
+			}
+		case "t2":
+			gotLike = true
+			if e.Reason != "" {
+				t.Errorf("лайк t2: ждал пустой reason, получил %q", e.Reason)
+			}
+		}
+	}
+	if !gotDelete || !gotLike {
+		t.Fatalf("не нашёл оба тестовых события в ленте: delete=%v like=%v", gotDelete, gotLike)
+	}
+}
+
 func TestAdminStatusShape(t *testing.T) {
 	p := testPool(t)
 	ctx := context.Background()

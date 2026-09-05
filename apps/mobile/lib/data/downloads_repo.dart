@@ -78,14 +78,19 @@ class DownloadsRepo {
     return size;
   }
 
-  Future<void> delete(String id) async {
+  /// [reason] — почему убрали (см. player_view.dart, 05.09.2026: Alex
+  /// попросил спрашивать причину, чтобы потом было видно, какие песни
+  /// правда плохие, а какие просто не по вкусу). Необязательный — старые
+  /// места вызова (свайп в «Моей музыке») пока без причины.
+  Future<void> delete(String id, {String? reason}) async {
     final row = await _db.downloadedById(id);
     if (row != null) {
       final f = File(row.path);
       if (f.existsSync()) f.deleteSync();
     }
     await _db.deleteDownloaded(id);
-    await _sync?.record('delete', trackId: id);
+    await _sync?.record('delete',
+        trackId: id, payload: reason == null ? null : {'reason': reason});
   }
 
   Future<void> setFavorite(String id, bool value) async {
