@@ -425,19 +425,21 @@ type CoverCandidate struct {
 	Artist   string
 	Title    string
 	FilePath string
-	// CoverURL — значение до этого догона ("" — впервые, "none" — уже
-	// смотрели раньше во всех источниках того раза, не нашли). Позволяет
-	// догону не повторять источники, которые уже точно ничего не дали.
+	// CoverURL — значение до этого догона ("" — всегда, раз попадает в
+	// выборку; поле оставлено на будущее, если WHERE снова расширят).
 	CoverURL string
 }
 
-// TracksMissingCoverURL — треки, у которых обложки ещё нет и стоит
-// попробовать ещё раз. Догон сам решает, помечать ли трек: "" — не
-// смотрели, "embedded" — обложка своя, в файле (см. coverart.Embedded, в БД
-// её не храним, ручка /v1/cover/{id} достаёт из файла заново), "none" —
-// смотрели во всех известных источниках, не нашли (но следующий догон,
-// если появится новый источник, попробует снова — оттого и "none" тоже в
-// выборке), http(s)-ссылка — нашли внешнюю (эти уже не трогаем).
+// TracksMissingCoverURL — треки, у которых cover_url ещё пустой (никогда не
+// смотрели вообще ни в одном источнике). Догон сам решает, чем пометить
+// результат: "" — не смотрели, "embedded" — обложка своя, в файле (см.
+// coverart.Embedded, в БД её не храним, ручка /v1/cover/{id} достаёт из
+// файла заново), "none" — смотрели везде, не нашли, терминально: сюда же
+// в выборку больше не попадает (иначе цикл не кончается — баг 05.09.2026,
+// когда WHERE пускал и "none" на пересмотр и догон крутился по кругу
+// бесконечно). Появится новый источник обложек — сознательно сбросить
+// "none" обратно на "" вручную, разовым UPDATE. http(s)-ссылка — нашли
+// внешнюю.
 func (d *Pool) TracksMissingCoverURL(ctx context.Context, limit int) ([]CoverCandidate, error) {
 	if d == nil || d.p == nil {
 		return nil, errNoDB
@@ -446,7 +448,7 @@ func (d *Pool) TracksMissingCoverURL(ctx context.Context, limit int) ([]CoverCan
 		SELECT t.id, t.artist, t.title, tf.file_path, t.cover_url
 		FROM tracks t
 		JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
-		WHERE t.cover_url IN ('', 'none')
+		WHERE t.cover_url = ''
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

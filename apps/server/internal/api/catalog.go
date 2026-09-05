@@ -307,11 +307,14 @@ var backfillCoversRunning atomic.Bool
 // просьбе Alex — сперва "давай найдём обложку у тех, у кого её нет" (после
 // того как выяснилось, что 57% старой библиотеки несёт обложку прямо в
 // файле), затем "для тех, у кого не нашлось, поищи в интернете" — добавлен
-// iTunes вторым источником. Трек, для которого раньше уже смотрели везде и
-// не нашли (метка "none"), Яндекс второй раз не спрашиваем — сразу iTunes,
-// незачем повторять источник, который уже точно ничего не даст. Файл со
-// своей обложкой не трогаем (ручка /v1/cover уже отдаёт её из файла) —
-// только помечаем "embedded", чтобы не проверять по кругу.
+// iTunes вторым источником. Берёт только треки, которые не смотрели вообще
+// ни разу ("" — см. db.TracksMissingCoverURL) — трек, помеченный "none",
+// сюда больше не попадает: раньше выборка пускала "none" на пересмотр при
+// каждом новом источнике, и догон крутился по кругу бесконечно, не
+// заканчиваясь (баг найден и исправлен 05.09.2026). Появится третий
+// источник — сбросить нужные "none" обратно на "" вручную, разовым UPDATE.
+// Файл со своей обложкой не трогаем (ручка /v1/cover уже отдаёт её из
+// файла) — только помечаем "embedded", чтобы не проверять по кругу.
 // Сеть — не быстро; работает фоном, как /v1/admin/reanalyze.
 func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
 	if s.Acquire == nil || s.DB.Ping(r.Context()) != nil {
@@ -342,13 +345,10 @@ func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
 					embedded++
 					continue
 				}
-				url := ""
-				if c.CoverURL != "none" { // раньше не смотрели вообще — пробуем Яндекс
-					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					url, _ = s.Acquire.Finder.YandexTrackCover(bg, c.Artist, c.Title)
-					cancel()
-				}
-				if url == "" { // Яндекс не нашёл (или уже не спрашивали) — пробуем iTunes
+				bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				url, _ := s.Acquire.Finder.YandexTrackCover(bg, c.Artist, c.Title)
+				cancel()
+				if url == "" { // Яндекс не нашёл — пробуем iTunes
 					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					url, _ = itunes.Cover(bg, c.Artist, c.Title)
 					cancel()
