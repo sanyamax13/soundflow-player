@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import 'now_playing_screen.dart';
@@ -48,7 +49,7 @@ class MiniPlayer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
               child: Row(
                 children: [
-                  CoverThumb(path: now.coverPath, size: 40),
+                  CoverThumb(path: now.coverPath, url: coverUrlFor(now.id), size: 40),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
@@ -152,7 +153,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
 
   Widget _row(DownloadedTrack t) => ListTile(
         contentPadding: const EdgeInsets.only(left: 16, right: 4),
-        leading: CoverThumb(path: t.coverPath, size: 44),
+        leading: CoverThumb(path: t.coverPath, url: coverUrlFor(t.id), size: 44),
         title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text('${t.artist} · ${_mb(t.bytes)}',
             maxLines: 1, overflow: TextOverflow.ellipsis),

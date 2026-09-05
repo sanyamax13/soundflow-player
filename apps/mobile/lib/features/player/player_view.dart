@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/config.dart';
 import '../../core/theme.dart';
 import 'player_controller.dart';
 
@@ -99,19 +100,29 @@ class _PlayerViewState extends State<PlayerView> {
         }
         final coverPath = now.coverPath;
         final hasCover = coverPath != null && File(coverPath).existsSync();
+        final placeholder = Container(
+          color: Afisha.surfaceHi,
+          child: const Center(
+            child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
+          ),
+        );
         return Stack(
           key: ValueKey(now.id),
           fit: StackFit.expand,
           children: [
-            // Обложка на весь экран — фон. Нет обложки — тёмная заглушка
-            // с той же нотой, что и везде в списках.
+            // Обложка на весь экран — фон. Локальный файл (уже скачана) —
+            // приоритет; иначе пробуем достать с сервера (см. cover_url_for,
+            // 05.09.2026 — у старой перенесённой библиотеки локальной
+            // обложки нет, но сервер может вытащить её прямо из mp3-файла).
+            // Не вышло ни то ни другое — тёмная заглушка с нотой.
             hasCover
                 ? Image.file(File(coverPath), fit: BoxFit.cover)
-                : Container(
-                    color: Afisha.surfaceHi,
-                    child: const Center(
-                      child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
-                    ),
+                : Image.network(
+                    coverUrlFor(now.id),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => placeholder,
+                    loadingBuilder: (context, child, progress) =>
+                        progress == null ? child : placeholder,
                   ),
             // Градиент снизу — чтобы текст и кнопки читались на любой обложке.
             const DecoratedBox(

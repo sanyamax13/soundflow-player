@@ -41,6 +41,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/library/next-batch", s.libraryNextBatch)
 			r.Get("/trash", s.trashList)
 			r.Post("/trash/restore", s.trashRestore)
+			r.Get("/cover/{id}", s.cover)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Get("/sync/report", s.syncReport)

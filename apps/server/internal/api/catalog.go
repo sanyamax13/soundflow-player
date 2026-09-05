@@ -6,9 +6,13 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/dhowden/tag"
+	"github.com/go-chi/chi/v5"
 
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/importer"
@@ -135,6 +139,49 @@ func (s *Server) trashRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"restored": true})
+}
+
+// GET /v1/cover/{id} — обложка прямо из файла трека (кто рипал альбом,
+// обычно её туда и зашивал). Добавлено 05.09.2026: Alex спросил, почему у
+// перенесённой старой библиотеки (этап 12) нет обложек — потому что при
+// переносе (importer.Scan) их никто не искал, cover_url заполняется только
+// для треков через acquire (там ищем в Яндексе). Тут — без похода в сеть,
+// сразу из уже лежащего на диске файла. У кого в файле обложки нет — 404,
+// телефон это уже умеет проглатывать (серый плейсхолдер), ничего не ломает.
+func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if s.DB.Ping(r.Context()) != nil {
+		http.Error(w, "база недоступна", http.StatusServiceUnavailable)
+		return
+	}
+	canonical, ok, err := s.DB.TrackFilePath(r.Context(), id)
+	if err != nil || !ok {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := os.Open(s.PathMap.ToLocal(canonical))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	m, err := tag.ReadFrom(f)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	pic := m.Picture()
+	if pic == nil || len(pic.Data) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	ct := pic.MIMEType
+	if ct == "" {
+		ct = "image/jpeg"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=604800") // неделя — обложка файла не меняется
+	_, _ = w.Write(pic.Data)
 }
 
 type nextBatchReq struct {
