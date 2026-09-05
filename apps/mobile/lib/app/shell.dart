@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme.dart';
 import '../features/my_music/my_music_screen.dart';
 import '../features/player/mini_player.dart';
 import '../features/profile/profile_screen.dart';
@@ -39,6 +40,20 @@ class _ShellState extends State<Shell> {
           // На «Потоке» и так на весь экран управление плеером — полоска
           // здесь была бы тем же самым второй раз (05.09.2026).
           if (_tab != 0) MiniPlayer(controller: AppScope.of(context).player),
+          // Плавный переход от полноэкранного плеера к нижнему меню — мягкая
+          // полоса-градиент вместо резкого стыка чёрного низа плеера и
+          // панели #0F0F0F (Alex 06.09.2026).
+          if (_tab == 0)
+            Container(
+              height: 36,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Afisha.surface],
+                ),
+              ),
+            ),
           NavigationBar(
             selectedIndex: _tab,
             onDestinationSelected: (i) => setState(() => _tab = i),
