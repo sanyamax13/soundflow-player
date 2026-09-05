@@ -199,24 +199,22 @@ class _PlayerViewState extends State<PlayerView> {
             SafeArea(
               child: Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        widget.onDismiss != null
-                            ? IconButton(
-                                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-                                onPressed: widget.onDismiss,
-                              )
-                            : const SizedBox(width: 48),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.white70),
-                          onPressed: () => _confirmDelete(now),
-                        ),
-                      ],
+                  // Корзина (удалить) — перенесена вниз, в ряд с остальным
+                  // управлением (05.09.2026, просьба Alex): в углу до неё
+                  // неудобно тянуться пальцем, что правой рукой держи телефон,
+                  // что левой.
+                  if (widget.onDismiss != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                            onPressed: widget.onDismiss,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
@@ -269,6 +267,10 @@ class _PlayerViewState extends State<PlayerView> {
                               icon: Icon(_fav ? Icons.favorite : Icons.favorite_border,
                                   color: _fav ? Afisha.lime : Colors.white70),
                               onPressed: _toggleFav,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.white70),
+                              onPressed: () => _confirmDelete(now),
                             ),
                           ],
                         ),
