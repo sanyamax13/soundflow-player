@@ -15,6 +15,7 @@ import (
 
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/coverart"
+	"soundflow/server/internal/deezer"
 	"soundflow/server/internal/importer"
 	"soundflow/server/internal/itunes"
 	"soundflow/server/internal/pathmap"
@@ -303,19 +304,23 @@ var backfillCoversRunning atomic.Bool
 
 // POST /v1/admin/backfill-covers — досчитать обложки трекам без своей в
 // файле: спросить Яндекс.Музыку (тот же сайдкар, что и acquire), не нашлось —
-// спросить iTunes Search (открытый API, без ключа). Добавлено 05.09.2026 по
-// просьбе Alex — сперва "давай найдём обложку у тех, у кого её нет" (после
-// того как выяснилось, что 57% старой библиотеки несёт обложку прямо в
-// файле), затем "для тех, у кого не нашлось, поищи в интернете" — добавлен
-// iTunes вторым источником. Берёт только треки, которые не смотрели вообще
-// ни разу ("" — см. db.TracksMissingCoverURL) — трек, помеченный "none",
-// сюда больше не попадает: раньше выборка пускала "none" на пересмотр при
-// каждом новом источнике, и догон крутился по кругу бесконечно, не
-// заканчиваясь (баг найден и исправлен 05.09.2026). Появится третий
-// источник — сбросить нужные "none" обратно на "" вручную, разовым UPDATE.
-// Файл со своей обложкой не трогаем (ручка /v1/cover уже отдаёт её из
-// файла) — только помечаем "embedded", чтобы не проверять по кругу.
-// Сеть — не быстро; работает фоном, как /v1/admin/reanalyze.
+// iTunes Search, всё ещё не нашлось — Deezer Search (оба открытые API без
+// ключа). Добавлено 05.09.2026 по просьбе Alex — сперва "давай найдём
+// обложку у тех, у кого её нет" (после того как выяснилось, что 57% старой
+// библиотеки несёт обложку прямо в файле), затем "для тех, у кого не
+// нашлось, поищи в интернете" (iTunes, почти ничего не добавил — 7 из
+// 1673) и следом "надо сделать веб-ресерч чтобы найти все обложки" (Deezer;
+// MusicBrainz для сравнения оказался недоступен — заблокирован — и с brain,
+// и с fg, проверено напрямую). Берёт только треки, которые не смотрели
+// вообще ни разу ("" — см. db.TracksMissingCoverURL) — трек, помеченный
+// "none", сюда больше не попадает: раньше выборка пускала "none" на
+// пересмотр при каждом новом источнике, и догон крутился по кругу
+// бесконечно, не заканчиваясь (баг найден и исправлен 05.09.2026). Новый
+// источник обложек — сбросить нужные "none" обратно на "" вручную, разовым
+// UPDATE (как сделано для Deezer). Файл со своей обложкой не трогаем
+// (ручка /v1/cover уже отдаёт её из файла) — только помечаем "embedded",
+// чтобы не проверять по кругу. Сеть — не быстро; работает фоном, как
+// /v1/admin/reanalyze.
 func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
 	if s.Acquire == nil || s.DB.Ping(r.Context()) != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "сервер не готов"})
@@ -351,6 +356,11 @@ func (s *Server) adminBackfillCovers(w http.ResponseWriter, r *http.Request) {
 				if url == "" { // Яндекс не нашёл — пробуем iTunes
 					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					url, _ = itunes.Cover(bg, c.Artist, c.Title)
+					cancel()
+				}
+				if url == "" { // iTunes тоже не нашёл — пробуем Deezer
+					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					url, _ = deezer.Cover(bg, c.Artist, c.Title)
 					cancel()
 				}
 				if url == "" {
