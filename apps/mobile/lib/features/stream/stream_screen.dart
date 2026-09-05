@@ -1,12 +1,11 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
+import '../player/cover_backdrop.dart';
 import '../player/player_controller.dart';
 import '../player/player_view.dart';
 
@@ -81,8 +80,6 @@ class _StreamScreenState extends State<StreamScreen> {
   // одинаково, без скачка.
   Widget _startView(int count) {
     final t = _preview;
-    final coverPath = t?.coverPath;
-    final hasCover = coverPath != null && File(coverPath).existsSync();
     final placeholder = Container(
       color: Afisha.surfaceHi,
       child: const Center(child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96)),
@@ -90,17 +87,11 @@ class _StreamScreenState extends State<StreamScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (t == null)
-          placeholder
-        else if (hasCover)
-          Image.file(File(coverPath), fit: BoxFit.cover)
-        else
-          Image.network(
-            coverUrlFor(t.id),
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => placeholder,
-            loadingBuilder: (context, child, progress) => progress == null ? child : placeholder,
-          ),
+        // Та же обложка, что в плеере: целая по центру + размытая копия
+        // фоном (вариант «с размытым фоном», Alex 05.09.2026).
+        t == null
+            ? placeholder
+            : CoverBackdrop(trackId: t.id, localPath: t.coverPath),
         const DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(

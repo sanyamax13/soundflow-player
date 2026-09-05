@@ -1,15 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../core/config.dart';
 import '../../core/theme.dart';
+import 'cover_backdrop.dart';
 import 'player_controller.dart';
 
-/// Тело полноэкранного плеера: обложка на весь экран фоном (вариант «C» из
-/// показанных Alex 5 макетов, 04.09.2026 — выбрал этот), поверх нижней части —
-/// градиент и управление (перемотка, назад/вперёд, пауза, перемешивание,
+/// Тело полноэкранного плеера: обложка целиком по центру + её размытая копия
+/// фоном (вариант «с размытым фоном», Alex 05.09.2026 — раньше обложка
+/// растягивалась на весь экран и у квадратных резались края), поверх нижней
+/// части — градиент и управление (перемотка, назад/вперёд, пауза, перемешивание,
 /// сердечко). Общий виджет для двух мест (05.09.2026, Alex попросил убрать
 /// список из «Потока» и оставить только это как стартовый экран вкладки):
 /// - вкладка «Поток» вставляет его прямо в тело, без кнопки закрытия;
@@ -159,32 +158,15 @@ class _PlayerViewState extends State<PlayerView> {
                 ),
               );
         }
-        final coverPath = now.coverPath;
-        final hasCover = coverPath != null && File(coverPath).existsSync();
-        final placeholder = Container(
-          color: Afisha.surfaceHi,
-          child: const Center(
-            child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
-          ),
-        );
         return Stack(
           key: ValueKey(now.id),
           fit: StackFit.expand,
           children: [
-            // Обложка на весь экран — фон. Локальный файл (уже скачана) —
-            // приоритет; иначе пробуем достать с сервера (см. cover_url_for,
-            // 05.09.2026 — у старой перенесённой библиотеки локальной
-            // обложки нет, но сервер может вытащить её прямо из mp3-файла).
-            // Не вышло ни то ни другое — тёмная заглушка с нотой.
-            hasCover
-                ? Image.file(File(coverPath), fit: BoxFit.cover)
-                : Image.network(
-                    coverUrlFor(now.id),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => placeholder,
-                    loadingBuilder: (context, child, progress) =>
-                        progress == null ? child : placeholder,
-                  ),
+            // Обложка целиком по центру + её размытая копия фоном. Локальный
+            // файл у скачанных, иначе — адрес обложки на сервере (у старой
+            // перенесённой библиотеки локальной нет, сервер достаёт из mp3
+            // или из iTunes/Deezer/нарисованных). Нет нигде — заглушка с нотой.
+            CoverBackdrop(trackId: now.id, localPath: now.coverPath),
             // Градиент снизу — чтобы текст и кнопки читались на любой обложке.
             const DecoratedBox(
               decoration: BoxDecoration(
