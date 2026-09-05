@@ -114,10 +114,22 @@ class _StreamScreenState extends State<StreamScreen> {
         SafeArea(
           child: Column(
             children: [
-              const Spacer(),
+              const SizedBox(height: 24),
+              // Обложка занимает всё место сверху; название идёт строго под
+              // ней и не наезжает на картинку (Alex 06.09.2026).
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Center(
+                    child: t == null
+                        ? const SizedBox.shrink()
+                        : CoverArt(trackId: t.id, localPath: t.coverPath),
+                  ),
+                ),
+              ),
               if (t != null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
                   child: Column(
                     children: [
                       Text(t.title,

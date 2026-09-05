@@ -6,48 +6,35 @@ import 'package:flutter/material.dart';
 import '../../core/config.dart';
 import '../../core/theme.dart';
 
-/// Обложка для полноэкранного плеера — вариант «с размытым фоном» (выбор
-/// Alex, 05.09.2026). Целая обложка по центру, ничего не обрезано; фон —
-/// её же увеличенная размытая копия, без чёрных полей. Раньше обложка
-/// растягивалась на весь экран (`BoxFit.cover`) и у квадратных обложек
-/// срезались края — «не по центру».
-///
-/// Один виджет на два места: играющий трек в [PlayerView] и превью песни
-/// на стартовом экране «Потока».
+/// Провайдер картинки обложки: локальный файл у скачанных, иначе адрес на
+/// сервере. null — обложки нет нигде.
+ImageProvider? coverImageProvider(String trackId, String? localPath) {
+  final p = localPath;
+  if (p != null && p.isNotEmpty && File(p).existsSync()) {
+    return FileImage(File(p));
+  }
+  final url = coverUrlFor(trackId);
+  return url.isEmpty ? null : NetworkImage(url);
+}
+
+/// Фон полноэкранного плеера — та же обложка, растянутая на весь экран и
+/// размытая, приглушённая тёмным слоем (вариант «с размытым фоном», выбор
+/// Alex 05.09.2026). Только фон: сама обложка целиком рисуется отдельно
+/// виджетом [CoverArt] в потоке колонки, чтобы название под ней не наезжало
+/// на картинку (Alex 06.09.2026).
 class CoverBackdrop extends StatelessWidget {
   const CoverBackdrop({super.key, required this.trackId, this.localPath});
 
-  /// id трека — по нему собирается сетевой адрес обложки на сервере.
   final String trackId;
-
-  /// Локальный файл обложки (у скачанных треков) — если есть, берём его,
-  /// в сеть не ходим.
   final String? localPath;
-
-  ImageProvider? _provider() {
-    final p = localPath;
-    if (p != null && p.isNotEmpty && File(p).existsSync()) {
-      return FileImage(File(p));
-    }
-    final url = coverUrlFor(trackId);
-    return url.isEmpty ? null : NetworkImage(url);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final img = _provider();
-    if (img == null) {
-      return Container(
-        color: Afisha.surfaceHi,
-        child: const Center(
-          child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
-        ),
-      );
-    }
+    final img = coverImageProvider(trackId, localPath);
+    if (img == null) return const ColoredBox(color: Afisha.bg);
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Фон — та же обложка, растянутая на весь экран и размытая.
         ImageFiltered(
           imageFilter: ui.ImageFilter.blur(
             sigmaX: 28,
@@ -61,29 +48,46 @@ class CoverBackdrop extends StatelessWidget {
             errorBuilder: (_, _, _) => const ColoredBox(color: Afisha.bg),
           ),
         ),
-        // Приглушаем фон, чтобы передняя обложка и текст читались.
         Container(color: Colors.black.withValues(alpha: 0.3)),
-        // Целая обложка по центру (чуть выше середины — ниже неё название
-        // и кнопки).
-        Align(
-          alignment: const Alignment(0, -0.28),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image(
-                  image: img,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ],
+    );
+  }
+}
+
+/// Сама обложка — квадрат, целиком, ничего не обрезано, скруглённая. Ставится
+/// в колонку (обычно в [Expanded] + [Center]), название идёт строго под ней.
+class CoverArt extends StatelessWidget {
+  const CoverArt({super.key, required this.trackId, this.localPath});
+
+  final String trackId;
+  final String? localPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final img = coverImageProvider(trackId, localPath);
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: img == null
+            ? Container(
+                color: Afisha.surfaceHi,
+                child: const Center(
+                  child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
+                ),
+              )
+            : Image(
+                image: img,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => Container(
+                  color: Afisha.surfaceHi,
+                  child: const Center(
+                    child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96),
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

@@ -232,9 +232,21 @@ class _PlayerViewState extends State<PlayerView> {
                         ],
                       ),
                     ),
-                  const Spacer(),
+                  // Обложка занимает всё свободное место сверху; название —
+                  // строго под ней, не наезжает на картинку (Alex 06.09.2026).
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Center(
+                        child: CoverArt(
+                          trackId: now.id,
+                          localPath: now.coverPath,
+                        ),
+                      ),
+                    ),
+                  ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
                     child: Column(
                       children: [
                         Text(
