@@ -84,20 +84,21 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 260),
       reverseDuration: const Duration(milliseconds: 180),
     );
-    // «Дыхание» обложки — медленный пульс масштаба, пока играет музыка.
+    // «Дыхание» обложки — плавный пульс масштаба по кругу, пока играет
+    // музыка. Один проход 0→1 за период, синус в builder даёт 1↔1↔1.
     _breathe = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3600),
+      duration: const Duration(milliseconds: 2600),
     );
   }
 
   void _onPlaying() {
     if (_p.playing.value) {
-      if (!_breathe.isAnimating) _breathe.repeat(reverse: true);
+      _breathe.repeat();
     } else {
       _breathe.stop();
       _breathe.animateTo(0,
-          duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+          duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
     }
   }
 
@@ -535,9 +536,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       child: AnimatedBuilder(
         animation: _breathe,
         builder: (context, child) {
-          // 1.00 → 1.024 → 1.00, медленно, пока играет музыка.
-          final s = 1.0 + 0.024 * Curves.easeInOut.transform(_breathe.value);
-          return Transform.scale(scale: s, child: child);
+          // Синус по фазе: обложка плавно «вдыхает» и «выдыхает», ~2.6 c
+          // на полный цикл, размах 5 % — заметно, но не отвлекает.
+          final wave = 0.5 - 0.5 * math.cos(_breathe.value * 2 * math.pi);
+          return Transform.scale(scale: 1.0 + 0.05 * wave, child: child);
         },
         child: AnimatedBuilder(
           animation: _dragX,
