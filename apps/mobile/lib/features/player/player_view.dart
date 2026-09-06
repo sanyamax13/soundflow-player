@@ -158,6 +158,46 @@ class _PlayerViewState extends State<PlayerView> {
     );
   }
 
+  /// «Радио по этой песне»: спросить у сервера порядок скачанных треков по
+  /// близости звучания к текущему и поставить их в хвост очереди. Текущая
+  /// не прерывается. Сервер молчит / у трека нет отпечатка — очередь как была.
+  Future<void> _radio(NowPlaying now) async {
+    final scope = AppScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final all = await scope.downloads.list();
+    if (all.length < 2) return;
+    final ids = [
+      for (final t in all)
+        if (t.id != now.id) t.id,
+    ];
+    try {
+      final ordered = await scope.api.streamOrder(seedId: now.id, candidateIds: ids);
+      final byId = {for (final t in all) t.id: t};
+      final tail = <NowPlaying>[
+        for (final id in ordered)
+          if (byId[id] case final t?)
+            NowPlaying(
+              id: t.id,
+              title: t.title,
+              artist: t.artist,
+              path: t.path,
+              coverPath: t.coverPath,
+            ),
+      ];
+      if (tail.isEmpty || !mounted) return;
+      await _p.setSimilarTail(tail);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Дальше — похожее по звуку')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Сервер не ответил — радио не собралось')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<NowPlaying?>(
@@ -265,26 +305,35 @@ class _PlayerViewState extends State<PlayerView> {
                           now.artist,
                           style: const TextStyle(color: Colors.white70),
                         ),
-                        // Быстрая кнопка «не та версия» (Alex 06.09.2026): один
-                        // тап — трек уходит в корзину с причиной wrong_version,
-                        // сервер сам ищет другую версию, играем дальше. То же
-                        // самое есть в списке причин у корзины, но там на три
-                        // тапа больше.
-                        TextButton.icon(
-                          onPressed: () => _replaceVersion(now),
-                          icon: const Icon(Icons.sync_problem, size: 18),
-                          label: const Text('Не та версия'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white54,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
+                        // Две быстрые кнопки под названием (Alex 06.09.2026):
+                        //  • «Радио по этой» — дальше в очереди пойдут песни,
+                        //    похожие по звуку на текущую (сервер /stream/order).
+                        //  • «Не та версия» — трек уходит с причиной
+                        //    wrong_version, сервер ищет другую версию, играем
+                        //    дальше. То же есть в списке причин у корзины, но
+                        //    там на три тапа больше.
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _p.radio,
+                              builder: (_, on, _) => _MiniAction(
+                                icon: Icons.radio,
+                                label: 'Радио по этой',
+                                color: on ? Afisha.lime : Colors.white54,
+                                onPressed: () => _radio(now),
+                              ),
                             ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
+                            const SizedBox(width: 4),
+                            _MiniAction(
+                              icon: Icons.sync_problem,
+                              label: 'Не та версия',
+                              color: Colors.white54,
+                              onPressed: () => _replaceVersion(now),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
                         _ProgressBar(controller: _p, label: _mmss),
                       ],
                     ),
@@ -386,6 +435,36 @@ class _PlayerViewState extends State<PlayerView> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Мелкая кнопка-действие под названием трека (иконка + подпись, без фона).
+class _MiniAction extends StatelessWidget {
+  const _MiniAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
     );
   }
 }

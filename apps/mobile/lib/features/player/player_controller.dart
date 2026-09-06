@@ -43,6 +43,7 @@ class PlayerController {
   final void Function(NowPlaying meta)? onSkip;
 
   AudioPlayer? _player;
+  ConcatenatingAudioSource? _source;
   List<NowPlaying> _queue = const [];
   int _index = 0;
   String? _lastPlayId;
@@ -52,6 +53,10 @@ class PlayerController {
   final ValueNotifier<Duration> position = ValueNotifier(Duration.zero);
   final ValueNotifier<Duration> duration = ValueNotifier(Duration.zero);
   final ValueNotifier<bool> shuffle = ValueNotifier(false);
+
+  /// «Радио по этой песне» активно — хвост очереди выстроен по близости
+  /// звучания к той песне, с которой радио запустили (06.09.2026).
+  final ValueNotifier<bool> radio = ValueNotifier(false);
 
   final _subs = <StreamSubscription<dynamic>>[];
 
@@ -91,10 +96,12 @@ class PlayerController {
     _queue = List.of(tracks);
     _index = startIndex.clamp(0, tracks.length - 1);
     _lastPlayId = null;
+    radio.value = false;
     final p = _ensure();
     final src = ConcatenatingAudioSource(
       children: [for (final t in _queue) AudioSource.uri(Uri.file(t.path))],
     );
+    _source = src;
     await p.setLoopMode(loop ? LoopMode.all : LoopMode.off);
     await p.setShuffleModeEnabled(shuffle);
     this.shuffle.value = shuffle;
@@ -135,6 +142,25 @@ class PlayerController {
     final v = !shuffle.value;
     await p.setShuffleModeEnabled(v);
     shuffle.value = v;
+    // Перемешал руками — «радио по песне» больше не про этот порядок.
+    if (v) radio.value = false;
+  }
+
+  /// «Радио по этой песне»: заменить хвост очереди (всё после текущей) на
+  /// [tail] — уже упорядоченный по близости звучания список. Текущая песня
+  /// не прерывается. Перемешивание выключаем — порядок теперь осмысленный.
+  Future<void> setSimilarTail(List<NowPlaying> tail) async {
+    final p = _player;
+    final src = _source;
+    if (p == null || src == null) return;
+    await p.setShuffleModeEnabled(false);
+    shuffle.value = false;
+    if (_index + 1 < src.length) {
+      await src.removeRange(_index + 1, src.length);
+    }
+    await src.addAll([for (final t in tail) AudioSource.uri(Uri.file(t.path))]);
+    _queue = [..._queue.sublist(0, _index + 1), ...tail];
+    radio.value = true;
   }
 
   /// Строго "играть" (не переключатель) — нужно внешнему управлению
