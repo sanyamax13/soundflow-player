@@ -59,6 +59,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   late final AnimationController _heart;
   late final AnimationController _dragX;
   late final AnimationController _menu;
+  late final AnimationController _breathe;
 
   bool _menuOpen = false;
   bool _showHelp = false;
@@ -83,6 +84,21 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 260),
       reverseDuration: const Duration(milliseconds: 180),
     );
+    // «Дыхание» обложки — медленный пульс масштаба, пока играет музыка.
+    _breathe = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3600),
+    );
+  }
+
+  void _onPlaying() {
+    if (_p.playing.value) {
+      if (!_breathe.isAnimating) _breathe.repeat(reverse: true);
+    } else {
+      _breathe.stop();
+      _breathe.animateTo(0,
+          duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+    }
   }
 
   void _openMenu() {
@@ -102,7 +118,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       _wired = true;
       _controller = ref.read(playerProvider);
       _p.now.addListener(_onNow);
+      _p.playing.addListener(_onPlaying);
       _onNow();
+      _onPlaying();
       _maybeShowHelpFirstRun();
     }
   }
@@ -111,10 +129,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   void dispose() {
     _toastTimer?.cancel();
     _controller?.now.removeListener(_onNow);
+    _controller?.playing.removeListener(_onPlaying);
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
     _menu.dispose();
+    _breathe.dispose();
     _tint.dispose();
     super.dispose();
   }
@@ -512,14 +532,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           _openQueue(now);
         }
       },
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _p.playing,
-        builder: (context, playing, child) => AnimatedScale(
-          scale: playing ? 1.0 : 0.955,
-          duration: const Duration(milliseconds: 450),
-          curve: Curves.easeOut,
-          child: child,
-        ),
+      child: AnimatedBuilder(
+        animation: _breathe,
+        builder: (context, child) {
+          // 1.00 → 1.024 → 1.00, медленно, пока играет музыка.
+          final s = 1.0 + 0.024 * Curves.easeInOut.transform(_breathe.value);
+          return Transform.scale(scale: s, child: child);
+        },
         child: AnimatedBuilder(
           animation: _dragX,
           builder: (context, child) => Transform.translate(
@@ -723,8 +742,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       );
 
   // ── меню действий по долгому нажатию ──────────────────────────────────
-  // Обложка уходит вглубь и размывается, действия «выплывают» кружками
-  // с задержкой одно за другим (Alex: «сделай более дизайнерское»).
+  // Всё меню появляется одним плавным движением (обложка уменьшается, панель
+  // действий подъезжает снизу с лёгким «доводом»). Без размытия фона на
+  // каждый кадр — оно роняло кадры на телефоне (Alex 18604: «кусками»).
   Widget _actionsOverlay(NowPlaying now) {
     final items = <(IconData, String, VoidCallback)>[
       _p.radio.value
@@ -738,71 +758,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       (Icons.delete_outline, 'удалить', () => _confirmDelete(now)),
     ];
 
-    return Positioned.fill(
-      child: AnimatedBuilder(
-        animation: _menu,
-        builder: (context, _) {
-          final t = _menu.value;
-          final e = Curves.easeOutCubic.transform(t);
-          return GestureDetector(
-            onTap: _closeMenu,
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 18 * e, sigmaY: 18 * e),
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.5 * e),
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      const Spacer(flex: 2),
-                      Transform.scale(
-                        scale: 0.5 + e * 0.14,
-                        child: Opacity(
-                          opacity: e,
-                          child: SizedBox(
-                            width: 220,
-                            child: CoverArt(
-                                trackId: now.id, localPath: now.coverPath),
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 28),
-                        child: Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 14,
-                          runSpacing: 16,
-                          children: [
-                            for (var i = 0; i < items.length; i++)
-                              _floatAction(items[i], t, i, items.length),
-                          ],
-                        ),
-                      ),
-                      const Spacer(flex: 3),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _floatAction(
-      (IconData, String, VoidCallback) item, double t, int i, int n) {
-    final start = 0.15 + (i / n) * 0.5;
-    final local = ((t - start) / (1 - start)).clamp(0.0, 1.0);
-    final e = Curves.easeOutBack.transform(local);
-    return Opacity(
-      opacity: local.clamp(0.0, 1.0),
-      child: Transform.scale(
-        scale: 0.6 + e * 0.4,
-        child: GestureDetector(
+    Widget action((IconData, String, VoidCallback) it) => GestureDetector(
           onTap: () {
             _closeMenu();
-            item.$3();
+            it.$3();
           },
           child: SizedBox(
             width: 88,
@@ -815,16 +774,57 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.13),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.22)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.22)),
                   ),
-                  child: Icon(item.$1, color: Colors.white, size: 24),
+                  child: Icon(it.$1, color: Colors.white, size: 24),
                 ),
                 const SizedBox(height: 7),
-                Text(item.$2,
+                Text(it.$2,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 11.5)),
+                    style:
+                        const TextStyle(color: Colors.white, fontSize: 11.5)),
               ],
+            ),
+          ),
+        );
+
+    final panel = SafeArea(
+      child: Column(
+        children: [
+          const Spacer(flex: 2),
+          SizedBox(
+            width: 200,
+            child: CoverArt(trackId: now.id, localPath: now.coverPath),
+          ),
+          const Spacer(flex: 3),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 16,
+              children: [for (final it in items) action(it)],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: _closeMenu,
+        child: FadeTransition(
+          opacity: CurvedAnimation(parent: _menu, curve: Curves.easeOut),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(color: Color(0xE60B0B0B)),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.04),
+                end: Offset.zero,
+              ).animate(
+                  CurvedAnimation(parent: _menu, curve: Curves.easeOutCubic)),
+              child: panel,
             ),
           ),
         ),
