@@ -20,20 +20,41 @@ class _TrashScreenState extends ConsumerState<TrashScreen> {
   List<Map<String, dynamic>>? _items;
   final Set<String> _busy = {};
 
+  // true — сервер не ответил (обычно телефон на мобильном интернете, а сервер
+  // дома). Показываем понятное сообщение, а не бесконечное колесо.
+  bool _offline = false;
+  bool _loading = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_items == null) _load();
+    if (_items == null && !_loading) _load();
   }
 
   Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
+    if (mounted) {
+      setState(() {
+        _items = null;
+        _offline = false;
+      });
+    }
     try {
-      final list = await ref.read(apiProvider).trashList();
+      final list = await ref
+          .read(apiProvider)
+          .trashList()
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       setState(() => _items = list);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _items = const []);
+      setState(() {
+        _items = const [];
+        _offline = true;
+      });
+    } finally {
+      _loading = false;
     }
   }
 
@@ -121,17 +142,41 @@ class _TrashScreenState extends ConsumerState<TrashScreen> {
       ),
       body: items == null
           ? const Center(child: CircularProgressIndicator())
-          : items.isEmpty
-              ? const Center(
-                  child: Text('Пусто — ничего не убрано', style: TextStyle(color: Afisha.inkDim)),
-                )
-              : ListView.separated(
-                  itemCount: items.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1, color: Afisha.line),
-                  itemBuilder: (_, i) => _row(items[i]),
-                ),
+          : _offline
+              ? _offlineBox()
+              : items.isEmpty
+                  ? const Center(
+                      child: Text('Пусто — ничего не убрано', style: TextStyle(color: Afisha.inkDim)),
+                    )
+                  : ListView.separated(
+                      itemCount: items.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1, color: Afisha.line),
+                      itemBuilder: (_, i) => _row(items[i]),
+                    ),
     );
   }
+
+  Widget _offlineBox() => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off, color: Afisha.inkDim, size: 40),
+              const SizedBox(height: 14),
+              const Text(
+                'Сервер в домашней сети. Подключись к домашнему Wi-Fi, '
+                'чтобы увидеть корзину.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Afisha.inkDim),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                  onPressed: _load, child: const Text('Повторить')),
+            ],
+          ),
+        ),
+      );
 
   Widget _row(Map<String, dynamic> t) {
     final id = '${t['track_id']}';

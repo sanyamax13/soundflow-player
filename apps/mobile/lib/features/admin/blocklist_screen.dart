@@ -19,20 +19,41 @@ class _BlocklistScreenState extends ConsumerState<BlocklistScreen> {
   List<Map<String, dynamic>>? _items;
   final Set<String> _busy = {};
 
+  // true — сервер не ответил (телефон вне домашней сети). Показываем понятное
+  // сообщение вместо вечного колеса.
+  bool _offline = false;
+  bool _loading = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_items == null) _load();
+    if (_items == null && !_loading) _load();
   }
 
   Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
+    if (mounted) {
+      setState(() {
+        _items = null;
+        _offline = false;
+      });
+    }
     try {
-      final list = await ref.read(apiProvider).blocklist();
+      final list = await ref
+          .read(apiProvider)
+          .blocklist()
+          .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       setState(() => _items = list);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _items = const []);
+      setState(() {
+        _items = const [];
+        _offline = true;
+      });
+    } finally {
+      _loading = false;
     }
   }
 
@@ -64,7 +85,9 @@ class _BlocklistScreenState extends ConsumerState<BlocklistScreen> {
       ),
       body: items == null
           ? const Center(child: CircularProgressIndicator())
-          : items.isEmpty
+          : _offline
+              ? _offlineBox()
+              : items.isEmpty
               ? const Center(
                   child: Text('Список пуст',
                       style: TextStyle(color: Afisha.inkDim)),
@@ -93,6 +116,28 @@ class _BlocklistScreenState extends ConsumerState<BlocklistScreen> {
                 ),
     );
   }
+
+  Widget _offlineBox() => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off, color: Afisha.inkDim, size: 40),
+              const SizedBox(height: 14),
+              const Text(
+                'Сервер в домашней сети. Подключись к домашнему Wi-Fi, '
+                'чтобы увидеть список.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Afisha.inkDim),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                  onPressed: _load, child: const Text('Повторить')),
+            ],
+          ),
+        ),
+      );
 
   Widget _row(Map<String, dynamic> row) {
     final key = '${row['key']}';

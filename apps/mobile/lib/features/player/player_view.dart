@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -53,13 +52,15 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   String? _favTrackId;
   bool _fav = false;
 
-  final ValueNotifier<Color> _tint = ValueNotifier(Afisha.surfaceHi);
+  final ValueNotifier<CoverColors> _tint =
+      ValueNotifier(CoverColors.fallback);
 
+  // Медленный перелив фона под цвет обложки (Alex TG 18608). Обложка не
+  // трогается — она якорь.
   late final AnimationController _bg;
   late final AnimationController _heart;
   late final AnimationController _dragX;
   late final AnimationController _menu;
-  late final AnimationController _breathe;
 
   bool _menuOpen = false;
   bool _showHelp = false;
@@ -72,7 +73,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     super.initState();
     _bg = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 24),
+      duration: const Duration(seconds: 15),
     );
     _heart = AnimationController(
       vsync: this,
@@ -84,22 +85,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 260),
       reverseDuration: const Duration(milliseconds: 180),
     );
-    // «Дыхание» обложки — плавный пульс масштаба по кругу, пока играет
-    // музыка. Один проход 0→1 за период, синус в builder даёт 1↔1↔1.
-    _breathe = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2600),
-    );
-  }
-
-  void _onPlaying() {
-    if (_p.playing.value) {
-      _breathe.repeat();
-    } else {
-      _breathe.stop();
-      _breathe.animateTo(0,
-          duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
-    }
   }
 
   void _openMenu() {
@@ -119,9 +104,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       _wired = true;
       _controller = ref.read(playerProvider);
       _p.now.addListener(_onNow);
-      _p.playing.addListener(_onPlaying);
       _onNow();
-      _onPlaying();
       _maybeShowHelpFirstRun();
     }
   }
@@ -130,22 +113,20 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   void dispose() {
     _toastTimer?.cancel();
     _controller?.now.removeListener(_onNow);
-    _controller?.playing.removeListener(_onPlaying);
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
     _menu.dispose();
-    _breathe.dispose();
     _tint.dispose();
     super.dispose();
   }
 
-  // ── обложка сменилась: избранное + цвет фона ────────────────────────────
+  // ── обложка сменилась: избранное + цвета перелива фона ─────────────────
   void _onNow() {
-    // «Живой» фон крутим только когда что-то играет (батарея + чтобы тесты
-    // с pumpAndSettle не висели на бесконечной анимации).
+    // Перелив фона крутим, только когда есть трек (батарея + чтобы тесты с
+    // pumpAndSettle не висели на бесконечной анимации).
     if (_p.now.value != null) {
-      if (!_bg.isAnimating) _bg.repeat(reverse: true);
+      if (!_bg.isAnimating) _bg.repeat();
     } else {
       _bg.stop();
     }
@@ -396,13 +377,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               );
         }
         final img = coverImageProvider(now.id, now.coverPath);
-        return ValueListenableBuilder<Color>(
+        return ValueListenableBuilder<CoverColors>(
           valueListenable: _tint,
-          builder: (context, tint, _) => Stack(
+          builder: (context, colors, _) => Stack(
             key: ValueKey(now.id),
             fit: StackFit.expand,
             children: [
-              _LivingBackdrop(image: img, anim: _bg, tint: tint),
+              _LivingBackdrop(anim: _bg, colors: colors),
               SafeArea(
                 child: Column(
                   children: [
@@ -427,7 +408,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                             color: Colors.white.withValues(alpha: 0.6),
                             fontSize: 13)),
                     const SizedBox(height: 18),
-                    _Wave(controller: _p, tint: tint, seedText: now.id),
+                    _Wave(
+                        controller: _p,
+                        tint: colors.isFallback ? Afisha.lime : colors.glow,
+                        seedText: now.id),
                     const SizedBox(height: 4),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 26),
@@ -534,20 +518,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         }
       },
       child: AnimatedBuilder(
-        animation: _breathe,
-        builder: (context, child) {
-          // Синус по фазе: обложка плавно «вдыхает» и «выдыхает», ~2.6 c
-          // на полный цикл, размах 5 % — заметно, но не отвлекает.
-          final wave = 0.5 - 0.5 * math.cos(_breathe.value * 2 * math.pi);
-          return Transform.scale(scale: 1.0 + 0.05 * wave, child: child);
-        },
-        child: AnimatedBuilder(
-          animation: _dragX,
-          builder: (context, child) => Transform.translate(
-            offset: Offset(_dragX.value, 0),
-            child: Transform.rotate(angle: _dragX.value / 2600, child: child),
-          ),
-          child: Padding(
+        animation: _dragX,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(_dragX.value, 0),
+          child: Transform.rotate(angle: _dragX.value / 2600, child: child),
+        ),
+        child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -567,8 +543,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _times() => ValueListenableBuilder<Duration>(
@@ -940,64 +915,73 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   }
 }
 
-// ── живой фон: размытая обложка тихо плывёт, поверх — цвет и затемнение ────
+// ── живой фон: медленно переливается цветами обложки (Alex TG 18608) ──────
+// Два цветовых пятна из палитры обложки ходят по кругу в противофазе; ниже —
+// затемнение к чёрному, чтобы белый текст читался. Картинки на фоне нет —
+// чище и легче для телефона.
 class _LivingBackdrop extends StatelessWidget {
-  const _LivingBackdrop({
-    required this.image,
-    required this.anim,
-    required this.tint,
-  });
+  const _LivingBackdrop({required this.anim, required this.colors});
 
-  final ImageProvider? image;
   final Animation<double> anim;
-  final Color tint;
+  final CoverColors colors;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        const ColoredBox(color: Afisha.bg),
-        if (image != null)
-          AnimatedBuilder(
-            animation: anim,
-            builder: (context, _) {
-              final t = Curves.easeInOut.transform(anim.value);
-              return Transform.scale(
-                scale: 1.18 + t * 0.06,
-                child: Transform.translate(
-                  offset: Offset((t - 0.5) * 26, (t - 0.5) * 18),
-                  child: ImageFiltered(
-                    imageFilter:
-                        ui.ImageFilter.blur(sigmaX: 42, sigmaY: 42),
-                    child: Image(
-                      image: image!,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) =>
-                          const ColoredBox(color: Afisha.bg),
-                    ),
+    return AnimatedBuilder(
+      animation: anim,
+      builder: (context, _) {
+        final a = anim.value * 2 * math.pi; // 0..2π за период
+        Alignment orbit(double phase, double rx, double ry) => Alignment(
+              math.cos(a + phase) * rx,
+              math.sin(a + phase) * ry,
+            );
+        return DecoratedBox(
+          decoration: const BoxDecoration(color: Afisha.bg),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: orbit(0, 0.7, 0.8),
+                    radius: 1.3,
+                    colors: [
+                      colors.glow.withValues(alpha: 0.55),
+                      colors.glow.withValues(alpha: 0.0),
+                    ],
                   ),
                 ),
-              );
-            },
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: orbit(math.pi, 0.8, 0.7),
+                    radius: 1.2,
+                    colors: [
+                      colors.base.withValues(alpha: 0.6),
+                      colors.base.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      colors.deep.withValues(alpha: 0.35),
+                      Colors.black.withValues(alpha: 0.55),
+                      Colors.black,
+                    ],
+                    stops: const [0.0, 0.55, 1.0],
+                  ),
+                ),
+              ),
+            ],
           ),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 600),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                tint.withValues(alpha: 0.45),
-                Colors.black.withValues(alpha: 0.62),
-                Colors.black,
-              ],
-              stops: const [0.0, 0.55, 1.0],
-            ),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -1043,7 +1027,7 @@ class _Wave extends StatelessWidget {
                   painter: _WavePainter(
                     frac,
                     _seed(seedText),
-                    played: tint == Afisha.surfaceHi ? Afisha.lime : tint,
+                    played: tint,
                     rest: Colors.white.withValues(alpha: 0.16),
                   ),
                 ),
