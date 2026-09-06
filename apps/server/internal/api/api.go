@@ -45,6 +45,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/library/next-batch", s.libraryNextBatch)
 			r.Get("/trash", s.trashList)
 			r.Post("/trash/restore", s.trashRestore)
+			r.Post("/trash/purge", s.trashPurge)
 			r.Get("/cover/{id}", s.cover)
 			r.Get("/generated-covers/{file}", s.generatedCover)
 			r.Post("/stream/order", s.streamOrder)
@@ -54,6 +55,8 @@ func (s *Server) Router() http.Handler {
 				r.Get("/status", s.adminStatus)
 				r.Get("/devices", s.adminDevices)
 				r.Get("/events", s.adminEvents)
+				r.Get("/blocklist", s.adminBlocklist)
+				r.Post("/blocklist/remove", s.adminBlocklistRemove)
 				r.Post("/reanalyze", s.adminReanalyze)
 				r.Post("/sweep-junk", s.adminSweepJunk)
 				r.Post("/backfill-covers", s.adminBackfillCovers)
@@ -152,12 +155,13 @@ func (s *Server) syncEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDeleteEvents — Alex удалил трек на телефоне ("Моя музыка" → корзина,
-// или кнопкой в плеере с причиной — см. player_view.dart). Обычная причина
+// handleDeleteEvents — Alex удалил трек на телефоне ("Моя музыка", или
+// кнопкой в плеере с причиной — см. player_view.dart). Обычная причина
 // (не нравится/надоела/не музыка/другое/без причины): сервер помечает трек
 // blocked в legacy_marks (не попадёт в каталог/повторный импорт/повторное
-// скачивание) и переносит файл в _trash — не удаляет насовсем. Причина
-// "плохое качество"/"не та версия" — особый случай, см. deleteAndReacquire.
+// скачивание) и стирает файл НАСОВСЕМ (Alex 06.09.2026: без корзины на
+// 7 дней). Причина "плохое качество"/"не та версия" — особый случай,
+// см. deleteAndReacquire.
 // Обрабатываем только реально новые события (accepted), чтобы не дёргать
 // файл при каждом повторном синке.
 func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, accepted []string) {
@@ -188,12 +192,12 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 		if err := s.DB.UpsertLegacyMark(ctx, db.LegacyMark{Key: normKey, Kind: "blocked", At: time.Now()}); err != nil {
 			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
 		}
-		if err := pathmap.MoveToTrash(s.PathMap, local); err != nil {
-			log.Printf("delete-event %s: файл в корзину (%s): %v", e.TrackID, local, err)
+		if err := pathmap.DeleteForever(local); err != nil {
+			log.Printf("delete-event %s: стереть файл (%s): %v", e.TrackID, local, err)
 		} else if reason != "" {
-			log.Printf("delete-event %s: убран у себя (%s), причина: %s", e.TrackID, local, reason)
+			log.Printf("delete-event %s: стёрт насовсем (%s), причина: %s", e.TrackID, local, reason)
 		} else {
-			log.Printf("delete-event %s: убран у себя (%s)", e.TrackID, local)
+			log.Printf("delete-event %s: стёрт насовсем (%s)", e.TrackID, local)
 		}
 	}
 }
@@ -217,8 +221,8 @@ func (s *Server) deleteAndReacquire(ctx context.Context, trackID, local, reason 
 		log.Printf("delete-event %s: стереть строку трека: %v", trackID, err)
 		return
 	}
-	if err := pathmap.MoveToTrash(s.PathMap, local); err != nil {
-		log.Printf("delete-event %s: файл в корзину (%s): %v", trackID, local, err)
+	if err := pathmap.DeleteForever(local); err != nil {
+		log.Printf("delete-event %s: стереть файл (%s): %v", trackID, local, err)
 	}
 	log.Printf("delete-event %s: причина %q — ищу замену получше (%s — %s)", trackID, reason, artist, title)
 	if s.Acquire == nil {

@@ -144,6 +144,19 @@ func (s *Server) trashRestore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"restored": true})
 }
 
+// POST /v1/trash/purge — стереть НАСОВСЕМ всё, что сейчас лежит в «_trash»
+// (Alex 06.09.2026: «В корзине сделай кнопку удалить все»). Метки blocked не
+// трогаем — треки остаются в списке «больше не качать». Новые удаления с
+// 06.09.2026 в «_trash» и так не попадают (стираются сразу).
+func (s *Server) trashPurge(w http.ResponseWriter, r *http.Request) {
+	n, err := pathmap.PurgeTrash(s.PathMap)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error(), "deleted": ""})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
+}
+
 // GET /v1/cover/{id} — обложка трека. Сперва пробуем прямо из файла (кто
 // рипал альбом, обычно её туда и зашивал) — быстро, без сети. Не нашлось —
 // смотрим, не нашёл ли её догон по Яндексу (см. adminBackfillCovers) и

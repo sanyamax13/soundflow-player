@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -66,4 +67,50 @@ func (s *Server) adminEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": list})
+}
+
+// GET /v1/admin/blocklist — список «больше не качать» для экрана «Сервер»
+// (Alex 06.09.2026, разбор плеера п.10/12). Сюда попадают и удалённые в
+// плеере треки, и старый чёрный список. По этим ключам сервер не отдаёт
+// трек в каталог и не качает заново.
+func (s *Server) adminBlocklist(w http.ResponseWriter, r *http.Request) {
+	limit := 500
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 5000 {
+		limit = v
+	}
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	list, err := s.DB.ListBlocked(r.Context(), limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"blocked": list})
+}
+
+type blocklistRemoveReq struct {
+	Key string `json:"key"`
+}
+
+// POST /v1/admin/blocklist/remove — убрать один ключ из списка «больше не
+// качать» (случайно попал / передумал). После этого трек снова можно
+// скачать. Файл при этом не возвращается — если он был стёрт, качается
+// заново из источника.
+func (s *Server) adminBlocklistRemove(w http.ResponseWriter, r *http.Request) {
+	var req blocklistRemoveReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "нужен key"})
+		return
+	}
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	if err := s.DB.DeleteLegacyMark(r.Context(), req.Key); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"removed": true})
 }

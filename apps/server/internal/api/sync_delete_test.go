@@ -35,8 +35,8 @@ func testDB(t *testing.T) *db.Pool {
 	return p
 }
 
-// Alex удалил трек на телефоне — сервер должен пометить его blocked и убрать
-// файл в _trash (не удалить насовсем).
+// Alex удалил трек на телефоне — сервер должен пометить его blocked и стереть
+// файл насовсем (Alex 06.09.2026: без корзины на 7 дней).
 func TestHandleDeleteEventsMovesFileAndBlocks(t *testing.T) {
 	p := testDB(t)
 	ctx := context.Background()
@@ -78,8 +78,8 @@ func TestHandleDeleteEventsMovesFileAndBlocks(t *testing.T) {
 		t.Errorf("исходный файл должен исчезнуть, stat: %v", err)
 	}
 	trashed := filepath.Join(root, "_trash", rel)
-	if _, err := os.Stat(trashed); err != nil {
-		t.Errorf("файл должен оказаться в _trash: %v", err)
+	if _, err := os.Stat(trashed); !os.IsNotExist(err) {
+		t.Errorf("файл НЕ должен переезжать в _trash (удаление навсегда), stat: %v", err)
 	}
 }
 

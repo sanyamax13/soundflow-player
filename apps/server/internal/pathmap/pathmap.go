@@ -111,6 +111,40 @@ func MoveToTrash(m Mapper, local string) error {
 	return fmt.Errorf("файл вне известных корней библиотеки")
 }
 
+// DeleteForever — стереть файл трека насовсем, без переноса в «_trash»
+// (Alex 06.09.2026: удаление навсегда). Нет файла — не ошибка. Строку трека
+// в БД и метку blocked ставит вызывающий.
+func DeleteForever(local string) error {
+	if local == "" {
+		return fmt.Errorf("пустой путь")
+	}
+	if err := os.Remove(local); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// PurgeTrash — стереть НАСОВСЕМ всё, что лежит в «_trash» рядом с каждым
+// корнем библиотеки (Alex 06.09.2026: удаление навсегда, без хранения на
+// 7 дней). Возвращает число удалённых файлов. Метки blocked в legacy_marks
+// не трогает — трек остаётся в списке «больше не качать».
+func PurgeTrash(m Mapper) (int, error) {
+	n := 0
+	for _, root := range m.LocalRoots() {
+		trashDir := filepath.Join(root, "_trash")
+		_ = filepath.WalkDir(trashDir, func(_ string, d os.DirEntry, err error) error {
+			if err == nil && d != nil && !d.IsDir() {
+				n++
+			}
+			return nil
+		})
+		if err := os.RemoveAll(trashDir); err != nil && !os.IsNotExist(err) {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
 // RestoreFromTrash — обратное действие к MoveToTrash: local — исходный путь
 // файла (как он лежит в БД, ДО переноса в корзину); функция сама находит его
 // в «_trash» рядом с нужным корнем и кладёт назад.

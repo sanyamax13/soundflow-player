@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/theme.dart';
+import 'blocklist_screen.dart';
 
 /// «Сервер» — один собранный экран (Alex 06.09.2026, разбор плеера п. 10):
 /// состояние домашнего сервера, синхронизация, устройства, лента событий.
@@ -213,7 +214,17 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _kv('Треков', '${catalog['tracks'] ?? 0}'),
         _kv('Файлов', '${catalog['track_files'] ?? 0}'),
         _kv('Из старого: избранное', '${legacy['favorites'] ?? 0}'),
-        _kv('Из старого: скрыто', '${legacy['blocked'] ?? 0}'),
+        _section('Больше не качать'),
+        ListTile(
+          dense: true,
+          title: const Text('Список «больше не качать»'),
+          subtitle: Text('${legacy['blocked'] ?? 0} записей',
+              style: const TextStyle(color: Afisha.inkDim)),
+          trailing: const Icon(Icons.chevron_right, color: Afisha.line),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const BlocklistScreen()),
+          ),
+        ),
         _section('События'),
         _kv('Всего', '${events['total'] ?? 0}'),
         for (final e in byKind.entries) _kv('  ${e.key}', '${e.value}'),

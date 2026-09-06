@@ -157,6 +157,13 @@ class Api {
     await _dio.post<Map<String, dynamic>>('/v1/trash/restore', data: {'track_id': trackId});
   }
 
+  /// Очистить «Корзину» — стереть насовсем всё, что в ней лежит. Возвращает,
+  /// сколько файлов удалено.
+  Future<int> trashPurge() async {
+    final res = await _dio.post<Map<String, dynamic>>('/v1/trash/purge');
+    return (res.data?['deleted'] as num?)?.toInt() ?? 0;
+  }
+
   /// Состояние сервера для экрана «Сервер».
   Future<Map<String, dynamic>> adminStatus() async {
     final res = await _dio.get<Map<String, dynamic>>('/v1/admin/status');
@@ -172,5 +179,17 @@ class Api {
     final res = await _dio.get<Map<String, dynamic>>('/v1/admin/events',
         queryParameters: {'limit': limit});
     return ((res.data?['events'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Список «больше не качать» (удалённое в плеере + старый чёрный список).
+  Future<List<Map<String, dynamic>>> blocklist({int limit = 500}) async {
+    final res = await _dio.get<Map<String, dynamic>>('/v1/admin/blocklist',
+        queryParameters: {'limit': limit});
+    return ((res.data?['blocked'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Убрать один ключ из списка «больше не качать» (случайно попал / передумал).
+  Future<void> blocklistRemove(String key) async {
+    await _dio.post<Map<String, dynamic>>('/v1/admin/blocklist/remove', data: {'key': key});
   }
 }

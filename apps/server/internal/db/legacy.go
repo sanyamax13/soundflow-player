@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -129,6 +130,54 @@ func (d *Pool) TrashedTracks(ctx context.Context) ([]TrashedRow, error) {
 			return nil, err
 		}
 		r.MarkedAt = at
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// BlockedRow — одна запись списка «больше не качать» для экрана «Сервер».
+// Artist/Title берём из tracks, если трек ещё в каталоге; иначе — из самой
+// метки (у старого чёрного списка они там есть), иначе пусто.
+type BlockedRow struct {
+	Key    string     `json:"key"`
+	Artist string     `json:"artist"`
+	Title  string     `json:"title"`
+	InCat  bool       `json:"in_catalog"`
+	At     *time.Time `json:"at,omitempty"`
+}
+
+// ListBlocked — весь список «больше не качать» (kind='blocked'), новые сверху.
+// limit ≤ 0 — без ограничения.
+func (d *Pool) ListBlocked(ctx context.Context, limit int) ([]BlockedRow, error) {
+	if d == nil || d.p == nil {
+		return nil, errNoDB
+	}
+	sql := `
+		SELECT lm.normalized_key,
+		       COALESCE(NULLIF(t.artist,''), lm.artist) AS artist,
+		       COALESCE(NULLIF(t.title,''),  lm.title)  AS title,
+		       (t.id IS NOT NULL) AS in_catalog,
+		       lm.marked_at
+		FROM legacy_marks lm
+		LEFT JOIN tracks t ON t.normalized_key = lm.normalized_key
+		WHERE lm.kind = 'blocked'
+		ORDER BY lm.marked_at DESC NULLS LAST, lm.normalized_key`
+	if limit > 0 {
+		sql += "\n\t\tLIMIT " + strconv.Itoa(limit)
+	}
+	rows, err := d.p.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]BlockedRow, 0)
+	for rows.Next() {
+		var r BlockedRow
+		var at *time.Time
+		if err := rows.Scan(&r.Key, &r.Artist, &r.Title, &r.InCat, &at); err != nil {
+			return nil, err
+		}
+		r.At = at
 		out = append(out, r)
 	}
 	return out, rows.Err()

@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/theme.dart';
 
-/// «Корзина»: песни, которые сервер убрал у себя — удалил Alex на телефоне
-/// (после синхронизации) или это оказался мусор (интервью, скит и т.п.,
-/// см. чистку каталога). Файлы не стёрты насовсем, лежат на сервере в
-/// специальной папке — можно вернуть.
+/// «Корзина»: песни, которые сервер убрал у себя ДО 06.09.2026 — их файлы
+/// ещё лежат на сервере в отдельной папке, можно вернуть. С 06.09.2026 новые
+/// удаления стираются сразу (Alex), сюда больше не попадают. Кнопка
+/// «Очистить корзину» — стереть насовсем всё, что тут осталось.
 class TrashScreen extends ConsumerStatefulWidget {
   const TrashScreen({super.key});
 
@@ -34,6 +34,45 @@ class _TrashScreenState extends ConsumerState<TrashScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _items = const []);
+    }
+  }
+
+  bool _purging = false;
+
+  Future<void> _purgeAll() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Очистить корзину?'),
+        content: const Text(
+            'Всё, что сейчас в корзине, сотрётся с сервера насовсем и вернуть '
+            'будет нельзя. Список «больше не качать» не меняется.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Очистить')),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _purging = true);
+    try {
+      final n = await ref.read(apiProvider).trashPurge();
+      if (!mounted) return;
+      setState(() {
+        _purging = false;
+        _items = const [];
+      });
+      messenger.showSnackBar(SnackBar(content: Text('Корзина очищена: удалено $n')));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _purging = false);
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Не получилось — попробуй ещё раз')));
     }
   }
 
@@ -63,7 +102,22 @@ class _TrashScreenState extends ConsumerState<TrashScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Корзина'),
-        actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
+        actions: [
+          if ((items ?? const []).isNotEmpty)
+            _purging
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : IconButton(
+                    tooltip: 'Очистить корзину',
+                    onPressed: _purgeAll,
+                    icon: const Icon(Icons.delete_forever)),
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+        ],
       ),
       body: items == null
           ? const Center(child: CircularProgressIndicator())
