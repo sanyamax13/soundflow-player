@@ -132,10 +132,7 @@ class _PlayerViewState extends State<PlayerView> {
     await AppScope.of(context).downloads.delete(now.id, reason: reason);
     if (!mounted) return;
     await _p.next();
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Убрал с телефона')));
+    _toast('Убрал с телефона');
   }
 
   String _mmss(Duration d) {
@@ -144,18 +141,32 @@ class _PlayerViewState extends State<PlayerView> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  /// Короткое сообщение поверх плеера. Плавающее и приподнятое над рядом
+  /// управления: обычный SnackBar ложился прямо на кнопки (перемотка, пауза,
+  /// сердечко) у самого низа экрана и они переставали нажиматься — Alex поймал
+  /// на устройстве 06.09.2026. Короткая выдержка, старое сообщение убираем.
+  void _toast(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1600),
+          margin: const EdgeInsets.only(left: 16, right: 16, bottom: 150),
+        ),
+      );
+  }
+
   /// «Не та версия» одним тапом: убрать этот трек (причина wrong_version —
   /// сервер потом сам подтянет другую версию, см. deleteAndReacquire) и
   /// перейти к следующему. Без листа причин, в отличие от корзины.
   Future<void> _replaceVersion(NowPlaying now) async {
-    final messenger = ScaffoldMessenger.of(context);
     await AppScope.of(context).downloads.delete(now.id, reason: 'wrong_version');
     if (!mounted) return;
     await _p.next();
-    if (!mounted) return;
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Убрал — сервер поищет версию получше')),
-    );
+    _toast('Убрал — сервер поищет версию получше');
   }
 
   /// «Радио по этой песне» — переключатель. Выключено: спрашиваем у сервера
@@ -165,13 +176,9 @@ class _PlayerViewState extends State<PlayerView> {
   /// что похожее не подобрать, и радио не зажигаем (Alex, 06.09.2026).
   Future<void> _radio(NowPlaying now) async {
     final scope = AppScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     if (_p.radio.value) {
       await _p.stopRadio();
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Радио выключил')),
-      );
+      _toast('Радио выключил');
       return;
     }
     final all = await scope.downloads.list();
@@ -183,12 +190,7 @@ class _PlayerViewState extends State<PlayerView> {
     try {
       final res = await scope.api.streamOrder(seedId: now.id, candidateIds: ids);
       if (!res.reordered) {
-        if (!mounted) return;
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('У этой песни нет звукового отпечатка — похожее не подобрать'),
-          ),
-        );
+        _toast('У этой песни нет звукового отпечатка — похожее не подобрать');
         return;
       }
       final byId = {for (final t in all) t.id: t};
@@ -205,15 +207,9 @@ class _PlayerViewState extends State<PlayerView> {
       ];
       if (tail.isEmpty || !mounted) return;
       await _p.setSimilarTail(tail);
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Дальше — похожее по звуку')),
-      );
+      _toast('Дальше — похожее по звуку');
     } catch (_) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Сервер не ответил — радио не собралось')),
-      );
+      _toast('Сервер не ответил — радио не собралось');
     }
   }
 
