@@ -278,17 +278,29 @@ func (d *Pool) TrackIDsWithoutFeatures(ctx context.Context, limit int) ([]string
 // (косинус, pgvector `<=>`). seedID из результата исключается. Треки без
 // отпечатка (и весь список, если у seed нет отпечатка) идут в хвост в исходном
 // порядке — чтобы очередь Потока всё равно доиграла.
-func (d *Pool) OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) ([]string, error) {
+//
+// reordered = true только когда подбор по звуку реально состоялся (у seed есть
+// отпечаток и хотя бы один кандидат по нему подошёл). Телефон по этому флагу
+// решает, зажигать ли кнопку «Радио» и не писать ли «похожее не подобрать»
+// вместо тихого no-op (Alex, 06.09.2026: радио сработало вхолостую, потому что
+// у seed-песни не было отпечатка).
+func (d *Pool) OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) (ordered []string, reordered bool, err error) {
 	if d == nil || d.p == nil {
-		return nil, errNoDB
+		return nil, false, errNoDB
 	}
-	ordered := make([]string, 0, len(candidateIDs))
+	ordered = make([]string, 0, len(candidateIDs))
 	seen := map[string]bool{seedID: true}
 
+	type idArtist struct {
+		id     string
+		artist string
+	}
+	var byVec []idArtist
+
 	if len(candidateIDs) > 0 {
-		rows, err := d.p.Query(ctx, `
+		rows, qerr := d.p.Query(ctx, `
 			WITH seed AS (SELECT feature_vector AS v FROM tracks WHERE id = $1)
-			SELECT t.id
+			SELECT t.id, t.artist
 			FROM tracks t, seed
 			WHERE t.id = ANY($2)
 			  AND t.id <> $1
@@ -296,21 +308,51 @@ func (d *Pool) OrderBySimilarity(ctx context.Context, seedID string, candidateID
 			  AND seed.v IS NOT NULL
 			ORDER BY t.feature_vector <=> seed.v`,
 			seedID, candidateIDs)
-		if err != nil {
-			return nil, err
+		if qerr != nil {
+			return nil, false, qerr
 		}
 		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
+			var ia idArtist
+			if scanErr := rows.Scan(&ia.id, &ia.artist); scanErr != nil {
 				rows.Close()
-				return nil, err
+				return nil, false, scanErr
 			}
-			ordered = append(ordered, id)
-			seen[id] = true
+			byVec = append(byVec, ia)
+			seen[ia.id] = true
 		}
 		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
+		if rerr := rows.Err(); rerr != nil {
+			return nil, false, rerr
+		}
+	}
+
+	reordered = len(byVec) > 0
+
+	// Раскидываем по исполнителю: подряд не больше двух одного и того же,
+	// иначе радио вываливает целый альбом одним куском — Alex запустил радио
+	// и получил 8 песен Кенни Роджерса подряд (06.09.2026). Жадно: если
+	// набежало два подряд — берём ближайшего следующего с другим исполнителем,
+	// а если других не осталось — что есть.
+	var lastArtist string
+	run := 0
+	for len(byVec) > 0 {
+		pick := 0
+		if run >= 2 {
+			for i, ia := range byVec {
+				if !strings.EqualFold(ia.artist, lastArtist) {
+					pick = i
+					break
+				}
+			}
+		}
+		ia := byVec[pick]
+		ordered = append(ordered, ia.id)
+		byVec = append(byVec[:pick], byVec[pick+1:]...)
+		if strings.EqualFold(ia.artist, lastArtist) {
+			run++
+		} else {
+			lastArtist = ia.artist
+			run = 1
 		}
 	}
 
@@ -321,7 +363,7 @@ func (d *Pool) OrderBySimilarity(ctx context.Context, seedID string, candidateID
 			seen[id] = true
 		}
 	}
-	return ordered, nil
+	return ordered, reordered, nil
 }
 
 // TrackForDeletion — normalized_key и канонический путь файла трека, для

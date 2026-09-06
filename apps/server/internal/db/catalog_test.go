@@ -57,9 +57,12 @@ func TestOrderBySimilarity(t *testing.T) {
 	// novec — намеренно без вектора
 
 	cands := []string{ids["far"], ids["novec"], ids["near"], ids["seed"]}
-	got, err := p.OrderBySimilarity(ctx, ids["seed"], cands)
+	got, reordered, err := p.OrderBySimilarity(ctx, ids["seed"], cands)
 	if err != nil {
 		t.Fatalf("OrderBySimilarity: %v", err)
+	}
+	if !reordered {
+		t.Fatalf("reordered: ждал true (у seed есть вектор и near/far подошли)")
 	}
 
 	want := []string{ids["near"], ids["far"], ids["novec"]}
@@ -307,12 +310,88 @@ func TestOrderBySimilaritySeedWithoutVector(t *testing.T) {
 	}
 
 	// У seed вектора нет — очередь должна вернуться целой, в исходном порядке, без seed.
-	got, err := p.OrderBySimilarity(ctx, s, []string{a, s, b})
+	got, reordered, err := p.OrderBySimilarity(ctx, s, []string{a, s, b})
 	if err != nil {
 		t.Fatalf("OrderBySimilarity: %v", err)
 	}
+	if reordered {
+		t.Fatalf("reordered: ждал false (у seed нет вектора)")
+	}
 	if len(got) != 2 || got[0] != a || got[1] != b {
 		t.Fatalf("ждал [a b], получил %v", got)
+	}
+}
+
+// Подряд не больше двух треков одного исполнителя, даже если по чистой
+// близости они все идут кучей (иначе радио вываливает альбом одним куском —
+// Alex, 06.09.2026: 8 песен Кенни Роджерса подряд).
+func TestOrderBySimilaritySpreadsArtists(t *testing.T) {
+	p := testPool(t)
+	ctx := context.Background()
+	t.Cleanup(p.Close)
+	if err := p.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	tag := "simA-" + time.Now().Format("150405.000000")
+	seed := "t_" + tag + "_seed"
+	var ids []string
+	ids = append(ids, seed)
+	artistOf := map[string]string{}
+
+	mk := func(id, artist string, near float32) {
+		nk := tag + "__" + id
+		if err := p.InsertTrackWithFile(ctx,
+			NewTrack{ID: id, Artist: artist, Title: id, NormalizedKey: nk, ReleaseKind: "studio"},
+			NewTrackFile{ID: id + "_f", NormalizedKey: nk, FilePath: `E:\x\` + id + `.mp3`, MimeType: "audio/mpeg", Source: "test", QualityTier: "excellent"},
+		); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+		if err := p.SetFeatureVector(ctx, id, mkVec(map[int]float32{0: near})); err != nil {
+			t.Fatalf("SetFeatureVector %s: %v", id, err)
+		}
+		artistOf[id] = artist
+	}
+
+	t.Cleanup(func() {
+		for _, id := range ids {
+			_, _ = p.p.Exec(ctx, `DELETE FROM tracks WHERE id = $1`, id)
+		}
+	})
+
+	mk(seed, "SEED", 1)
+	// Пять «AAA» ближе к seed, пять «BBB» чуть дальше — по чистой близости
+	// вышло бы A A A A A B B B B B.
+	for i := 0; i < 5; i++ {
+		idA := "t_" + tag + "_a" + string(rune('0'+i))
+		idB := "t_" + tag + "_b" + string(rune('0'+i))
+		ids = append(ids, idA, idB)
+		mk(idA, "AAA", 1-float32(i)*0.001)
+		mk(idB, "BBB", 0.9-float32(i)*0.001)
+	}
+
+	cand := ids[1:] // всё кроме seed
+	got, reordered, err := p.OrderBySimilarity(ctx, seed, cand)
+	if err != nil {
+		t.Fatalf("OrderBySimilarity: %v", err)
+	}
+	if !reordered {
+		t.Fatalf("reordered: ждал true")
+	}
+	if len(got) != 10 {
+		t.Fatalf("длина: ждал 10, получил %d (%v)", len(got), got)
+	}
+	run, prev := 0, ""
+	for _, id := range got {
+		a := artistOf[id]
+		if a == prev {
+			run++
+		} else {
+			run, prev = 1, a
+		}
+		if run > 2 {
+			t.Fatalf("три подряд одного исполнителя %q в %v", a, got)
+		}
 	}
 }
 

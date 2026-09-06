@@ -124,9 +124,13 @@ class Api {
   }
 
   /// Упорядочить очередь Потока по близости звучания к seed. Отдаём id всех
-  /// скачанных треков, получаем их же в новом порядке (без seed). Сервер молчит
-  /// или трек без «отпечатка» — вернётся то же, что дали, только без seed.
-  Future<List<String>> streamOrder({
+  /// скачанных треков, получаем их же в новом порядке (без seed).
+  ///
+  /// [reordered] = true только если подбор по звуку реально состоялся. Если у
+  /// seed-песни нет «отпечатка» — вернётся тот же список в исходном порядке и
+  /// `reordered: false`; телефон тогда не зажигает радио и пишет, что похожее
+  /// не подобрать (06.09.2026).
+  Future<({List<String> ids, bool reordered})> streamOrder({
     required String seedId,
     required List<String> candidateIds,
   }) async {
@@ -135,7 +139,10 @@ class Api {
       'candidate_ids': candidateIds,
     });
     final list = (res.data?['track_ids'] as List?) ?? const [];
-    return list.map((e) => '$e').toList();
+    return (
+      ids: list.map((e) => '$e').toList(),
+      reordered: res.data?['reordered'] == true,
+    );
   }
 
   /// «Корзина» — список убранного (удалено с телефона или зачищено как

@@ -241,12 +241,12 @@ func (s *Server) streamOrder(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
 		return
 	}
-	ordered, err := s.DB.OrderBySimilarity(r.Context(), req.SeedID, req.CandidateIDs)
+	ordered, reordered, err := s.DB.OrderBySimilarity(r.Context(), req.SeedID, req.CandidateIDs)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"track_ids": ordered})
+	writeJSON(w, http.StatusOK, map[string]any{"track_ids": ordered, "reordered": reordered})
 }
 
 // importRunning — не даём двум обходам библиотеки идти параллельно (файлов

@@ -158,12 +158,22 @@ class _PlayerViewState extends State<PlayerView> {
     );
   }
 
-  /// «Радио по этой песне»: спросить у сервера порядок скачанных треков по
-  /// близости звучания к текущему и поставить их в хвост очереди. Текущая
-  /// не прерывается. Сервер молчит / у трека нет отпечатка — очередь как была.
+  /// «Радио по этой песне» — переключатель. Выключено: спрашиваем у сервера
+  /// порядок скачанных треков по близости звучания к текущему и ставим их в
+  /// хвост очереди, текущая не прерывается. Включено: гасим радио, дальше
+  /// Поток играет вперемешку. У seed-песни нет отпечатка — честно говорим,
+  /// что похожее не подобрать, и радио не зажигаем (Alex, 06.09.2026).
   Future<void> _radio(NowPlaying now) async {
     final scope = AppScope.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    if (_p.radio.value) {
+      await _p.stopRadio();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Радио выключил')),
+      );
+      return;
+    }
     final all = await scope.downloads.list();
     if (all.length < 2) return;
     final ids = [
@@ -171,10 +181,19 @@ class _PlayerViewState extends State<PlayerView> {
         if (t.id != now.id) t.id,
     ];
     try {
-      final ordered = await scope.api.streamOrder(seedId: now.id, candidateIds: ids);
+      final res = await scope.api.streamOrder(seedId: now.id, candidateIds: ids);
+      if (!res.reordered) {
+        if (!mounted) return;
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('У этой песни нет звукового отпечатка — похожее не подобрать'),
+          ),
+        );
+        return;
+      }
       final byId = {for (final t in all) t.id: t};
       final tail = <NowPlaying>[
-        for (final id in ordered)
+        for (final id in res.ids)
           if (byId[id] case final t?)
             NowPlaying(
               id: t.id,

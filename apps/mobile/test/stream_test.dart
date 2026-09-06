@@ -13,11 +13,14 @@ class _FakeApi extends Api {
   @override
   Future<List<Map<String, dynamic>>> tracks() async => const [];
   @override
-  Future<List<String>> streamOrder({
+  Future<({List<String> ids, bool reordered})> streamOrder({
     required String seedId,
     required List<String> candidateIds,
   }) async =>
-      [for (final id in candidateIds) if (id != seedId) id];
+      (
+        ids: [for (final id in candidateIds) if (id != seedId) id],
+        reordered: false,
+      );
 }
 
 Future<Widget> _app({List<DownloadedTrack> downloaded = const []}) async {
