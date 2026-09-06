@@ -16,6 +16,11 @@ func TestLanguageAllowed(t *testing.T) {
 		{"Fairuz", "زهرة المدائن", false},
 		{"Mohammad Reza Shajarian", "مرغ سحر", false},
 		{"Static-X", "Push It", true},
+		{"Океан Ельзи", "Обійми", false}, // українська: буква і
+		{"Гурт", "Їхав козак", false},    // Ї на початку
+		{"Воплі Відоплясова", "Весна", false},
+		{"Сплин", "Выхода нет", true}, // русский — оставляем
+		{"Кино", "Группа крови", true},
 	}
 	for _, c := range cases {
 		if got := LanguageAllowed(c.artist, c.title); got != c.want {

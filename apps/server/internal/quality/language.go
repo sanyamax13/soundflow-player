@@ -17,10 +17,35 @@ var blockedScripts = []*unicode.RangeTable{
 	unicode.Myanmar, unicode.Sinhala, unicode.Ethiopic, unicode.Cherokee,
 }
 
+// Украинские буквы, которых нет в русском алфавите. Наличие любой — почти
+// стопроцентный признак украинского (Alex TG 18570: «удали украинские
+// песни»). Высокая точность важнее полноты: пропустить украинскую песню без
+// этих букв не страшно, а вот удалить русскую по ошибке — нельзя.
+// «ґ» НЕ берём: она редкая даже в украинском, а в перенесённой библиотеке
+// встретилась как испорченный апостроф ("Iґll be around" у Larry Carlton).
+var ukrainianOnly = []rune{'і', 'ї', 'є', 'І', 'Ї', 'Є'}
+
+// IsUkrainian — есть ли в названии/исполнителе украинские буквы і/ї/є.
+func IsUkrainian(artist, title string) bool {
+	s := artist + " " + title
+	for _, r := range s {
+		for _, u := range ukrainianOnly {
+			if r == u {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // LanguageAllowed — можно ли качать/держать трек по языку названия. false —
 // в названии или имени исполнителя есть буквы письма вне белого списка
-// (японское, китайское, арабское и т.п.). Латиница и кириллица — всегда true.
+// (японское, китайское, арабское и т.п.) ЛИБО украинские і/ї/є (Alex
+// попросил убрать украинские). Прочая латиница и кириллица — true.
 func LanguageAllowed(artist, title string) bool {
+	if IsUkrainian(artist, title) {
+		return false
+	}
 	for _, r := range artist + " " + title {
 		if !unicode.IsLetter(r) {
 			continue
@@ -39,6 +64,9 @@ func LanguageAllowed(artist, title string) bool {
 // Сначала смотрим однозначные азбуки (кана, хангыль) по всей строке, потом
 // остальное: «夜に駆ける» — иероглифы + хирагана, это японский, не «китайский».
 func GuessLanguage(artist, title string) string {
+	if IsUkrainian(artist, title) {
+		return "украинский"
+	}
 	s := artist + " " + title
 	has := func(t *unicode.RangeTable) bool {
 		for _, r := range s {
