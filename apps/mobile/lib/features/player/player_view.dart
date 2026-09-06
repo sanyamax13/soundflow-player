@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
+import '../../core/config.dart';
+import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import 'cover_backdrop.dart';
 import 'cover_palette.dart';
@@ -56,6 +58,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   late final AnimationController _bg;
   late final AnimationController _heart;
   late final AnimationController _dragX;
+  late final AnimationController _menu;
 
   bool _menuOpen = false;
   bool _showHelp = false;
@@ -75,6 +78,21 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 720),
     );
     _dragX = AnimationController.unbounded(vsync: this, value: 0);
+    _menu = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 180),
+    );
+  }
+
+  void _openMenu() {
+    setState(() => _menuOpen = true);
+    _menu.forward(from: 0);
+  }
+
+  Future<void> _closeMenu() async {
+    await _menu.reverse();
+    if (mounted) setState(() => _menuOpen = false);
   }
 
   @override
@@ -96,6 +114,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
+    _menu.dispose();
     _tint.dispose();
     super.dispose();
   }
@@ -189,6 +208,56 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     if (!mounted) return;
     await _p.next();
     _toast('Убрал — сервер поищет версию получше');
+  }
+
+  // Причины удаления — чтобы потом различать объективно плохие песни
+  // (качество, не музыка) и просто не по вкусу (05.09.2026). «Не та версия»
+  // вынесена в отдельный пункт меню, здесь её нет.
+  static const _deleteReasons = <String, String>{
+    'dislike': 'Не нравится песня',
+    'bad_quality': 'Плохое качество звука',
+    'not_music': 'Это не музыка (подкаст, интервью)',
+    'tired': 'Просто надоела',
+    'other': 'Другая причина',
+  };
+
+  /// Спросить причину и убрать трек с телефона (и с сервера — обычным синком).
+  Future<void> _confirmDelete(NowPlaying now) async {
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Afisha.surfaceHi,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Почему убираешь песню?',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ),
+            for (final e in _deleteReasons.entries)
+              ListTile(
+                title: Text(e.value,
+                    style: const TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(ctx, e.key),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+    await ref.read(downloadsProvider).delete(now.id, reason: reason);
+    if (!mounted) return;
+    await _p.next();
+    _toast('Убрал с телефона');
   }
 
   Future<void> _hideArtist(NowPlaying now) async {
@@ -421,7 +490,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
       onDoubleTap: _like,
-      onLongPress: () => setState(() => _menuOpen = true),
+      onLongPress: _openMenu,
       onHorizontalDragUpdate: (d) {
         _dragX.value = (_dragX.value + d.delta.dx).clamp(-150.0, 150.0);
       },
@@ -461,6 +530,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: DecoratedBox(
               decoration: BoxDecoration(
+                color: Afisha.surfaceHi,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
@@ -469,7 +539,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                       offset: const Offset(0, 16)),
                 ],
               ),
-              child: CoverArt(trackId: now.id, localPath: now.coverPath),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: CoverArt(trackId: now.id, localPath: now.coverPath),
+              ),
             ),
           ),
         ),
@@ -528,12 +601,22 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             icon: const Icon(Icons.skip_next),
             onPressed: _p.next,
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
           IconButton(
-            iconSize: 28,
+            iconSize: 26,
             icon: Icon(_fav ? Icons.favorite : Icons.favorite_border,
                 color: _fav ? Afisha.lime : Colors.white70),
             onPressed: _toggleFavButton,
+          ),
+          Builder(
+            builder: (context) => IconButton(
+              iconSize: 24,
+              icon: const Icon(Icons.delete_outline, color: Colors.white70),
+              onPressed: () {
+                final now = _p.now.value;
+                if (now != null) _confirmDelete(now);
+              },
+            ),
           ),
         ],
       );
@@ -640,62 +723,107 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       );
 
   // ── меню действий по долгому нажатию ──────────────────────────────────
-  // Радиальную раскладку (обложка уменьшается, иконки по углам) доведём
-  // позже; пока — понятная панель со списком (Alex тестирует сами действия).
+  // Обложка уходит вглубь и размывается, действия «выплывают» кружками
+  // с задержкой одно за другим (Alex: «сделай более дизайнерское»).
   Widget _actionsOverlay(NowPlaying now) {
-    Widget tile(IconData icon, String label, VoidCallback onTap) => InkWell(
-          onTap: () {
-            setState(() => _menuOpen = false);
-            onTap();
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-            child: Column(
-              children: [
-                Icon(icon, color: Colors.white, size: 26),
-                const SizedBox(height: 8),
-                Text(label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 12)),
-              ],
-            ),
-          ),
-        );
+    final items = <(IconData, String, VoidCallback)>[
+      _p.radio.value
+          ? (Icons.radio_button_checked, 'радио\nвыкл', () => _radio(now))
+          : (Icons.radio, 'радио\nпо этой', () => _radio(now)),
+      (Icons.tune, 'не хочу\nэту версию', () => _wrongVersion(now)),
+      (Icons.person_off, 'скрыть\nисполнителя', () => _hideArtist(now)),
+      (Icons.trending_up, 'больше\nтакого', () => _weight(now, more: true)),
+      (Icons.trending_down, 'меньше\nтакого', () => _weight(now, more: false)),
+      (Icons.info_outline, 'почему\nиграет', () => _whySheet(now)),
+      (Icons.delete_outline, 'удалить', () => _confirmDelete(now)),
+    ];
 
     return Positioned.fill(
-      child: GestureDetector(
-        onTap: () => setState(() => _menuOpen = false),
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.62),
-          alignment: Alignment.center,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 28),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Afisha.surfaceHi.withValues(alpha: 0.96),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              childAspectRatio: 0.95,
-              children: [
-                ValueListenableBuilder<bool>(
-                  valueListenable: _p.radio,
-                  builder: (_, on, _) => tile(
-                      on ? Icons.radio_button_checked : Icons.radio,
-                      on ? 'радио\nвыкл' : 'радио\nпо этой',
-                      () => _radio(now)),
+      child: AnimatedBuilder(
+        animation: _menu,
+        builder: (context, _) {
+          final t = _menu.value;
+          final e = Curves.easeOutCubic.transform(t);
+          return GestureDetector(
+            onTap: _closeMenu,
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 18 * e, sigmaY: 18 * e),
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.5 * e),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      const Spacer(flex: 2),
+                      Transform.scale(
+                        scale: 0.5 + e * 0.14,
+                        child: Opacity(
+                          opacity: e,
+                          child: SizedBox(
+                            width: 220,
+                            child: CoverArt(
+                                trackId: now.id, localPath: now.coverPath),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 14,
+                          runSpacing: 16,
+                          children: [
+                            for (var i = 0; i < items.length; i++)
+                              _floatAction(items[i], t, i, items.length),
+                          ],
+                        ),
+                      ),
+                      const Spacer(flex: 3),
+                    ],
+                  ),
                 ),
-                tile(Icons.tune, 'не хочу\nэту версию', () => _wrongVersion(now)),
-                tile(Icons.person_off, 'скрыть\nисполнителя',
-                    () => _hideArtist(now)),
-                tile(Icons.trending_up, 'больше\nтакого',
-                    () => _weight(now, more: true)),
-                tile(Icons.trending_down, 'меньше\nтакого',
-                    () => _weight(now, more: false)),
-                tile(Icons.info_outline, 'почему\nиграет', () => _whySheet(now)),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _floatAction(
+      (IconData, String, VoidCallback) item, double t, int i, int n) {
+    final start = 0.15 + (i / n) * 0.5;
+    final local = ((t - start) / (1 - start)).clamp(0.0, 1.0);
+    final e = Curves.easeOutBack.transform(local);
+    return Opacity(
+      opacity: local.clamp(0.0, 1.0),
+      child: Transform.scale(
+        scale: 0.6 + e * 0.4,
+        child: GestureDetector(
+          onTap: () {
+            _closeMenu();
+            item.$3();
+          },
+          child: SizedBox(
+            width: 88,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.13),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.22)),
+                  ),
+                  child: Icon(item.$1, color: Colors.white, size: 24),
+                ),
+                const SizedBox(height: 7),
+                Text(item.$2,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 11.5)),
               ],
             ),
           ),
@@ -784,9 +912,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                       itemBuilder: (_, x) {
                         final e = upcoming[x];
                         return ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.music_note,
-                              color: Afisha.inkDim, size: 18),
+                          leading: CoverThumb(
+                            path: e.value.coverPath,
+                            url: coverUrlFor(e.value.id),
+                            size: 44,
+                          ),
                           title: Text(e.value.title,
                               maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text(e.value.artist,
@@ -1023,8 +1153,10 @@ class _HelpOverlay extends StatelessWidget {
                 row(Icons.keyboard_arrow_up, 'Смахнуть вверх', 'очередь «Дальше»'),
                 row(Icons.keyboard_arrow_down, 'Смахнуть вниз', 'свернуть плеер'),
                 row(Icons.more_horiz, 'Долгое нажатие',
-                    'меню: радио, не хочу эту версию, скрыть исполнителя, больше/меньше такого'),
+                    'меню: радио, не хочу эту версию, скрыть исполнителя, больше/меньше такого, удалить, почему играет'),
                 row(Icons.graphic_eq, 'Вести по волне', 'перемотка'),
+                row(Icons.delete_outline, 'Корзина внизу',
+                    'убрать песню с телефона (спросит причину)'),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,
