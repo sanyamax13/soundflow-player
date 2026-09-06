@@ -47,6 +47,8 @@ dependencies:
   audio_session: ^0.1.25
   # Раздача общих сервисов по дереву + точечные перерисовки (замена AppScope).
   flutter_riverpod: ^2.6.1
+  # Фоновая синхронизация, когда приложение закрыто (Android WorkManager).
+  workmanager: ^0.10.9
 dev_dependencies:
   flutter_test:
     sdk: flutter

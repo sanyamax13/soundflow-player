@@ -9,6 +9,7 @@ import 'app/shell.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
 import 'data/auto_sync.dart';
+import 'data/bg_sync.dart';
 import 'data/db.dart';
 import 'data/downloads_repo.dart';
 import 'data/sync_repo.dart';
@@ -42,6 +43,9 @@ Future<void> main() async {
   // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
   // (06.09.2026). Живёт всё время работы приложения.
   AutoSync(sync, downloads).start();
+  // Плюс фоновая задача — синхронизирует, даже когда приложение закрыто
+  // (Android, ~раз в 15 мин по Wi-Fi). Не ждём — регистрация быстрая.
+  unawaited(initBackgroundSync());
   runApp(
     ProviderScope(
       overrides: [

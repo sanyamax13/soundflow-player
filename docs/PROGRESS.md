@@ -1000,6 +1000,22 @@
 - [x] **APK v15** (`--build-number=15`, vC 2015, arm64) — фикс: Поток не заводится сам (18543). Отправлен Alex 06.09.2026. Не проверено на устройстве.
   сразу плеером, Riverpod, экран «Сервер» срез 1) поверх v13. Отправлен Alex
   06.09.2026. Не проверено на устройстве.
+- [x] **Этап 43 — фоновая синхронизация при закрытом приложении (пункт 3,
+  полный вариант).** 06.09.2026. `workmanager` 0.10.9 (0.5/0.6/0.9 не собрались
+  под этот Flutter — старое v1-embedding / KGP). `lib/data/bg_sync.dart`:
+  `bgSyncCallbackDispatcher` (`@pragma('vm:entry-point')`, `WidgetsFlutterBinding`
+  + `DartPluginRegistrant.ensureInitialized()`, собирает `Db`/`Api`/`SyncRepo`
+  заново, гонит `sync()` если очередь не пуста, всегда закрывает базу).
+  `initBackgroundSync()` — периодическая задача раз в 15 мин, `NetworkType.unmetered`
+  (Wi-Fi) + `requiresBatteryNotLow`, `ExistingPeriodicWorkPolicy.update`; только
+  Android. Вызывается из `main()` после `AutoSync`. `AutoSync` (пока открыт)
+  оставлен. **`android/gradle.properties`: `kotlin.incremental=false`** — иначе
+  Kotlin-компилятор плагина падал на Windows («Could not close incremental
+  caches»). KGP-предупреждение Flutter остаётся (не фатально сейчас).
+  Debug+Release APK собираются, `analyze` чисто, 23 теста.
+- [x] **APK v16** (`--build-number=16`, vC 2016, arm64) — этапы 40 (фикс),
+  43. Отправлен Alex 06.09.2026. Не проверено на устройстве, в т.ч. сам факт
+  срабатывания фоновой задачи.
 - [x] **Этап 42 — экран «Сервер», срез 1 (пункт 10).** 06.09.2026 (`955ecf4`).
   Ручная синхронизация свёрнута из отдельного экрана в раздел «Синхронизация»
   вверху `AdminScreen`; `sync_screen.dart` удалён, карточка «Синхронизация» из
