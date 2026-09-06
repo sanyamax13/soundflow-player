@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/theme.dart';
 
-/// «Сервер» — состояние домашнего сервера, устройства, лента событий.
-/// PIN нет: плеер личный, сервер в домашней сети.
+/// «Сервер» — один собранный экран (Alex 06.09.2026, разбор плеера п. 10):
+/// состояние домашнего сервера, синхронизация, устройства, лента событий.
+/// PIN нет: плеер личный, сервер в домашней сети. Отчёты, занятое место,
+/// очередь скачивания и список «больше не качать» — добавятся, когда появятся
+/// на сервере (пункты 4/11/12).
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
@@ -21,6 +24,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   List<Map<String, dynamic>> _devices = const [];
   List<Map<String, dynamic>> _events = const [];
 
+  // Синхронизация — раздел свёрнут сюда из отдельного экрана.
+  int? _pending;
+  DateTime? _lastSync;
+  bool _syncBusy = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -29,10 +37,22 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
   Future<void> _load() async {
     final api = ref.read(apiProvider);
+    final sync = ref.read(syncProvider);
     setState(() {
       _loading = true;
       _error = null;
     });
+    // Локальные цифры синка — всегда, даже если сервер недоступен.
+    try {
+      final p = await sync.pendingCount();
+      final l = await sync.lastSyncAt();
+      if (mounted) {
+        setState(() {
+          _pending = p;
+          _lastSync = l;
+        });
+      }
+    } catch (_) {}
     try {
       final st = await api.adminStatus();
       final dv = await api.adminDevices();
@@ -50,6 +70,26 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _error = 'Сервер недоступен';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _syncNow() async {
+    final downloads = ref.read(downloadsProvider);
+    final sync = ref.read(syncProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _syncBusy = true);
+    try {
+      final bytes = (await downloads.summary()).bytes;
+      final r = await sync.sync(musicBytes: bytes);
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+            r.sent == 0 ? 'Новых событий не было' : 'Отправлено событий: ${r.sent}'),
+      ));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Сервер не ответил')));
+    } finally {
+      if (mounted) setState(() => _syncBusy = false);
+      await _load();
     }
   }
 
@@ -82,25 +122,57 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         onRefresh: _load,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? _errorView()
-                : _body(),
+            : _body(),
       ),
     );
   }
 
-  Widget _errorView() => ListView(
+  Widget _syncBlock() {
+    final pending = _pending;
+    String fmt(DateTime? d) {
+      if (d == null) return 'ещё не было';
+      final l = d.toLocal();
+      String two(int n) => n.toString().padLeft(2, '0');
+      return '${two(l.day)}.${two(l.month)}.${l.year} ${two(l.hour)}:${two(l.minute)}';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 120),
-          const Icon(Icons.cloud_off, color: Afisha.inkDim, size: 56),
+          Text(
+            pending == null
+                ? '…'
+                : pending == 0
+                    ? 'Всё отправлено'
+                    : 'Ждут отправки: $pending',
+            style: const TextStyle(fontSize: 20, color: Afisha.ink),
+          ),
+          const SizedBox(height: 4),
+          Text('Последняя синхронизация: ${fmt(_lastSync)}',
+              style: const TextStyle(color: Afisha.inkDim)),
           const SizedBox(height: 12),
-          Center(child: Text(_error!, style: const TextStyle(color: Afisha.inkDim))),
-          const SizedBox(height: 12),
-          Center(
-            child: FilledButton(onPressed: _load, child: const Text('Повторить')),
+          FilledButton(
+            onPressed: (_syncBusy || pending == null) ? null : _syncNow,
+            child: _syncBusy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Синхронизировать сейчас'),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Лайки, удаления и что слушал копятся на телефоне и работают без '
+            'сети. Уходят на сервер сами, как появляется связь. Кнопка — если '
+            'нужно прямо сейчас.',
+            style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 12.5),
           ),
         ],
-      );
+      ),
+    );
+  }
 
   Widget _body() {
     final db = '${_status['db'] ?? '—'}';
@@ -112,6 +184,25 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
+        _section('Синхронизация'),
+        _syncBlock(),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.cloud_off, color: Afisha.inkDim, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(_error!,
+                      style: const TextStyle(color: Afisha.inkDim)),
+                ),
+                TextButton(onPressed: _load, child: const Text('Повторить')),
+              ],
+            ),
+          ),
+        if (_error != null) const SizedBox(height: 16),
+        if (_error == null) ...[
         _section('Сервер'),
         _kv('База данных', db == 'ok' ? 'на связи' : db),
         _kv('Работает', _uptime((_status['uptime_sec'] as num?) ?? 0)),
@@ -156,6 +247,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             subtitle: Text(_when(e['applied_at'] as String?),
                 style: const TextStyle(color: Afisha.inkDim)),
           ),
+        ],
         const SizedBox(height: 24),
       ],
     );

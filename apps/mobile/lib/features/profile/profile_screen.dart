@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
-import '../sync/sync_screen.dart';
 import '../trash/trash_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
@@ -34,17 +33,9 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           _Row(
-            icon: Icons.sync,
-            title: 'Синхронизация',
-            subtitle: 'уходит на сервер сама; можно и вручную',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SyncScreen()),
-            ),
-          ),
-          _Row(
             icon: Icons.dns_outlined,
             title: 'Сервер',
-            subtitle: 'состояние, устройства, события',
+            subtitle: 'состояние, синхронизация, устройства, события',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
             ),

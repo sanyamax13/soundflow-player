@@ -90,15 +90,16 @@ void main() {
     expect(find.byIcon(Icons.pause), findsNothing);
   });
 
-  testWidgets('в Профиле есть карточка «Синхронизация»', (tester) async {
+  testWidgets('Синхронизация свёрнута в экран «Сервер» (06.09.2026)', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Синхронизация'), findsOneWidget);
+    // Отдельной карточки «Синхронизация» в Профиле больше нет.
+    expect(find.text('Синхронизация'), findsNothing);
 
-    await tester.tap(find.text('Синхронизация'));
+    await tester.tap(find.text('Сервер'));
     await tester.pumpAndSettle();
     expect(find.text('Всё отправлено'), findsOneWidget);
     expect(find.text('Синхронизировать сейчас'), findsOneWidget);
@@ -114,8 +115,13 @@ void main() {
 
     await tester.tap(find.text('Сервер'));
     await tester.pumpAndSettle();
-    expect(find.text('КАТАЛОГ'), findsOneWidget);
-    expect(find.text('на связи'), findsOneWidget);
+    expect(find.text('СИНХРОНИЗАЦИЯ'), findsOneWidget);
+    expect(find.text('СЕРВЕР'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('пока никто не синхронизировался'),
+      240,
+    );
     expect(find.text('пока никто не синхронизировался'), findsOneWidget);
   });
 
