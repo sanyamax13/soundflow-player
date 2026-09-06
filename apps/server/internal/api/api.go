@@ -60,6 +60,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/blocklist", s.adminBlocklist)
 				r.Post("/blocklist/remove", s.adminBlocklistRemove)
 				r.Get("/log", s.adminLog)
+				r.Get("/language-scan", s.adminLanguageScan)
 				r.Post("/reanalyze", s.adminReanalyze)
 				r.Post("/sweep-junk", s.adminSweepJunk)
 				r.Post("/backfill-covers", s.adminBackfillCovers)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"soundflow/server/internal/diskspace"
+	"soundflow/server/internal/quality"
 )
 
 // Админка (этап 6). PIN нет — плеер личный, сервер в домашней сети.
@@ -110,6 +111,39 @@ func (s *Server) adminBlocklist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"blocked": list})
+}
+
+// GET /v1/admin/language-scan — сухой прогон чистки по языкам (п.7б):
+// сколько треков каталога на языке вне белого списка (рус/англ/нем/фр/итал).
+// НИЧЕГО НЕ УДАЛЯЕТ — только считает и даёт образец. Настоящая чистка —
+// отдельной ручкой с подтверждением числа (ещё не сделана).
+func (s *Server) adminLanguageScan(w http.ResponseWriter, r *http.Request) {
+	if s.DB.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "база недоступна"})
+		return
+	}
+	list, err := s.DB.CatalogList(r.Context(), 20000)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	byLang := map[string]int{}
+	sample := make([]map[string]string, 0, 30)
+	total := 0
+	for _, t := range list {
+		if quality.LanguageAllowed(t.Artist, t.Title) {
+			continue
+		}
+		total++
+		lang := quality.GuessLanguage(t.Artist, t.Title)
+		byLang[lang]++
+		if len(sample) < 30 {
+			sample = append(sample, map[string]string{"artist": t.Artist, "title": t.Title, "lang": lang})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scanned": len(list), "would_remove": total, "by_language": byLang, "sample": sample,
+	})
 }
 
 type blocklistRemoveReq struct {

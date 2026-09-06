@@ -64,6 +64,10 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 	if v := quality.Screen(req.Artist, req.Title, ""); !v.OK {
 		return Result{Reason: v.Reason}, ErrRejected
 	}
+	// 1б. Язык вне белого списка (п.7: рус/англ/нем/фр/итал) — не качаем.
+	if !quality.LanguageAllowed(req.Artist, req.Title) {
+		return Result{Reason: "язык вне списка (" + quality.GuessLanguage(req.Artist, req.Title) + ")"}, ErrRejected
+	}
 
 	normKey := quality.NormalizedKey(req.Artist, req.Title)
 
