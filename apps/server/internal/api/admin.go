@@ -31,7 +31,11 @@ func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
 	if dbState == "ok" {
 		if st, err := s.DB.AdminStatus(r.Context()); err == nil {
 			musicBytes = st.MusicBytes
-			out["catalog"] = map[string]int64{"tracks": st.Tracks, "track_files": st.TrackFiles}
+			out["catalog"] = map[string]int64{
+				"tracks":            st.Tracks,
+				"track_files":       st.TrackFiles,
+				"hidden_by_quality": st.HiddenByQ,
+			}
 			out["events"] = map[string]any{"total": st.EventsTotal, "by_kind": st.EventsByKind}
 			out["devices"] = st.Devices
 			out["migrations"] = st.Migrations

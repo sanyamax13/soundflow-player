@@ -43,6 +43,10 @@ type Request struct {
 	Artist              string
 	Title               string
 	ExpectedDurationSec int
+	// RejectAltVersions — отбраковать файл, если по тегам это кавер/ремикс/
+	// акустика/концерт, а не оригинал. Ставится при перекачке по причине
+	// «не та версия» (пункт 5 разбора плеера).
+	RejectAltVersions bool
 }
 
 type Result struct {
@@ -102,6 +106,13 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		_ = s.DB.RecordRejected(ctx, normKey, res.ProviderURL, res.Source, req.Artist, req.Title, reason)
 		return Result{Reason: reason}, ErrWrongTrack
 	}
+	// 5б. Перекачка по причине «не та версия»: если в файле по тегам кавер/
+	//     ремикс/акустика/концерт — это снова не оригинал, отбраковываем.
+	if req.RejectAltVersions && id3Title != "" && quality.IsAltVersion(id3Title) {
+		reason := fmt.Sprintf("скачалась не оригинальная версия: %q", id3Title)
+		_ = s.DB.RecordRejected(ctx, normKey, res.ProviderURL, res.Source, req.Artist, req.Title, reason)
+		return Result{Reason: reason}, ErrWrongTrack
+	}
 
 	// 6. Качество файла.
 	mime := quality.MimeFromExt(res.FilePath)
@@ -109,6 +120,14 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 	if !playable {
 		_ = s.DB.RecordRejected(ctx, normKey, res.ProviderURL, res.Source, req.Artist, req.Title, why)
 		return Result{Reason: why}, ErrLowQuality
+	}
+
+	// 6б. Обрезок: эталона нет, а файл совсем короткий (< 40 с) — почти
+	//     наверняка превью или битая закачка (пункт 4б).
+	if req.ExpectedDurationSec == 0 && res.DurationSec > 0 && res.DurationSec < 40 {
+		reason := fmt.Sprintf("похоже на обрезок — всего %d с", res.DurationSec)
+		_ = s.DB.RecordRejected(ctx, normKey, res.ProviderURL, res.Source, req.Artist, req.Title, reason)
+		return Result{Reason: reason}, ErrLowQuality
 	}
 
 	// 7. Длительность (если знаем эталон).

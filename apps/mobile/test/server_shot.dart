@@ -28,7 +28,11 @@ class _FakeApi extends Api {
         'go_version': 'go1.25',
         'music_source': 'Яндекс + торренты',
         'migrations': ['0001', '0002', '0003', '0004', '0005'],
-        'catalog': {'tracks': 8781, 'track_files': 8774},
+        'catalog': {
+          'tracks': 8781,
+          'track_files': 8774,
+          'hidden_by_quality': 23,
+        },
         'events': {
           'total': 1204,
           'by_kind': {'play': 980, 'like': 41, 'delete': 63, 'skip': 120},

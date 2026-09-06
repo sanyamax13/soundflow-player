@@ -168,8 +168,13 @@ func (d *Pool) NextLibraryBatch(ctx context.Context, excludeIDs []string, budget
 	if excludeIDs == nil {
 		excludeIDs = []string{}
 	}
+	// Пункт 4б: не отправляем на телефон концертные записи и обрезки
+	// (файл короче 40 с — почти наверняка превью/битая закачка). Кавер/
+	// ремикс/акустика тут НЕ трогаем — это ручной случай «не та версия».
 	rows, err := d.p.Query(ctx, catalogSelect+`
 		AND NOT (t.id = ANY($1))
+		AND t.release_kind <> 'live'
+		AND COALESCE(tf.duration_sec, t.duration_sec, 120) >= 40
 		ORDER BY favorite DESC, t.created_at ASC
 		LIMIT 5000`, excludeIDs)
 	if err != nil {

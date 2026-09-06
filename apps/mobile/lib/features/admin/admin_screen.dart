@@ -243,6 +243,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _kv('Файлов', '${catalog['track_files'] ?? 0}'),
         if (disk['music_bytes'] != null)
           _kv('Музыка занимает', _size((disk['music_bytes'] as num?) ?? 0)),
+        if (((catalog['hidden_by_quality'] as num?) ?? 0) > 0)
+          _kv('Не шлём на телефон (концерты, обрезки)',
+              '${catalog['hidden_by_quality']}'),
         _kv('Из старого: избранное', '${legacy['favorites'] ?? 0}'),
         if (disk.isNotEmpty) ...[
           _section('Место на диске'),

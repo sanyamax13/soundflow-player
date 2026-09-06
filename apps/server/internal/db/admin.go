@@ -15,7 +15,8 @@ type AdminStatus struct {
 	Migrations    []string         `json:"migrations"`
 	LegacyFavs    int64            `json:"legacy_favs"`
 	LegacyBlocked int64            `json:"legacy_blocked"`
-	MusicBytes    int64            `json:"music_bytes"` // сумма размеров файлов каталога
+	MusicBytes    int64            `json:"music_bytes"`      // сумма размеров файлов каталога
+	HiddenByQ     int64            `json:"hidden_by_quality"` // концерты/обрезки — не шлём на телефон (п.4б)
 }
 
 func (d *Pool) AdminStatus(ctx context.Context) (AdminStatus, error) {
@@ -30,8 +31,14 @@ func (d *Pool) AdminStatus(ctx context.Context) (AdminStatus, error) {
 		       (SELECT count(*) FROM devices),
 		       (SELECT count(*) FROM legacy_marks WHERE kind = 'favorite'),
 		       (SELECT count(*) FROM legacy_marks WHERE kind = 'blocked'),
-		       (SELECT COALESCE(sum(size_bytes), 0) FROM track_files)`,
-	).Scan(&st.Tracks, &st.TrackFiles, &st.EventsTotal, &st.Devices, &st.LegacyFavs, &st.LegacyBlocked, &st.MusicBytes); err != nil {
+		       (SELECT COALESCE(sum(size_bytes), 0) FROM track_files),
+		       (SELECT count(*) FROM tracks t
+		          LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
+		          LEFT JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
+		         WHERE lm.kind IS DISTINCT FROM 'blocked'
+		           AND (t.release_kind = 'live'
+		                OR COALESCE(tf.duration_sec, t.duration_sec, 120) < 40))`,
+	).Scan(&st.Tracks, &st.TrackFiles, &st.EventsTotal, &st.Devices, &st.LegacyFavs, &st.LegacyBlocked, &st.MusicBytes, &st.HiddenByQ); err != nil {
 		return st, err
 	}
 

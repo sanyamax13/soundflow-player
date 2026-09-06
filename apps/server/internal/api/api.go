@@ -13,6 +13,7 @@ import (
 
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/db"
+	"soundflow/server/internal/deezer"
 	"soundflow/server/internal/music"
 	"soundflow/server/internal/pathmap"
 )
@@ -219,9 +220,13 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 // acquire откажет — "в старом плеере удалён") и стирает саму строку трека
 // из каталога (db.DeleteTrack), а не просто прячет — иначе acquire отдал бы
 // ту же запись из каталога вместо честного нового поиска (шаг 3 в
-// acquire.Acquire ищет по normalized_key). Файл всё равно уходит в _trash,
-// не стирается насовсем. Замена ищется фоном — телефон не ждёт; не
+// acquire.Acquire ищет по normalized_key). Файл стирается насовсем
+// (06.09.2026: без _trash). Замена ищется фоном — телефон не ждёт; не
 // нашлась — трек просто останется без замены, ничего не падает.
+// "не та версия": перед перекачкой сверяем длительность студийной версии с
+// Deezer (пункт 5) и просим acquire отбраковать кавер/ремикс по тегам файла;
+// нет чистой версии у Deezer или перекачка не прошла — «нормальной версии не
+// нашлось» в ленту, трек остаётся убранным.
 func (s *Server) deleteAndReacquire(ctx context.Context, trackID, local, reason string) {
 	artist, title, ok, err := s.DB.TrackArtistTitle(ctx, trackID)
 	if err != nil || !ok {
@@ -249,10 +254,35 @@ func (s *Server) deleteAndReacquire(ctx context.Context, trackID, local, reason 
 		defer acquireInFlight.Add(-1)
 		bg, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		res, err := s.Acquire.Acquire(bg, acquire.Request{Artist: artist, Title: title})
+
+		acqReq := acquire.Request{Artist: artist, Title: title}
+		if reason == "wrong_version" {
+			// Пункт 5: сверяемся с надёжным источником (Deezer — MusicBrainz
+			// заблокирован). Берём длительность студийной версии как эталон
+			// и просим acquire отбраковать кавер/ремикс по тегам файла.
+			acqReq.RejectAltVersions = true
+			dctx, dcancel := context.WithTimeout(bg, 20*time.Second)
+			canon, derr := deezer.CanonicalTrack(dctx, artist, title)
+			dcancel()
+			switch {
+			case derr == nil && canon.Found && canon.DurationSec > 0:
+				acqReq.ExpectedDurationSec = canon.DurationSec
+				log.Printf("переудаление %s — %s: эталон Deezer — %d с (%s)", artist, title, canon.DurationSec, canon.Album)
+			case derr == nil && !canon.Found:
+				log.Printf("переудаление %s — %s: у Deezer нет студийной версии", artist, title)
+				s.logServer(context.Background(), db.LogNotFound, artist, title, "нормальной версии не существует", 0)
+				return
+			}
+		}
+
+		res, err := s.Acquire.Acquire(bg, acqReq)
 		if err != nil {
+			detail := "замену получше не нашёл"
+			if reason == "wrong_version" {
+				detail = "нормальной версии не нашлось"
+			}
 			log.Printf("переудаление %s — %s: не нашёл замену: %v", artist, title, err)
-			s.logServer(context.Background(), db.LogNotFound, artist, title, "замену получше не нашёл", 0)
+			s.logServer(context.Background(), db.LogNotFound, artist, title, detail, 0)
 			return
 		}
 		s.logServer(context.Background(), db.LogReplaced, artist, title, "заменил на версию получше", 0)
