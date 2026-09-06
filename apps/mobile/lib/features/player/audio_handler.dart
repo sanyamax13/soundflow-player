@@ -72,5 +72,19 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> stop() => _player.pause();
+  Future<void> stop() async {
+    await _player.pause();
+    // Убирает уведомление и снимает foreground-сервис — иначе он висит и
+    // держит приложение живым в фоне.
+    await super.stop();
+  }
+
+  /// Пользователь смахнул приложение из «недавних». По умолчанию Android
+  /// оставляет музыку играть в фоне — Alex этого не ждёт (06.09.2026:
+  /// «выгружаю плеер, а он всё равно играет»). Глушим и гасим сессию.
+  @override
+  Future<void> onTaskRemoved() async {
+    await stop();
+    await super.onTaskRemoved();
+  }
 }
