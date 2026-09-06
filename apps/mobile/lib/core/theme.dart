@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
-/// Тема «Афиша» — один-в-один со старого веба (`apps/web/src/app.css`):
-/// чистый чёрный фон, белый текст, минимум серого, лаймовый акцент на нижнем
-/// меню, узкий дисплейный гротеск Oswald (замена виндовому Bahnschrift, с
-/// кириллицей, вшит в приложение).
+/// Тема «Афиша» — чистый чёрный фон, белый текст, минимум серого, лаймовый
+/// акцент на нижнем меню. Шрифт — Inter (Alex 06.09.2026, вместо узкого Oswald:
+/// тот сильно жал буквы в плеере). Inter вшит в приложение, с кириллицей,
+/// начертания 400/500/600/700; тот же шрифт стоит в ФармМастере.
 class Afisha {
   static const Color bg = Color(0xFF000000);
   static const Color surface = Color(0xFF0F0F0F);
@@ -14,7 +14,7 @@ class Afisha {
   static const Color inkDim = Color(0xFF9B9B9B);
   static const Color line = Color(0xFF222222);
 
-  static const String fontFamily = 'Oswald';
+  static const String fontFamily = 'Inter';
 
   static ThemeData theme() {
     final base = ThemeData(

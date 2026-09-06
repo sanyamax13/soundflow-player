@@ -187,21 +187,21 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
         ],
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
+            // Строка-итог отдельной строкой над переключателем: с широким Inter
+            // она не влезала в один ряд с кнопками и обрезалась (06.09.2026).
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
-                  child: Text(
-                    '${groups.length} ${_artistWord(groups.length)} · '
-                    '$_count ${_songWord(_count)} · ${_mb(_bytes)}',
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: const TextStyle(color: Afisha.inkDim, fontSize: 12.5),
-                  ),
+                Text(
+                  '${groups.length} ${_artistWord(groups.length)} · '
+                  '$_count ${_songWord(_count)} · ${_mb(_bytes)}',
+                  style: const TextStyle(color: Afisha.inkDim, fontSize: 12.5),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(height: 8),
                 SegmentedButton<bool>(
                   showSelectedIcon: false,
                   style: const ButtonStyle(

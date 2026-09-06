@@ -76,9 +76,9 @@ Future<Widget> _app() async {
 void main() {
   setUpAll(() async {
     sqfliteFfiInit();
-    final oswald = File('assets/fonts/Oswald.ttf').readAsBytesSync();
-    await (FontLoader('Oswald')
-          ..addFont(Future.value(ByteData.view(oswald.buffer))))
+    final inter = File('assets/fonts/Inter-Regular.ttf').readAsBytesSync();
+    await (FontLoader('Inter')
+          ..addFont(Future.value(ByteData.view(inter.buffer))))
         .load();
     for (final p in [
       r'E:\flutter\bin\cache\artifacts\material_fonts\materialicons-regular.otf',

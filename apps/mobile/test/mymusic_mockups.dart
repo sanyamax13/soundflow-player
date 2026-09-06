@@ -5,7 +5,7 @@
 // Картинки лягут в test/goldens/mymusic_*.png
 //
 // Виджеты — настоящие (ListView, GridView, лаймовый SegmentedButton, тема
-// Afisha, шрифт Oswald), данные — выдуманные ниже.
+// Afisha, шрифт Inter), данные — выдуманные ниже.
 
 import 'dart:io';
 
@@ -552,9 +552,9 @@ Future<void> _shot(WidgetTester tester, Widget child, String name) async {
 
 void main() {
   setUpAll(() async {
-    final oswald = File('assets/fonts/Oswald.ttf').readAsBytesSync();
-    await (FontLoader('Oswald')
-          ..addFont(Future.value(ByteData.view(oswald.buffer))))
+    final inter = File('assets/fonts/Inter-Regular.ttf').readAsBytesSync();
+    await (FontLoader('Inter')
+          ..addFont(Future.value(ByteData.view(inter.buffer))))
         .load();
 
     // Иконки Material — их шрифт в тестах сам не грузится, выходили квадраты.
