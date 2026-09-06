@@ -21,18 +21,22 @@ class PlayerController {
   bool _resumeAfterInterruption = false;
 
   Future<void> _initSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-    session.interruptionEventStream.listen((event) {
-      if (event.begin) {
-        _resumeAfterInterruption = playing.value &&
-            (event.type == AudioInterruptionType.pause ||
-                event.type == AudioInterruptionType.duck);
-      } else if (_resumeAfterInterruption) {
-        _resumeAfterInterruption = false;
-        play();
-      }
-    });
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          _resumeAfterInterruption = playing.value &&
+              (event.type == AudioInterruptionType.pause ||
+                  event.type == AudioInterruptionType.duck);
+        } else if (_resumeAfterInterruption) {
+          _resumeAfterInterruption = false;
+          play();
+        }
+      });
+    } catch (_) {
+      // Нет плагина аудиосессии (виджет-тест / рендер макета) — не критично.
+    }
   }
 
   /// Вызывается, когда трек начал играть (в т.ч. авто-переход к следующему) —
@@ -135,6 +139,18 @@ class PlayerController {
   }
 
   Future<void> seek(Duration to) async => _player?.seek(to);
+
+  /// Очередь целиком (для листа «Дальше» в плеере) и позиция в ней.
+  List<NowPlaying> get queueView => List.unmodifiable(_queue);
+  int get currentIndex => _index;
+
+  /// Перейти на трек с индексом [i] в очереди (тап по строке в листе «Дальше»).
+  Future<void> jumpTo(int i) async {
+    final p = _player;
+    if (p == null || i < 0 || i >= _queue.length) return;
+    onSkip?.call(now.value ?? _queue[_index]);
+    await p.seek(Duration.zero, index: i);
+  }
 
   Future<void> toggleShuffle() async {
     final p = _player;

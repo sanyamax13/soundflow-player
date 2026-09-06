@@ -1,70 +1,81 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
 import '../../core/theme.dart';
 import 'cover_backdrop.dart';
+import 'cover_palette.dart';
 import 'player_controller.dart';
 
-/// Тело полноэкранного плеера: обложка целиком по центру + её размытая копия
-/// фоном (вариант «с размытым фоном», Alex 05.09.2026 — раньше обложка
-/// растягивалась на весь экран и у квадратных резались края), поверх нижней
-/// части — градиент и управление (перемотка, назад/вперёд, пауза, перемешивание,
-/// сердечко). Общий виджет для двух мест (05.09.2026, Alex попросил убрать
-/// список из «Потока» и оставить только это как стартовый экран вкладки):
-/// - вкладка «Поток» вставляет его прямо в тело, без кнопки закрытия;
-/// - [NowPlayingScreen] открывает его поверх текущего экрана (тап по
-///   мини-плееру), с кнопкой «вниз».
+/// Полноэкранный плеер — вариант 4.2 «Радио-объект» (Alex TG 18568–18590,
+/// с разбором внешнего дизайнера). Управление в первую очередь жестами по
+/// обложке, снизу — маленький ряд кнопок как подсказка/подстраховка.
+///
+/// Жесты по обложке:
+///  • тап — пауза/играть;
+///  • двойной тап — «нравится» (сердце всплывает);
+///  • смахнуть влево/вправо — следующая/предыдущая (обложка едет за пальцем);
+///  • смахнуть вверх — очередь «Дальше»;
+///  • смахнуть вниз — свернуть плеер (если открыт поверх);
+///  • долгое нажатие — меню действий (радио, не хочу эту версию, скрыть
+///    исполнителя, больше/меньше такого, почему это играет).
+/// Волна внизу — перемотка (вести пальцем), зона касания на всю высоту.
+/// «?» вверху — та же инструкция внутри приложения; в первый раз
+/// показывается сама.
+///
+/// Общий виджет для двух мест:
+///  • вкладка «Поток» вставляет его в тело, без кнопки «вниз»;
+///  • [NowPlayingScreen] открывает поверх (тап по мини-плееру), с «вниз».
 class PlayerView extends ConsumerStatefulWidget {
   const PlayerView({super.key, this.onDismiss, this.emptyState});
 
-  /// Кнопка «вниз» в углу. Есть, когда экран открыт поверх другого (пуш) —
-  /// во вкладке «Поток» сворачивать некуда, там её нет.
   final VoidCallback? onDismiss;
-
-  /// Чем показывать состояние "ещё ничего не играет" вместо надписи по
-  /// умолчанию. Нужно «Потоку» (05.09.2026, Alex: не начинать играть само
-  /// при открытии вкладки) — там вместо текста кнопка «начать».
   final Widget? emptyState;
 
   @override
   ConsumerState<PlayerView> createState() => _PlayerViewState();
 }
 
-class _PlayerViewState extends ConsumerState<PlayerView> {
+class _PlayerViewState extends ConsumerState<PlayerView>
+    with TickerProviderStateMixin {
   bool _wired = false;
+  PlayerController? _controller;
+  PlayerController get _p => _controller!;
+
   String? _favTrackId;
   bool _fav = false;
 
-  // Короткое сообщение поверх плеера (радио вкл/выкл, «убрал» и т.п.).
-  // Своя плашка внутри Stack, не SnackBar: SnackBar ложился то на кнопки
-  // управления, то на название и строку «Радио по этой» (Alex ловил на
-  // устройстве 06.09.2026 дважды). Эта висит по центру, над обложкой,
-  // подальше от всего, и сама гаснет.
+  final ValueNotifier<Color> _tint = ValueNotifier(Afisha.surfaceHi);
+
+  late final AnimationController _bg;
+  late final AnimationController _heart;
+  late final AnimationController _dragX;
+
+  bool _menuOpen = false;
+  bool _showHelp = false;
+
   String? _toastText;
   Timer? _toastTimer;
 
-  // Причины удаления (05.09.2026, просьба Alex): чтобы потом было видно,
-  // какие песни объективно плохие (качество, не та версия, не музыка), а
-  // какие просто не по вкусу — это разные сигналы для будущей настройки
-  // фильтров/подбора, их стоит различать сразу, не задним числом.
-  static const _deleteReasons = <String, String>{
-    'dislike': 'Не нравится песня',
-    'bad_quality': 'Плохое качество звука',
-    'wrong_version': 'Не та версия (кавер, ремикс и т.п.)',
-    'not_music': 'Это не музыка (подкаст, интервью)',
-    'tired': 'Просто надоела',
-    'other': 'Другая причина',
-  };
-  // Ссылку на контроллер держим в поле, а не читаем провайдер по требованию —
-  // в dispose() контекст/ref уже недействителен (баг вылез,
-  // когда этот экран впервые стал не только пуш-маршрутом, а телом вкладки
-  // «Поток», которое реально размонтируется при переключении вкладок/тестах).
-  PlayerController? _controller;
-
-  PlayerController get _p => _controller!;
+  @override
+  void initState() {
+    super.initState();
+    _bg = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 24),
+    );
+    _heart = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    );
+    _dragX = AnimationController.unbounded(vsync: this, value: 0);
+  }
 
   @override
   void didChangeDependencies() {
@@ -72,19 +83,36 @@ class _PlayerViewState extends ConsumerState<PlayerView> {
     if (!_wired) {
       _wired = true;
       _controller = ref.read(playerProvider);
-      _p.now.addListener(_onNowChanged);
-      _onNowChanged();
+      _p.now.addListener(_onNow);
+      _onNow();
+      _maybeShowHelpFirstRun();
     }
   }
 
   @override
   void dispose() {
     _toastTimer?.cancel();
-    _controller?.now.removeListener(_onNowChanged);
+    _controller?.now.removeListener(_onNow);
+    _bg.dispose();
+    _heart.dispose();
+    _dragX.dispose();
+    _tint.dispose();
     super.dispose();
   }
 
-  void _onNowChanged() => _syncFav();
+  // ── обложка сменилась: избранное + цвет фона ────────────────────────────
+  void _onNow() {
+    // «Живой» фон крутим только когда что-то играет (батарея + чтобы тесты
+    // с pumpAndSettle не висели на бесконечной анимации).
+    if (_p.now.value != null) {
+      if (!_bg.isAnimating) _bg.repeat(reverse: true);
+    } else {
+      _bg.stop();
+    }
+    _syncFav();
+    _syncTint();
+    if (mounted) setState(() {}); // волна/название
+  }
 
   Future<void> _syncFav() async {
     final cur = _p.now.value;
@@ -97,88 +125,100 @@ class _PlayerViewState extends ConsumerState<PlayerView> {
     });
   }
 
-  Future<void> _toggleFav() async {
+  Future<void> _syncTint() async {
+    final cur = _p.now.value;
+    if (cur == null) return;
+    final img = coverImageProvider(cur.id, cur.coverPath);
+    final immediate = CoverPalette.cached(img);
+    if (immediate != null) {
+      _tint.value = immediate;
+      return;
+    }
+    final c = await CoverPalette.of(img);
+    if (mounted && _p.now.value?.id == cur.id) _tint.value = c;
+  }
+
+  // ── первый запуск: показать инструкцию один раз ────────────────────────
+  Future<void> _maybeShowHelpFirstRun() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final marker = File('${dir.path}/player_help_seen');
+      if (marker.existsSync()) return;
+      marker.writeAsStringSync('1');
+      if (mounted) setState(() => _showHelp = true);
+    } catch (_) {
+      // не смогли записать метку — просто не показываем авто-подсказку
+    }
+  }
+
+  // ── действия ──────────────────────────────────────────────────────────
+  Future<void> _toggle() => _p.toggle();
+
+  Future<void> _like() async {
+    final cur = _p.now.value;
+    if (cur == null) return;
+    _heart.forward(from: 0);
+    if (!_fav) {
+      setState(() => _fav = true);
+      await ref.read(downloadsProvider).setFavorite(cur.id, true);
+      _toast('Добавил в любимое');
+    }
+  }
+
+  Future<void> _toggleFavButton() async {
     final cur = _p.now.value;
     if (cur == null) return;
     final v = !_fav;
     setState(() => _fav = v);
     await ref.read(downloadsProvider).setFavorite(cur.id, v);
+    if (v) _heart.forward(from: 0);
   }
 
-  /// Спросить причину и убрать трек с телефона (и с сервера — через обычную
-  /// синхронизацию, как и раньше). Играющий сейчас трек — переходим на
-  /// следующий, чтобы не залипнуть на убранном.
-  Future<void> _confirmDelete(NowPlaying now) async {
-    final reason = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Afisha.surfaceHi,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Text(
-                'Почему убираешь песню?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            for (final e in _deleteReasons.entries)
-              ListTile(
-                title: Text(
-                  e.value,
-                  style: const TextStyle(color: Colors.white),
-                ),
-                onTap: () => Navigator.pop(ctx, e.key),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (reason == null || !mounted) return;
-    await ref.read(downloadsProvider).delete(now.id, reason: reason);
-    if (!mounted) return;
-    await _p.next();
-    _toast('Убрал с телефона');
+  void _swipeNext() {
+    _toast('Дальше');
+    _p.next();
   }
 
-  String _mmss(Duration d) {
-    final m = d.inMinutes;
-    final s = d.inSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+  void _swipePrev() {
+    _toast('Назад');
+    _p.prev();
   }
 
-  /// Показать плашку-сообщение по центру плеера на ~1,8 с. Не SnackBar —
-  /// см. комментарий у [_toastText].
-  void _toast(String text) {
-    if (!mounted) return;
-    setState(() => _toastText = text);
-    _toastTimer?.cancel();
-    _toastTimer = Timer(const Duration(milliseconds: 1800), () {
-      if (mounted) setState(() => _toastText = null);
-    });
-  }
-
-  /// «Не та версия» одним тапом: убрать этот трек (причина wrong_version —
-  /// сервер потом сам подтянет другую версию, см. deleteAndReacquire) и
-  /// перейти к следующему. Без листа причин, в отличие от корзины.
-  Future<void> _replaceVersion(NowPlaying now) async {
+  Future<void> _wrongVersion(NowPlaying now) async {
     await ref.read(downloadsProvider).delete(now.id, reason: 'wrong_version');
     if (!mounted) return;
     await _p.next();
     _toast('Убрал — сервер поищет версию получше');
   }
 
-  /// «Радио по этой песне» — переключатель. Выключено: спрашиваем у сервера
-  /// порядок скачанных треков по близости звучания к текущему и ставим их в
-  /// хвост очереди, текущая не прерывается. Включено: гасим радио, дальше
-  /// Поток играет вперемешку. У seed-песни нет отпечатка — честно говорим,
-  /// что похожее не подобрать, и радио не зажигаем (Alex, 06.09.2026).
+  Future<void> _hideArtist(NowPlaying now) async {
+    final artist = now.artist;
+    await ref
+        .read(syncProvider)
+        .record('hide_artist', payload: {'artist': artist});
+    if (!mounted) return;
+    await _p.next();
+    _undo('Скрыл «$artist» из Потока', () async {
+      await ref
+          .read(syncProvider)
+          .record('unhide_artist', payload: {'artist': artist});
+    });
+  }
+
+  Future<void> _weight(NowPlaying now, {required bool more}) async {
+    await ref
+        .read(syncProvider)
+        .record(more ? 'more_like' : 'less_like', trackId: now.id);
+    if (!mounted) return;
+    if (!more) await _p.next();
+    _undo(more ? 'Буду чаще ставить похожее' : 'Буду реже ставить похожее',
+        () async {
+      await ref
+          .read(syncProvider)
+          .record(more ? 'less_like' : 'more_like', trackId: now.id);
+    });
+  }
+
   Future<void> _radio(NowPlaying now) async {
     if (_p.radio.value) {
       await _p.stopRadio();
@@ -192,8 +232,9 @@ class _PlayerViewState extends ConsumerState<PlayerView> {
         if (t.id != now.id) t.id,
     ];
     try {
-      final res =
-          await ref.read(apiProvider).streamOrder(seedId: now.id, candidateIds: ids);
+      final res = await ref
+          .read(apiProvider)
+          .streamOrder(seedId: now.id, candidateIds: ids);
       if (!res.reordered) {
         _toast('У этой песни нет звукового отпечатка — похожее не подобрать');
         return;
@@ -218,6 +259,40 @@ class _PlayerViewState extends ConsumerState<PlayerView> {
     }
   }
 
+  // ── подсказки/сообщения ───────────────────────────────────────────────
+  void _toast(String text) {
+    if (!mounted) return;
+    setState(() => _toastText = text);
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(milliseconds: 1700), () {
+      if (mounted) setState(() => _toastText = null);
+    });
+  }
+
+  void _undo(String text, Future<void> Function() onUndo) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(text),
+      duration: const Duration(seconds: 4),
+      behavior: SnackBarBehavior.floating,
+      action: SnackBarAction(
+        label: 'Отменить',
+        onPressed: () {
+          onUndo();
+          _toast('Отменил');
+        },
+      ),
+    ));
+  }
+
+  String _mmss(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  // ── сборка ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<NowPlaying?>(
@@ -226,367 +301,742 @@ class _PlayerViewState extends ConsumerState<PlayerView> {
         if (now == null) {
           return widget.emptyState ??
               const Center(
-                child: Text(
-                  'Ничего не играет',
-                  style: TextStyle(color: Afisha.inkDim),
-                ),
+                child: Text('Ничего не играет',
+                    style: TextStyle(color: Afisha.inkDim)),
               );
         }
-        return Stack(
-          key: ValueKey(now.id),
-          fit: StackFit.expand,
-          children: [
-            // Обложка целиком по центру + её размытая копия фоном. Локальный
-            // файл у скачанных, иначе — адрес обложки на сервере (у старой
-            // перенесённой библиотеки локальной нет, сервер достаёт из mp3
-            // или из iTunes/Deezer/нарисованных). Нет нигде — заглушка с нотой.
-            CoverBackdrop(trackId: now.id, localPath: now.coverPath),
-            // Градиент снизу — чтобы текст и кнопки читались на любой обложке.
-            // К самому низу отпускаем обратно (0.7), чтобы под прозрачным
-            // меню был виден цвет обложки, а не глухой чёрный (Alex 06.09.2026).
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black,
-                    Colors.black.withValues(alpha: 0.7),
-                  ],
-                  stops: const [0.30, 0.82, 1.0],
-                ),
-              ),
-            ),
-            // Лёгкое затемнение сверху — чтобы кнопка "вниз" была видна и на
-            // светлой обложке.
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black45, Colors.transparent],
-                  stops: [0.0, 0.18],
-                ),
-              ),
-            ),
-            SafeArea(
-              child: Column(
-                children: [
-                  // Корзина (удалить) — перенесена вниз, в ряд с остальным
-                  // управлением (05.09.2026, просьба Alex): в углу до неё
-                  // неудобно тянуться пальцем, что правой рукой держи телефон,
-                  // что левой.
-                  if (widget.onDismiss != null)
+        final img = coverImageProvider(now.id, now.coverPath);
+        return ValueListenableBuilder<Color>(
+          valueListenable: _tint,
+          builder: (context, tint, _) => Stack(
+            key: ValueKey(now.id),
+            fit: StackFit.expand,
+            children: [
+              _LivingBackdrop(image: img, anim: _bg, tint: tint),
+              SafeArea(
+                child: Column(
+                  children: [
+                    _topBar(now),
+                    const Spacer(),
+                    _coverArea(now, img),
+                    const Spacer(),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.keyboard_arrow_down,
-                              color: Colors.white,
-                            ),
-                            onPressed: widget.onDismiss,
-                          ),
-                        ],
-                      ),
-                    ),
-                  // Обложка занимает всё свободное место сверху; название —
-                  // строго под ней, не наезжает на картинку (Alex 06.09.2026).
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Center(
-                        child: CoverArt(
-                          trackId: now.id,
-                          localPath: now.coverPath,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-                    child: Column(
-                      children: [
-                        Text(
-                          now.title,
+                      padding: const EdgeInsets.symmetric(horizontal: 26),
+                      child: Text(now.title,
                           textAlign: TextAlign.center,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 22,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          now.artist,
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                        // Две быстрые кнопки под названием (Alex 06.09.2026):
-                        //  • «Радио по этой» — дальше в очереди пойдут песни,
-                        //    похожие по звуку на текущую (сервер /stream/order).
-                        //  • «Не та версия» — трек уходит с причиной
-                        //    wrong_version, сервер ищет другую версию, играем
-                        //    дальше. То же есть в списке причин у корзины, но
-                        //    там на три тапа больше.
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _p.radio,
-                              builder: (_, on, _) => _MiniAction(
-                                icon: Icons.radio,
-                                label: 'Радио по этой',
-                                color: on ? Afisha.lime : Colors.white54,
-                                onPressed: () => _radio(now),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            _MiniAction(
-                              icon: Icons.sync_problem,
-                              label: 'Не та версия',
-                              color: Colors.white54,
-                              onPressed: () => _replaceVersion(now),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        _ProgressBar(controller: _p, label: _mmss),
-                      ],
+                              color: Colors.white,
+                              fontSize: 23,
+                              fontWeight: FontWeight.w600)),
                     ),
-                  ),
-                  // Ряд управления. Кнопка play должна стоять РОВНО по центру
-                  // экрана (05.09.2026, просьба Alex — после переезда корзины
-                  // сюда шесть кнопок в общем ряду сдвигали play влево). Приём:
-                  // play — фиксированный средний ребёнок, а по бокам два
-                  // Expanded одинаковой ширины со своими кнопками. Сколько бы
-                  // кнопок ни было слева/справа — центр не уезжает. Корзина
-                  // осталась там же, у правого края.
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              ValueListenableBuilder<bool>(
-                                valueListenable: _p.shuffle,
-                                builder: (_, sh, _) => IconButton(
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  icon: Icon(
-                                    Icons.shuffle,
-                                    color: sh ? Afisha.lime : Colors.white70,
-                                  ),
-                                  onPressed: _p.toggleShuffle,
-                                ),
-                              ),
-                              IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                iconSize: 34,
-                                color: Colors.white,
-                                icon: const Icon(Icons.skip_previous),
-                                onPressed: _p.prev,
-                              ),
-                            ],
-                          ),
-                        ),
-                        ValueListenableBuilder<bool>(
-                          valueListenable: _p.playing,
-                          builder: (_, pl, _) => IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            iconSize: 64,
-                            color: Afisha.lime,
-                            icon: Icon(
-                              pl
-                                  ? Icons.pause_circle_filled
-                                  : Icons.play_circle_filled,
-                            ),
-                            onPressed: _p.toggle,
-                          ),
-                        ),
-                        Expanded(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                iconSize: 34,
-                                color: Colors.white,
-                                icon: const Icon(Icons.skip_next),
-                                onPressed: _p.next,
-                              ),
-                              IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: Icon(
-                                  _fav
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: _fav ? Afisha.lime : Colors.white70,
-                                ),
-                                onPressed: _toggleFav,
-                              ),
-                              IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: Colors.white70,
-                                ),
-                                onPressed: () => _confirmDelete(now),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 4),
+                    Text(now.artist,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 13)),
+                    const SizedBox(height: 18),
+                    _Wave(controller: _p, tint: tint, seedText: now.id),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 26),
+                      child: _times(),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    _transport(),
+                    const SizedBox(height: 16),
+                    _queueHandle(now),
+                  ],
+                ),
               ),
+              _heartPop(),
+              _toastPlashka(),
+              if (_menuOpen) _actionsOverlay(now),
+              if (_showHelp) _HelpOverlay(onClose: () => setState(() => _showHelp = false)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _topBar(NowPlaying now) => Padding(
+        padding: const EdgeInsets.fromLTRB(6, 6, 10, 0),
+        child: Row(
+          children: [
+            if (widget.onDismiss != null)
+              IconButton(
+                onPressed: widget.onDismiss,
+                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+              )
+            else
+              const SizedBox(width: 12),
+            const Spacer(),
+            Text('ПОТОК',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 12,
+                    letterSpacing: 2)),
+            const Spacer(),
+            IconButton(
+              onPressed: () => setState(() => _showHelp = true),
+              icon: Icon(Icons.help_outline,
+                  color: Colors.white.withValues(alpha: 0.75), size: 20),
             ),
-            // Плашка-сообщение — поверх всего, у верхнего края, по центру.
-            // Тёмная полупрозрачная, не перехватывает касания, сама гаснет.
-            SafeArea(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: const Alignment(0, -0.72),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: _toastText == null
-                        ? const SizedBox.shrink()
-                        : Container(
-                            key: ValueKey(_toastText),
-                            margin: const EdgeInsets.symmetric(horizontal: 32),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.82),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.12),
-                              ),
-                            ),
-                            child: Text(
-                              _toastText!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
+            GestureDetector(
+              onTap: () => _whySheet(now),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _p.radio,
+                builder: (_, on, _) => Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('∞',
+                          style: TextStyle(
+                              color: on ? Afisha.lime : Colors.white70,
+                              fontSize: 15,
+                              height: 1)),
+                      const SizedBox(width: 6),
+                      const Text('радио',
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12)),
+                    ],
                   ),
                 ),
               ),
             ),
           ],
+        ),
+      );
+
+  Widget _coverArea(NowPlaying now, ImageProvider? img) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggle,
+      onDoubleTap: _like,
+      onLongPress: () => setState(() => _menuOpen = true),
+      onHorizontalDragUpdate: (d) {
+        _dragX.value = (_dragX.value + d.delta.dx).clamp(-150.0, 150.0);
+      },
+      onHorizontalDragEnd: (d) {
+        final v = d.primaryVelocity ?? 0;
+        if (_dragX.value <= -60 || v < -600) {
+          _swipeNext();
+        } else if (_dragX.value >= 60 || v > 600) {
+          _swipePrev();
+        }
+        _dragX.animateTo(0,
+            duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+      },
+      onVerticalDragEnd: (d) {
+        final v = d.primaryVelocity ?? 0;
+        if (v > 300) {
+          widget.onDismiss?.call();
+        } else if (v < -300) {
+          _openQueue(now);
+        }
+      },
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _p.playing,
+        builder: (context, playing, child) => AnimatedScale(
+          scale: playing ? 1.0 : 0.955,
+          duration: const Duration(milliseconds: 450),
+          curve: Curves.easeOut,
+          child: child,
+        ),
+        child: AnimatedBuilder(
+          animation: _dragX,
+          builder: (context, child) => Transform.translate(
+            offset: Offset(_dragX.value, 0),
+            child: Transform.rotate(angle: _dragX.value / 2600, child: child),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 40,
+                      offset: const Offset(0, 16)),
+                ],
+              ),
+              child: CoverArt(trackId: now.id, localPath: now.coverPath),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _times() => ValueListenableBuilder<Duration>(
+        valueListenable: _p.duration,
+        builder: (_, dur, _) => ValueListenableBuilder<Duration>(
+          valueListenable: _p.position,
+          builder: (_, pos, _) => Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(_mmss(pos),
+                  style:
+                      const TextStyle(color: Colors.white38, fontSize: 11)),
+              Text(_mmss(dur),
+                  style:
+                      const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
+          ),
+        ),
+      );
+
+  Widget _transport() => Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            iconSize: 40,
+            color: Colors.white,
+            icon: const Icon(Icons.skip_previous),
+            onPressed: _p.prev,
+          ),
+          const SizedBox(width: 14),
+          ValueListenableBuilder<bool>(
+            valueListenable: _p.playing,
+            builder: (_, pl, _) => GestureDetector(
+              onTap: _p.toggle,
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Afisha.lime,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Icon(pl ? Icons.pause : Icons.play_arrow,
+                    color: Colors.black, size: 34),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          IconButton(
+            iconSize: 40,
+            color: Colors.white,
+            icon: const Icon(Icons.skip_next),
+            onPressed: _p.next,
+          ),
+          const SizedBox(width: 14),
+          IconButton(
+            iconSize: 28,
+            icon: Icon(_fav ? Icons.favorite : Icons.favorite_border,
+                color: _fav ? Afisha.lime : Colors.white70),
+            onPressed: _toggleFavButton,
+          ),
+        ],
+      );
+
+  Widget _queueHandle(NowPlaying now) {
+    final q = _p.queueView;
+    final i = _p.currentIndex;
+    final nextTitle = (i >= 0 && i + 1 < q.length)
+        ? '${q[i + 1].title} — ${q[i + 1].artist}'
+        : 'больше ничего';
+    return GestureDetector(
+      onTap: () => _openQueue(now),
+      onVerticalDragEnd: (d) {
+        if ((d.primaryVelocity ?? 0) < -100) _openQueue(now);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 34,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.queue_music, color: Colors.white54, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Дальше: $nextTitle',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 13.5)),
+                ),
+                const Icon(Icons.keyboard_arrow_up, color: Colors.white54),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _heartPop() => IgnorePointer(
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _heart,
+            builder: (context, _) {
+              final t = _heart.value;
+              if (t == 0) return const SizedBox.shrink();
+              final scale = 0.6 + Curves.easeOut.transform(t) * 0.9;
+              final opacity = t < 0.5 ? t * 2 : (1 - t) * 2;
+              return Opacity(
+                opacity: opacity.clamp(0, 1),
+                child: Transform.scale(
+                  scale: scale,
+                  child: const Icon(Icons.favorite,
+                      color: Afisha.lime, size: 120),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
+  Widget _toastPlashka() => SafeArea(
+        child: IgnorePointer(
+          child: Align(
+            alignment: const Alignment(0, -0.72),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _toastText == null
+                  ? const SizedBox.shrink()
+                  : Container(
+                      key: ValueKey(_toastText),
+                      margin: const EdgeInsets.symmetric(horizontal: 32),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.82),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.12)),
+                      ),
+                      child: Text(_toastText!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13)),
+                    ),
+            ),
+          ),
+        ),
+      );
+
+  // ── меню действий по долгому нажатию ──────────────────────────────────
+  // Радиальную раскладку (обложка уменьшается, иконки по углам) доведём
+  // позже; пока — понятная панель со списком (Alex тестирует сами действия).
+  Widget _actionsOverlay(NowPlaying now) {
+    Widget tile(IconData icon, String label, VoidCallback onTap) => InkWell(
+          onTap: () {
+            setState(() => _menuOpen = false);
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            child: Column(
+              children: [
+                Icon(icon, color: Colors.white, size: 26),
+                const SizedBox(height: 8),
+                Text(label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ],
+            ),
+          ),
+        );
+
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: () => setState(() => _menuOpen = false),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.62),
+          alignment: Alignment.center,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Afisha.surfaceHi.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              childAspectRatio: 0.95,
+              children: [
+                ValueListenableBuilder<bool>(
+                  valueListenable: _p.radio,
+                  builder: (_, on, _) => tile(
+                      on ? Icons.radio_button_checked : Icons.radio,
+                      on ? 'радио\nвыкл' : 'радио\nпо этой',
+                      () => _radio(now)),
+                ),
+                tile(Icons.tune, 'не хочу\nэту версию', () => _wrongVersion(now)),
+                tile(Icons.person_off, 'скрыть\nисполнителя',
+                    () => _hideArtist(now)),
+                tile(Icons.trending_up, 'больше\nтакого',
+                    () => _weight(now, more: true)),
+                tile(Icons.trending_down, 'меньше\nтакого',
+                    () => _weight(now, more: false)),
+                tile(Icons.info_outline, 'почему\nиграет', () => _whySheet(now)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _whySheet(NowPlaying now) {
+    final radioOn = _p.radio.value;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Afisha.surfaceHi,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Почему это играет',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              Text(
+                radioOn
+                    ? 'Радио по песне: дальше идут вещи, похожие по звуку на ту, '
+                        'с которой ты включил радио.'
+                    : 'Поток играет твою скачанную музыку вперемешку. Лайки, '
+                        '«больше/меньше такого» и скрытые исполнители со временем '
+                        'подстроят порядок под тебя.',
+                style: const TextStyle(color: Colors.white70, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openQueue(NowPlaying now) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Afisha.surface,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) {
+        final q = _p.queueView;
+        final i = _p.currentIndex;
+        final upcoming = <MapEntry<int, NowPlaying>>[
+          for (var k = 0; k < q.length; k++)
+            if (k > i) MapEntry(k, q[k]),
+        ];
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Дальше',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                if (upcoming.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('Очередь пустая',
+                        style: TextStyle(color: Afisha.inkDim)),
+                  )
+                else
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: upcoming.length,
+                      itemBuilder: (_, x) {
+                        final e = upcoming[x];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.music_note,
+                              color: Afisha.inkDim, size: 18),
+                          title: Text(e.value.title,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(e.value.artist,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _p.jumpTo(e.key);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 }
 
-/// Мелкая кнопка-действие под названием трека (иконка + подпись, без фона).
-class _MiniAction extends StatelessWidget {
-  const _MiniAction({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onPressed,
+// ── живой фон: размытая обложка тихо плывёт, поверх — цвет и затемнение ────
+class _LivingBackdrop extends StatelessWidget {
+  const _LivingBackdrop({
+    required this.image,
+    required this.anim,
+    required this.tint,
   });
 
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onPressed;
+  final ImageProvider? image;
+  final Animation<double> anim;
+  final Color tint;
 
   @override
   Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: color,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: Afisha.bg),
+        if (image != null)
+          AnimatedBuilder(
+            animation: anim,
+            builder: (context, _) {
+              final t = Curves.easeInOut.transform(anim.value);
+              return Transform.scale(
+                scale: 1.18 + t * 0.06,
+                child: Transform.translate(
+                  offset: Offset((t - 0.5) * 26, (t - 0.5) * 18),
+                  child: ImageFiltered(
+                    imageFilter:
+                        ui.ImageFilter.blur(sigmaX: 42, sigmaY: 42),
+                    child: Image(
+                      image: image!,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) =>
+                          const ColoredBox(color: Afisha.bg),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 600),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                tint.withValues(alpha: 0.45),
+                Colors.black.withValues(alpha: 0.62),
+                Colors.black,
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.controller, required this.label});
+// ── волновой ползунок перемотки ─────────────────────────────────────────
+class _Wave extends StatelessWidget {
+  const _Wave({
+    required this.controller,
+    required this.tint,
+    required this.seedText,
+  });
+
   final PlayerController controller;
-  final String Function(Duration) label;
+  final Color tint;
+  final String seedText;
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<Duration>(
       valueListenable: controller.duration,
-      builder: (context, dur, _) => ValueListenableBuilder<Duration>(
+      builder: (_, dur, _) => ValueListenableBuilder<Duration>(
         valueListenable: controller.position,
-        builder: (context, pos, _) {
+        builder: (_, pos, _) {
           final total = dur.inMilliseconds;
-          final value = total <= 0
-              ? 0.0
-              : pos.inMilliseconds.clamp(0, total).toDouble();
-          return Column(
-            children: [
-              SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 3,
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 12,
+          final frac =
+              total <= 0 ? 0.0 : (pos.inMilliseconds / total).clamp(0.0, 1.0);
+          void seekAt(double dx, double w) {
+            if (total <= 0 || w <= 0) return;
+            controller
+                .seek(Duration(milliseconds: (total * (dx / w).clamp(0, 1)).round()));
+          }
+
+          return LayoutBuilder(
+            builder: (context, c) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) => seekAt(d.localPosition.dx, c.maxWidth),
+              onHorizontalDragUpdate: (d) =>
+                  seekAt(d.localPosition.dx, c.maxWidth),
+              child: SizedBox(
+                height: 52,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: _WavePainter(
+                    frac,
+                    _seed(seedText),
+                    played: tint == Afisha.surfaceHi ? Afisha.lime : tint,
+                    rest: Colors.white.withValues(alpha: 0.16),
                   ),
                 ),
-                child: Slider(
-                  value: value,
-                  max: total <= 0 ? 1 : total.toDouble(),
-                  activeColor: Afisha.lime,
-                  inactiveColor: Colors.white24,
-                  onChanged: total <= 0
-                      ? null
-                      : (v) =>
-                            controller.seek(Duration(milliseconds: v.round())),
-                ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      label(pos),
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      label(dur),
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  int _seed(String s) => s.codeUnits.fold<int>(7, (p, c) => (p * 31 + c) & 0x7fffffff);
+}
+
+class _WavePainter extends CustomPainter {
+  _WavePainter(this.progress, this.seed, {required this.played, required this.rest});
+  final double progress;
+  final int seed;
+  final Color played;
+  final Color rest;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rnd = math.Random(seed);
+    const n = 58;
+    final gap = size.width / n;
+    final mid = size.height / 2;
+    for (var i = 0; i < n; i++) {
+      final h = size.height * (0.16 + rnd.nextDouble() * 0.8);
+      final x = i * gap + gap / 2;
+      final p = Paint()
+        ..color = (i / n) <= progress ? played : rest
+        ..strokeWidth = gap * 0.5
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(Offset(x, mid - h / 2), Offset(x, mid + h / 2), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WavePainter old) =>
+      old.progress != progress || old.played != played;
+}
+
+// ── инструкция «как пользоваться» внутри приложения ─────────────────────
+class _HelpOverlay extends StatelessWidget {
+  const _HelpOverlay({required this.onClose});
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(IconData icon, String g, String what) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: Afisha.lime, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                          text: '$g — ',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
+                      TextSpan(
+                          text: what,
+                          style: const TextStyle(color: Colors.white70)),
+                    ],
+                  ),
+                  style: const TextStyle(fontSize: 13.5),
                 ),
               ),
             ],
-          );
-        },
+          ),
+        );
+
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: onClose,
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.82),
+          alignment: Alignment.center,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+            decoration: BoxDecoration(
+              color: Afisha.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Afisha.line),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Как пользоваться',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                const Text('Всё управление — по обложке',
+                    style: TextStyle(color: Afisha.inkDim, fontSize: 12)),
+                const SizedBox(height: 14),
+                row(Icons.touch_app, 'Тап', 'пауза или играть'),
+                row(Icons.favorite, 'Двойной тап', 'нравится'),
+                row(Icons.swipe, 'Смахнуть вбок', 'следующая / предыдущая песня'),
+                row(Icons.keyboard_arrow_up, 'Смахнуть вверх', 'очередь «Дальше»'),
+                row(Icons.keyboard_arrow_down, 'Смахнуть вниз', 'свернуть плеер'),
+                row(Icons.more_horiz, 'Долгое нажатие',
+                    'меню: радио, не хочу эту версию, скрыть исполнителя, больше/меньше такого'),
+                row(Icons.graphic_eq, 'Вести по волне', 'перемотка'),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: onClose,
+                    child: const Text('Понятно'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
