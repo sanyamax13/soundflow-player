@@ -9,11 +9,12 @@ import '../player/cover_backdrop.dart';
 import '../player/player_controller.dart';
 import '../player/player_view.dart';
 
-/// Поток — простое офлайн-радио по скачанной музыке. С 05.09.2026 (просьба
-/// Alex) это не список, а сразу полноэкранный плеер («вариант C»): открыл
-/// вкладку — играет. Список убран целиком; переключить порядок песен можно
-/// иконкой "перемешать" в самом плеере. Умного подбора по звуку и фильтров
-/// по жанрам здесь нет (следующие шаги).
+/// Поток — простое офлайн-радио по скачанной музыке. Открыл вкладку — сразу
+/// играет полноэкранный плеер, без промежуточного экрана с кнопкой «начать»
+/// (Alex 06.09.2026: «сразу как полноценный плеер сделай, незачем
+/// предупреждать» — отмена прежней просьбы 05.09 не заводить само).
+/// Порядок песен переключается иконкой «перемешать» в самом плеере. Умного
+/// подбора по звуку и фильтров по жанрам здесь пока нет.
 class StreamScreen extends StatefulWidget {
   const StreamScreen({super.key, this.onOpenLibrary});
 
@@ -26,10 +27,8 @@ class StreamScreen extends StatefulWidget {
 
 class _StreamScreenState extends State<StreamScreen> {
   List<DownloadedTrack>? _items;
-  // Какая-то одна песня "на витрине" стартового экрана — просьба Alex
-  // 05.09.2026: вместо голого значка play сразу видно, что вот-вот
-  // заиграет. Выбирается один раз при загрузке экрана, не на каждую
-  // перерисовку — иначе картинка бы дёргалась.
+  // Одна песня «на витрине» для фона, пока звук ещё не завёлся (первые доли
+  // секунды после открытия вкладки). Выбирается один раз при загрузке.
   DownloadedTrack? _preview;
 
   @override
@@ -45,10 +44,14 @@ class _StreamScreenState extends State<StreamScreen> {
       _items = items;
       _preview = items.isEmpty ? null : items[Random().nextInt(items.length)];
     });
+    // Само заводим Поток при открытии вкладки — но только если вообще ничего
+    // ещё не играет (не перебиваем песню, запущенную из «Моей музыки»).
+    if (items.isNotEmpty && AppScope.of(context).player.now.value == null) {
+      _start();
+    }
   }
 
-  /// Тап по кнопке «начать» — раньше заводили вперемешку сами при открытии
-  /// вкладки, Alex попросил убрать (05.09.2026): не играть само при запуске.
+  /// Завести всю библиотеку вперемешку, начиная с показанной на фоне песни.
   void _start() {
     final items = _items;
     if (items == null || items.isEmpty) return;
@@ -56,9 +59,6 @@ class _StreamScreenState extends State<StreamScreen> {
       for (final t in items)
         NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
     ];
-    // Заводим именно ту песню, что показана на заставке, дальше — вперемешку.
-    // Без этого play запускал случайную из вперемешку, а не показанную
-    // (Alex 06.09.2026: «нажимаю — играет другая песня»).
     final start = _preview == null ? 0 : items.indexOf(_preview!);
     AppScope.of(context)
         .player
@@ -75,91 +75,32 @@ class _StreamScreenState extends State<StreamScreen> {
           ? const Center(child: CircularProgressIndicator())
           : items.isEmpty
               ? _empty()
-              : PlayerView(emptyState: _startView(items.length)),
+              : PlayerView(emptyState: _warmup()),
     );
   }
 
-  // Во весь экран, как настоящий плеер (PlayerView) — просьба Alex
-  // 05.09.2026: "почему не во весь экран?" после первой версии с маленькой
-  // карточкой посередине. Так до и после нажатия play экран выглядит
-  // одинаково, без скачка.
-  Widget _startView(int count) {
+  /// Кадр-заглушка на те доли секунды, пока звук заводится: та же обложка
+  /// размытым фоном + кружок загрузки. Тап по экрану — повторить запуск, если
+  /// вдруг не завелось (без надписей — Alex просил не «предупреждать»).
+  Widget _warmup() {
     final t = _preview;
-    final placeholder = Container(
-      color: Afisha.surfaceHi,
-      child: const Center(child: Icon(Icons.graphic_eq, color: Afisha.lime, size: 96)),
-    );
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Та же обложка, что в плеере: целая по центру + размытая копия
-        // фоном (вариант «с размытым фоном», Alex 05.09.2026).
-        t == null
-            ? placeholder
-            : CoverBackdrop(trackId: t.id, localPath: t.coverPath),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.black,
-                Colors.black.withValues(alpha: 0.7),
-              ],
-              stops: const [0.30, 0.82, 1.0],
-            ),
+    return GestureDetector(
+      onTap: _start,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (t == null)
+            const ColoredBox(color: Afisha.bg)
+          else
+            CoverBackdrop(trackId: t.id, localPath: t.coverPath),
+          const DecoratedBox(
+            decoration: BoxDecoration(color: Color(0x66000000)),
           ),
-        ),
-        SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              // Обложка занимает всё место сверху; название идёт строго под
-              // ней и не наезжает на картинку (Alex 06.09.2026).
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Center(
-                    child: t == null
-                        ? const SizedBox.shrink()
-                        : CoverArt(trackId: t.id, localPath: t.coverPath),
-                  ),
-                ),
-              ),
-              if (t != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-                  child: Column(
-                    children: [
-                      Text(t.title,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 22, color: Colors.white, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 6),
-                      Text(t.artist, style: const TextStyle(color: Colors.white70)),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 12),
-              IconButton(
-                iconSize: 72,
-                color: Afisha.lime,
-                icon: const Icon(Icons.play_circle_filled),
-                onPressed: _start,
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: Text('Слушать вперемешку — $count песен',
-                    style: const TextStyle(color: Colors.white70)),
-              ),
-            ],
+          const Center(
+            child: CircularProgressIndicator(color: Afisha.lime),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

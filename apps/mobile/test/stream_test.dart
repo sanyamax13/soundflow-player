@@ -6,6 +6,7 @@ import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
+import 'package:soundflow/features/player/player_view.dart';
 import 'package:soundflow/main.dart';
 
 class _FakeApi extends Api {
@@ -63,7 +64,7 @@ void main() {
   });
 
   testWidgets(
-      'Поток со скачанным — сразу плеер с кнопкой «начать», без списка (05.09.2026)',
+      'Поток со скачанным — сразу полноэкранный плеер, без экрана «начать» (06.09.2026)',
       (tester) async {
     await tester.pumpWidget(await _app(downloaded: [
       DownloadedTrack(
@@ -73,13 +74,10 @@ void main() {
     ]));
     await tester.pumpAndSettle();
 
-    // Старый список и его кнопки убраны по просьбе Alex — «Поток» теперь
-    // сразу полноэкранный плеер (см. player_view.dart). Само вперемешку не
-    // заводит при открытии (тоже просьба Alex, 05.09.2026) — ждёт тапа по
-    // кнопке «начать».
-    expect(find.text('2 песен на телефоне'), findsNothing);
-    expect(find.byIcon(Icons.radio), findsNothing);
-    expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
-    expect(find.text('Слушать вперемешку — 2 песен'), findsOneWidget);
+    // Промежуточный экран с кнопкой «начать» и строкой «Слушать вперемешку»
+    // убран (Alex 06.09.2026) — вкладка сразу показывает PlayerView и сама
+    // заводит Поток.
+    expect(find.byType(PlayerView), findsOneWidget);
+    expect(find.textContaining('Слушать вперемешку'), findsNothing);
   });
 }
