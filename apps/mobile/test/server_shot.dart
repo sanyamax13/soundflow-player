@@ -27,7 +27,7 @@ class _FakeApi extends Api {
         'uptime_sec': 5 * 3600 + 12 * 60,
         'go_version': 'go1.25',
         'music_source': 'Яндекс + торренты',
-        'migrations': ['0001', '0002', '0003'],
+        'migrations': ['0001', '0002', '0003', '0004', '0005'],
         'catalog': {'tracks': 8781, 'track_files': 8774},
         'events': {
           'total': 1204,
@@ -35,11 +35,57 @@ class _FakeApi extends Api {
         },
         'legacy': {'favorites': 25, 'blocked': 316},
         'devices': 1,
+        'busy': const [],
+        'disk': {
+          'free_bytes': 549755813888,
+          'total_bytes': 2000398934016,
+          'music_bytes': 50465865728,
+        },
+        'report': {
+          'days': 30,
+          'added': 37,
+          'removed': 12,
+          'not_found': 4,
+          'replaced': 3,
+          'errors': 0,
+          'freed_bytes': 428000000,
+        },
       };
   @override
   Future<List<Map<String, dynamic>>> adminDevices() async => const [];
   @override
   Future<List<Map<String, dynamic>>> adminEvents({int limit = 20}) async => const [];
+  @override
+  Future<List<Map<String, dynamic>>> serverLog({int limit = 100}) async => const [
+        {
+          'kind': 'added',
+          'artist': 'Земфира',
+          'title': 'Искала',
+          'detail': 'скачан по запросу из плеера',
+          'at': '2026-09-07T09:12:00Z',
+        },
+        {
+          'kind': 'replaced',
+          'artist': 'Кино',
+          'title': 'Спокойная ночь',
+          'detail': 'заменил на версию получше',
+          'at': '2026-09-06T21:40:00Z',
+        },
+        {
+          'kind': 'removed',
+          'artist': 'Radiohead',
+          'title': 'Creep',
+          'detail': 'убран из плеера',
+          'at': '2026-09-06T18:03:00Z',
+        },
+        {
+          'kind': 'not_found',
+          'artist': 'Мумий Тролль',
+          'title': 'Владивосток 2000',
+          'detail': 'не нашёлся ни в одном источнике',
+          'at': '2026-09-05T11:20:00Z',
+        },
+      ];
 }
 
 Future<Widget> _app() async {
@@ -86,7 +132,7 @@ void main() {
   });
 
   testWidgets('экран «Сервер» — синхронизация свёрнута сверху', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 900));
+    await tester.binding.setSurfaceSize(const Size(400, 1560));
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 

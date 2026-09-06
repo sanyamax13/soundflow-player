@@ -24,6 +24,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   Map<String, dynamic> _status = const {};
   List<Map<String, dynamic>> _devices = const [];
   List<Map<String, dynamic>> _events = const [];
+  List<Map<String, dynamic>> _srvLog = const [];
 
   // Синхронизация — раздел свёрнут сюда из отдельного экрана.
   int? _pending;
@@ -58,11 +59,16 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       final st = await api.adminStatus();
       final dv = await api.adminDevices();
       final ev = await api.adminEvents(limit: 20);
+      List<Map<String, dynamic>> sl = const [];
+      try {
+        sl = await api.serverLog(limit: 60);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _status = st;
         _devices = dv;
         _events = ev;
+        _srvLog = sl;
         _loading = false;
       });
     } catch (_) {
@@ -181,6 +187,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     final events = (_status['events'] as Map?) ?? const {};
     final byKind = (events['by_kind'] as Map?) ?? const {};
     final legacy = (_status['legacy'] as Map?) ?? const {};
+    final disk = (_status['disk'] as Map?) ?? const {};
+    final report = (_status['report'] as Map?) ?? const {};
+    final busy = (_status['busy'] as List?) ?? const [];
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -204,6 +213,25 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           ),
         if (_error != null) const SizedBox(height: 16),
         if (_error == null) ...[
+        if (busy.isNotEmpty) ...[
+          _section('Сейчас занят'),
+          for (final b in busy)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 3, 16, 3),
+              child: Row(
+                children: [
+                  const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: Text('$b',
+                          style: const TextStyle(color: Afisha.ink))),
+                ],
+              ),
+            ),
+        ],
         _section('Сервер'),
         _kv('База данных', db == 'ok' ? 'на связи' : db),
         _kv('Работает', _uptime((_status['uptime_sec'] as num?) ?? 0)),
@@ -213,7 +241,24 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _section('Каталог'),
         _kv('Треков', '${catalog['tracks'] ?? 0}'),
         _kv('Файлов', '${catalog['track_files'] ?? 0}'),
+        if (disk['music_bytes'] != null)
+          _kv('Музыка занимает', _size((disk['music_bytes'] as num?) ?? 0)),
         _kv('Из старого: избранное', '${legacy['favorites'] ?? 0}'),
+        if (disk.isNotEmpty) ...[
+          _section('Место на диске'),
+          _kv('Свободно', _size((disk['free_bytes'] as num?) ?? 0)),
+          _kv('Всего на диске', _size((disk['total_bytes'] as num?) ?? 0)),
+        ],
+        if (report.isNotEmpty) ...[
+          _section('Отчёт за 30 дней'),
+          _kv('Добавлено', '${report['added'] ?? 0}'),
+          _kv('Убрано', '${report['removed'] ?? 0}'),
+          _kv('Не нашлось', '${report['not_found'] ?? 0}'),
+          _kv('Заменено на лучше', '${report['replaced'] ?? 0}'),
+          _kv('Освобождено места', _size((report['freed_bytes'] as num?) ?? 0)),
+          if (((report['errors'] as num?) ?? 0) > 0)
+            _kv('Ошибок', '${report['errors']}'),
+        ],
         _section('Больше не качать'),
         ListTile(
           dense: true,
@@ -225,6 +270,13 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             MaterialPageRoute<void>(builder: (_) => const BlocklistScreen()),
           ),
         ),
+        _section('Что делал сервер'),
+        if (_srvLog.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text('пока пусто', style: TextStyle(color: Afisha.inkDim)),
+          ),
+        for (final e in _srvLog) _logRow(e),
         _section('События'),
         _kv('Всего', '${events['total'] ?? 0}'),
         for (final e in byKind.entries) _kv('  ${e.key}', '${e.value}'),
@@ -262,6 +314,42 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         const SizedBox(height: 24),
       ],
     );
+  }
+
+  Widget _logRow(Map<String, dynamic> e) {
+    final kind = '${e['kind']}';
+    final artist = '${e['artist'] ?? ''}'.trim();
+    final title = '${e['title'] ?? ''}'.trim();
+    final name = [title, artist].where((x) => x.isNotEmpty).join(' — ');
+    final detail = '${e['detail'] ?? ''}'.trim();
+    final style = _logStyle(kind);
+    return ListTile(
+      dense: true,
+      leading: Icon(style.$1, color: style.$2, size: 20),
+      title: Text(name.isEmpty ? detail : name,
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        [detail, _when(e['at'] as String?)].where((x) => x.isNotEmpty).join('  ·  '),
+        style: const TextStyle(color: Afisha.inkDim),
+      ),
+    );
+  }
+
+  (IconData, Color) _logStyle(String kind) {
+    switch (kind) {
+      case 'added':
+        return (Icons.add_circle_outline, Afisha.lime);
+      case 'removed':
+        return (Icons.remove_circle_outline, Afisha.inkDim);
+      case 'replaced':
+        return (Icons.autorenew, Afisha.lime);
+      case 'not_found':
+        return (Icons.search_off, Afisha.inkDim);
+      case 'error':
+        return (Icons.error_outline, Color(0xFFFF6B6B));
+      default:
+        return (Icons.circle, Afisha.inkDim);
+    }
   }
 
   Widget _section(String title) => Padding(

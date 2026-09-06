@@ -15,6 +15,7 @@ type AdminStatus struct {
 	Migrations    []string         `json:"migrations"`
 	LegacyFavs    int64            `json:"legacy_favs"`
 	LegacyBlocked int64            `json:"legacy_blocked"`
+	MusicBytes    int64            `json:"music_bytes"` // сумма размеров файлов каталога
 }
 
 func (d *Pool) AdminStatus(ctx context.Context) (AdminStatus, error) {
@@ -28,8 +29,9 @@ func (d *Pool) AdminStatus(ctx context.Context) (AdminStatus, error) {
 		       (SELECT count(*) FROM sync_events),
 		       (SELECT count(*) FROM devices),
 		       (SELECT count(*) FROM legacy_marks WHERE kind = 'favorite'),
-		       (SELECT count(*) FROM legacy_marks WHERE kind = 'blocked')`,
-	).Scan(&st.Tracks, &st.TrackFiles, &st.EventsTotal, &st.Devices, &st.LegacyFavs, &st.LegacyBlocked); err != nil {
+		       (SELECT count(*) FROM legacy_marks WHERE kind = 'blocked'),
+		       (SELECT COALESCE(sum(size_bytes), 0) FROM track_files)`,
+	).Scan(&st.Tracks, &st.TrackFiles, &st.EventsTotal, &st.Devices, &st.LegacyFavs, &st.LegacyBlocked, &st.MusicBytes); err != nil {
 		return st, err
 	}
 

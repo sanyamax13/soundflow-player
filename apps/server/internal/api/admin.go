@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strconv"
 	"time"
+
+	"soundflow/server/internal/diskspace"
 )
 
 // Админка (этап 6). PIN нет — плеер личный, сервер в домашней сети.
@@ -23,9 +25,12 @@ func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
 		"go_version":   runtime.Version(),
 		"server_time":  time.Now().UTC().Format(time.RFC3339),
 		"music_source": s.Music.SourceLabel(),
+		"busy":         busyNow(),
 	}
+	var musicBytes int64
 	if dbState == "ok" {
 		if st, err := s.DB.AdminStatus(r.Context()); err == nil {
+			musicBytes = st.MusicBytes
 			out["catalog"] = map[string]int64{"tracks": st.Tracks, "track_files": st.TrackFiles}
 			out["events"] = map[string]any{"total": st.EventsTotal, "by_kind": st.EventsByKind}
 			out["devices"] = st.Devices
@@ -34,6 +39,19 @@ func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
 		} else {
 			out["db"] = "error"
 			out["db_error"] = err.Error()
+		}
+		if rep, err := s.DB.ServerReportSince(r.Context(), 30); err == nil {
+			out["report"] = rep
+		}
+	}
+	// Место на диске под музыку — по первому корню библиотеки.
+	if roots := s.PathMap.LocalRoots(); len(roots) > 0 {
+		if free, total, err := diskspace.Free(roots[0]); err == nil {
+			out["disk"] = map[string]int64{
+				"free_bytes":  free,
+				"total_bytes": total,
+				"music_bytes": musicBytes,
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -57,6 +58,7 @@ func (s *Server) Router() http.Handler {
 				r.Get("/events", s.adminEvents)
 				r.Get("/blocklist", s.adminBlocklist)
 				r.Post("/blocklist/remove", s.adminBlocklistRemove)
+				r.Get("/log", s.adminLog)
 				r.Post("/reanalyze", s.adminReanalyze)
 				r.Post("/sweep-junk", s.adminSweepJunk)
 				r.Post("/backfill-covers", s.adminBackfillCovers)
@@ -189,15 +191,24 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 			continue
 		}
 
+		artist, title, _, _ := s.DB.TrackArtistTitle(ctx, e.TrackID)
+		var size int64
+		if fi, statErr := os.Stat(local); statErr == nil {
+			size = fi.Size()
+		}
 		if err := s.DB.UpsertLegacyMark(ctx, db.LegacyMark{Key: normKey, Kind: "blocked", At: time.Now()}); err != nil {
 			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
 		}
 		if err := pathmap.DeleteForever(local); err != nil {
 			log.Printf("delete-event %s: стереть файл (%s): %v", e.TrackID, local, err)
-		} else if reason != "" {
-			log.Printf("delete-event %s: стёрт насовсем (%s), причина: %s", e.TrackID, local, reason)
+			s.logServer(ctx, db.LogError, artist, title, "не смог стереть файл при удалении", 0)
 		} else {
-			log.Printf("delete-event %s: стёрт насовсем (%s)", e.TrackID, local)
+			s.logServer(ctx, db.LogRemoved, artist, title, "убран из плеера", size)
+			if reason != "" {
+				log.Printf("delete-event %s: стёрт насовсем (%s), причина: %s", e.TrackID, local, reason)
+			} else {
+				log.Printf("delete-event %s: стёрт насовсем (%s)", e.TrackID, local)
+			}
 		}
 	}
 }
@@ -217,6 +228,10 @@ func (s *Server) deleteAndReacquire(ctx context.Context, trackID, local, reason 
 		log.Printf("delete-event %s: не нашёл артиста/название для переудаления: %v", trackID, err)
 		return
 	}
+	var size int64
+	if fi, statErr := os.Stat(local); statErr == nil {
+		size = fi.Size()
+	}
 	if err := s.DB.DeleteTrack(ctx, trackID); err != nil {
 		log.Printf("delete-event %s: стереть строку трека: %v", trackID, err)
 		return
@@ -224,18 +239,23 @@ func (s *Server) deleteAndReacquire(ctx context.Context, trackID, local, reason 
 	if err := pathmap.DeleteForever(local); err != nil {
 		log.Printf("delete-event %s: стереть файл (%s): %v", trackID, local, err)
 	}
+	s.logServer(ctx, db.LogRemoved, artist, title, "плохая версия — ищу замену", size)
 	log.Printf("delete-event %s: причина %q — ищу замену получше (%s — %s)", trackID, reason, artist, title)
 	if s.Acquire == nil {
 		return
 	}
 	go func() {
+		acquireInFlight.Add(1)
+		defer acquireInFlight.Add(-1)
 		bg, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		res, err := s.Acquire.Acquire(bg, acquire.Request{Artist: artist, Title: title})
 		if err != nil {
 			log.Printf("переудаление %s — %s: не нашёл замену: %v", artist, title, err)
+			s.logServer(context.Background(), db.LogNotFound, artist, title, "замену получше не нашёл", 0)
 			return
 		}
+		s.logServer(context.Background(), db.LogReplaced, artist, title, "заменил на версию получше", 0)
 		log.Printf("переудаление %s — %s: нашлась замена, новый трек %s", artist, title, res.TrackID)
 		if res.Created {
 			bg2, cancel2 := context.WithTimeout(context.Background(), 6*time.Minute)

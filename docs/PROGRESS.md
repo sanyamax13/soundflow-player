@@ -1045,11 +1045,49 @@
     `delete_forever` в шапке) с подтверждением. Тексты «Корзины» под новое.
   - Go build+test чисто (delete-тесты с БД skip без Postgres), `analyze`
     чисто, 23 теста. Голден `server_screen.png` перерисован.
-  - **Осталось по серверному блоку:** место на диске + очередь скачивания
-    в «Сервере» (пункт 10); отчёты `sync_reports` (пункт 12); MusicBrainz-
-    сверка при «не та версия» (пункт 5); проверка качества до отправки
-    (пункт 4б); умный подбор + чистка по языкам (пункты 11, 7) — после
-    ночного досчёта отпечатков.
+  - **Развёрнут на fg** 06.09.2026: cross-build `srv.exe` → scp →
+    stop/wait 9s/swap → `schtasks /run /tn SoundFlow2`, `uptime_sec` 5,
+    `/v1/admin/blocklist` отвечает. `srv.old.exe` для отката.
+- [x] **APK v18** (`--build-number=18`, vC 2018, arm64) — этап 44 (клиент).
+  Отправлен Alex 06.09.2026. На устройстве не проверено.
+- [x] **Этап 45 — серверный блок, срез B: лента «что делал сервер» + отчёт +
+  место на диске.** 07.09.2026. Пункты 10 (остаток) и 12.
+  - **Сервер:** миграция `0005_server_log.sql` — таблица `server_log`
+    (`at, kind, artist, title, detail, bytes`), `kind` ∈ added / removed /
+    not_found / replaced / error / info.
+  - `db/serverlog.go`: `AddServerLog`, `RecentServerLog(limit)`,
+    `ServerReportSince(days)` → сводка (добавлено / убрано / не нашёл /
+    заменил / освобождено байт = сумма `bytes` у `removed`).
+  - `api/serverlog.go`: `s.logServer(...)` (сбой записи не роняет действие),
+    `busyNow()` (что сервер делает сейчас: качаю трек / переношу библиотеку /
+    ищу обложки / считаю отпечатки), `GET /v1/admin/log?limit=`.
+  - Записи в ленту: `acquireTrack` (added / not_found), `handleDeleteEvents`
+    (removed + размер файла через `os.Stat` до удаления), `deleteAndReacquire`
+    (removed → replaced / not_found), `adminSweepJunk` (removed по каждому).
+  - `acquireInFlight atomic.Int64` — счётчик активных скачиваний (в
+    `acquireTrack` и в фоне `deleteAndReacquire`).
+  - `adminStatus` дополнен: `busy` (всегда), `report` (30 дней), `disk`
+    (`free_bytes` / `total_bytes` / `music_bytes`), `catalog.music_bytes`.
+  - `internal/diskspace/` — `Free(path)` по ОС (windows: kernel32
+    `GetDiskFreeSpaceExW`; иначе `Statfs`), тест `Free(".")` на dev-машине.
+  - `db.AdminStatus` считает `MusicBytes` = `sum(track_files.size_bytes)`.
+  - **Приложение:** `Api.serverLog()`. `AdminScreen` — новые разделы «Сейчас
+    занят» (спиннер + строка на каждое дело), «Место на диске», «Отчёт за
+    30 дней», «Что делал сервер» (лента с иконкой по виду записи,
+    «Название — Артист», пояснение + время). «Музыка занимает» в «Каталоге».
+  - Go build+vet+test чисто (`diskspace` тест зелёный на Windows; ленты с БД
+    skip без Postgres), `analyze` чисто, 23 теста Flutter. Голден
+    `server_screen.png` перерисован (высота холста 1560), в `_FakeApi`
+    добавлены `disk` / `report` / `serverLog`.
+  - **Осталось по серверному блоку:** MusicBrainz-сверка при «не та версия»
+    (пункт 5); проверка качества до отправки (пункт 4б); умный подбор +
+    чистка по языкам (пункты 11, 7).
+- **Пункт 1 (звуковые отпечатки) — ПРАКТИЧЕСКИ НЕ НУЖЕН.** Проверено на fg
+  06.09.2026: `SELECT count(*), count(feature_vector) FROM tracks` = 8781/8719
+  (99.3%). `docs/FINGERPRINT_BACKFILL.md` с цифрой «2049» устарел — верна
+  запись этапа 33. Ночной догон нужен максимум для ~62 хвостов (`.m4a` +
+  битые, их сайдкар всё равно не берёт). Радио и умный подбор (пункт 11)
+  можно делать сразу, не дожидаясь ночного прогона.
 - [x] **Этап 42 — экран «Сервер», срез 1 (пункт 10).** 06.09.2026 (`955ecf4`).
   Ручная синхронизация свёрнута из отдельного экрана в раздел «Синхронизация»
   вверху `AdminScreen`; `sync_screen.dart` удалён, карточка «Синхронизация» из

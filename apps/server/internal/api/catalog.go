@@ -16,6 +16,7 @@ import (
 
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/coverart"
+	"soundflow/server/internal/db"
 	"soundflow/server/internal/deezer"
 	"soundflow/server/internal/importer"
 	"soundflow/server/internal/itunes"
@@ -63,14 +64,17 @@ func (s *Server) acquireTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	acquireInFlight.Add(1)
 	res, err := s.Acquire.Acquire(r.Context(), acquire.Request{
 		Artist:              req.Artist,
 		Title:               req.Title,
 		ExpectedDurationSec: req.DurationSec,
 	})
+	acquireInFlight.Add(-1)
 	switch {
 	case err == nil:
 		if res.Created {
+			s.logServer(r.Context(), db.LogAdded, req.Artist, req.Title, "скачан по запросу из плеера", 0)
 			// «Звуковой отпечаток» считаем фоном — не держим ответ телефону
 			// лишние секунды. Догон пропущенного — /v1/admin/reanalyze.
 			go func(id string) {
@@ -83,10 +87,13 @@ func (s *Server) acquireTrack(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, res)
 	case errors.Is(err, acquire.ErrRejected):
+		s.logServer(r.Context(), db.LogNotFound, req.Artist, req.Title, "нашлось только плохое качество", 0)
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "отклонено", "reason": res.Reason})
 	case errors.Is(err, acquire.ErrNotFound):
+		s.logServer(r.Context(), db.LogNotFound, req.Artist, req.Title, "не нашёлся ни в одном источнике", 0)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "не нашлось ни в одном источнике"})
 	case errors.Is(err, acquire.ErrLowQuality):
+		s.logServer(r.Context(), db.LogNotFound, req.Artist, req.Title, "нашлось только плохое качество", 0)
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "плохое качество", "reason": res.Reason})
 	default:
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -321,6 +328,7 @@ func (s *Server) adminSweepJunk(w http.ResponseWriter, r *http.Request) {
 	list := make([]map[string]string, 0, len(removed))
 	for _, t := range removed {
 		list = append(list, map[string]string{"artist": t.Artist, "title": t.Title})
+		s.logServer(r.Context(), db.LogRemoved, t.Artist, t.Title, "чистка мусора", 0)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"checked": res.Checked, "removed": res.Removed, "errors": res.Errors, "removed_list": list,

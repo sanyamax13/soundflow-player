@@ -192,4 +192,12 @@ class Api {
   Future<void> blocklistRemove(String key) async {
     await _dio.post<Map<String, dynamic>>('/v1/admin/blocklist/remove', data: {'key': key});
   }
+
+  /// Лента «что делал сервер»: добавил трек, убрал, не нашёл, заменил на
+  /// версию получше, ошибка. Новые сверху.
+  Future<List<Map<String, dynamic>>> serverLog({int limit = 100}) async {
+    final res = await _dio.get<Map<String, dynamic>>('/v1/admin/log',
+        queryParameters: {'limit': limit});
+    return ((res.data?['log'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
 }
