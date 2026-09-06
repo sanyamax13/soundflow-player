@@ -585,7 +585,13 @@ class _WavePainter extends CustomPainter {
   bool shouldRepaint(covariant _WavePainter old) => old.progress != progress;
 }
 
-// ── МАКЕТ 4 — «Сборка»: живой цвет + жесты + волна + радиальные действия ──────
+// ── МАКЕТ 4.2 — «Радио-объект»: после разбора внешнего дизайнера ─────────────
+// Убрано: ряд «меньше/нравится/больше», двойной свайп-вниз. Лайк = двойной
+// тап. Оценка/скрыть/«не хочу эту версию» — в меню по долгому нажатию.
+// Волна — тонкая, но с широкой зоной касания. Кнопок минимум и они в нижней
+// дуге под большой палец. Обложка — физический объект (радиус 20, лёгкая
+// тень, «дышит» на игре). На экране 6 элементов: обложка · название · волна ·
+// кнопки · ручка очереди · чип «∞ радио».
 class MockBlend extends StatelessWidget {
   const MockBlend({super.key, this.showActions = false});
   final bool showActions;
@@ -598,7 +604,8 @@ class MockBlend extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // живой фон: размытая обложка + цветовая заливка
+          // живой фон: размытая обложка тихо плывёт, цвет «дышит» — почти
+          // незаметно (20–40 c на цикл в реальном приложении).
           _blurBackdrop(_seed),
           DecoratedBox(
             decoration: BoxDecoration(
@@ -606,8 +613,8 @@ class MockBlend extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  tint.withValues(alpha: 0.5),
-                  Colors.black.withValues(alpha: 0.6),
+                  tint.withValues(alpha: 0.4),
+                  Colors.black.withValues(alpha: 0.65),
                   Colors.black,
                 ],
                 stops: const [0.0, 0.55, 1.0],
@@ -626,92 +633,112 @@ class MockBlend extends StatelessWidget {
                     const Spacer(),
                     Text('ПОТОК',
                         style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.65),
+                            color: Colors.white.withValues(alpha: 0.6),
                             fontSize: 12,
                             letterSpacing: 2)),
                     const Spacer(),
-                    const SizedBox(width: 32),
+                    // тихий индикатор радио
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('∞',
+                              style: TextStyle(
+                                  color: Afisha.lime,
+                                  fontSize: 15,
+                                  height: 1)),
+                          SizedBox(width: 6),
+                          Text('радио',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                   ],
                 ),
-                const SizedBox(height: 18),
-                // обложка + (по долгому нажатию) радиальные действия
-                SizedBox(
-                  height: 320,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(26),
-                          boxShadow: [
-                            BoxShadow(
-                                color: tint.withValues(alpha: 0.55),
-                                blurRadius: 70,
-                                spreadRadius: 2),
-                          ],
-                        ),
-                        child: _cover(_seed, 300, radius: 26),
+                const Spacer(),
+                // обложка — физический объект + (по долгому нажатию) действия
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              blurRadius: 40,
+                              offset: const Offset(0, 16)),
+                          BoxShadow(
+                              color: tint.withValues(alpha: 0.35),
+                              blurRadius: 80,
+                              spreadRadius: 1),
+                        ],
                       ),
-                      if (showActions) ...[
-                        Container(
-                          width: 300,
-                          height: 300,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(26),
-                          ),
-                        ),
-                        const _RadialAction(
-                            dx: -96, dy: -70, icon: Icons.radio, label: 'радио'),
-                        const _RadialAction(
-                            dx: 96,
-                            dy: -70,
-                            icon: Icons.sync_problem,
-                            label: 'не та\nверсия'),
-                        const _RadialAction(
-                            dx: 0,
-                            dy: 104,
-                            icon: Icons.person_off,
-                            label: 'скрыть\nисполнителя'),
-                      ],
+                      child: _cover(_seed, showActions ? 232 : 284, radius: 20),
+                    ),
+                    if (showActions) ...[
+                      const _RadialAction(
+                          dx: -104, dy: -64, icon: Icons.radio, label: 'радио'),
+                      const _RadialAction(
+                          dx: 104,
+                          dy: -64,
+                          icon: Icons.tune,
+                          label: 'не хочу\nэту версию'),
+                      const _RadialAction(
+                          dx: -104,
+                          dy: 78,
+                          icon: Icons.person_off,
+                          label: 'скрыть\nисполнителя'),
+                      const _RadialAction(
+                          dx: 104,
+                          dy: 78,
+                          icon: Icons.trending_down,
+                          label: 'меньше\nтакого'),
                     ],
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 22),
+                const Spacer(),
+                // название крупнее, «исполнитель · альбом» мельче
                 const Text(_title,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                         color: Colors.white,
-                        fontSize: 25,
+                        fontSize: 23,
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 5),
-                const Text(_artist,
-                    style: TextStyle(color: Colors.white70, fontSize: 15)),
-                const SizedBox(height: 18),
-                // строка оценки вкуса (можно спрятать в настройках → «тихо»)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _taste(Icons.thumb_down_alt_outlined, 'меньше', false, tint),
-                    const SizedBox(width: 10),
-                    _taste(Icons.favorite, 'нравится', true, tint),
-                    const SizedBox(width: 10),
-                    _taste(Icons.thumb_up_alt_outlined, 'больше', false, tint),
-                  ],
+                const SizedBox(height: 4),
+                Text('$_artist · «Группа крови»',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 13)),
+                const SizedBox(height: 10),
+                Text(
+                  'тап — пауза · 2 тапа — нравится · вбок — песня · вверх — очередь · долго — меню',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.28), fontSize: 10),
                 ),
-                const SizedBox(height: 18),
-                // волновой ползунок
+                const SizedBox(height: 14),
+                // волна: видно тонко, нажимать можно на всю высоту (~52 dp)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
                       SizedBox(
-                        height: 40,
+                        height: 34,
                         width: double.infinity,
                         child: CustomPaint(
                           painter: _WavePainter(
                             0.35,
-                            Afisha.lime,
-                            Colors.white.withValues(alpha: 0.22),
+                            tint,
+                            Colors.white.withValues(alpha: 0.16),
                           ),
                         ),
                       ),
@@ -721,49 +748,49 @@ class MockBlend extends StatelessWidget {
                         children: [
                           Text('1:12',
                               style: TextStyle(
-                                  color: Colors.white54, fontSize: 12)),
+                                  color: Colors.white38, fontSize: 11)),
                           Text('4:33',
                               style: TextStyle(
-                                  color: Colors.white54, fontSize: 12)),
+                                  color: Colors.white38, fontSize: 11)),
                         ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
+                // минимум кнопок, в нижней дуге: назад · play · вперёд · лайк
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.shuffle, color: Afisha.lime, size: 22),
-                    const SizedBox(width: 24),
                     const Icon(Icons.skip_previous,
-                        color: Colors.white, size: 38),
-                    const SizedBox(width: 18),
+                        color: Colors.white, size: 40),
+                    const SizedBox(width: 26),
                     Container(
-                      width: 74,
-                      height: 74,
+                      width: 64,
+                      height: 64,
                       decoration: BoxDecoration(
                         color: Afisha.lime,
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(22),
                       ),
-                      child:
-                          const Icon(Icons.pause, color: Colors.black, size: 38),
+                      child: const Icon(Icons.pause,
+                          color: Colors.black, size: 34),
                     ),
-                    const SizedBox(width: 18),
-                    const Icon(Icons.skip_next, color: Colors.white, size: 38),
-                    const SizedBox(width: 24),
-                    const Icon(Icons.playlist_play,
-                        color: Colors.white54, size: 24),
+                    const SizedBox(width: 26),
+                    const Icon(Icons.skip_next, color: Colors.white, size: 40),
+                    const SizedBox(width: 26),
+                    const Icon(Icons.favorite_border,
+                        color: Colors.white70, size: 28),
                   ],
                 ),
-                const Spacer(),
+                const SizedBox(height: 18),
+                // ручка очереди — тянешь вверх, слой над плеером
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color: Colors.white.withValues(alpha: 0.05),
                     borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(22)),
+                        const BorderRadius.vertical(top: Radius.circular(20)),
                   ),
                   child: Column(
                     children: [
@@ -776,22 +803,24 @@ class MockBlend extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const Row(
+                      Row(
                         children: [
-                          Text('ДАЛЬШE',
-                              style: TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 11,
-                                  letterSpacing: 1.5)),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text('Группа крови — Кино',
+                          const Icon(Icons.queue_music,
+                              color: Colors.white54, size: 18),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text('Дальше: Группа крови — Кино',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    color: Colors.white, fontSize: 14)),
+                                    color: Colors.white, fontSize: 13.5)),
                           ),
-                          Icon(Icons.keyboard_arrow_up, color: Colors.white54),
+                          Text('12',
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  fontSize: 12)),
+                          const Icon(Icons.keyboard_arrow_up,
+                              color: Colors.white54),
                         ],
                       ),
                     ],
@@ -800,51 +829,10 @@ class MockBlend extends StatelessWidget {
               ],
             ),
           ),
-          // подсказка жестов (гаснет в реальном приложении)
-          if (!showActions)
-            Positioned(
-              bottom: 92,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Text(
-                  'тап — пауза · вбок — песня · вниз 2× — нравится · долгое — ещё',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.32),
-                      fontSize: 10.5),
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
-
-  Widget _taste(IconData icon, String label, bool active, Color tint) =>
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? Afisha.lime.withValues(alpha: 0.16) : null,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-              color: active
-                  ? Afisha.lime.withValues(alpha: 0.5)
-                  : Colors.white24),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 18, color: active ? Afisha.lime : Colors.white70),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                    color: active ? Afisha.lime : Colors.white70,
-                    fontSize: 12.5,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
-          ],
-        ),
-      );
 }
 
 class _RadialAction extends StatelessWidget {
