@@ -69,7 +69,7 @@ void main() {
   });
 
   testWidgets(
-      'Поток со скачанным — сразу полноэкранный плеер, без экрана «начать» (06.09.2026)',
+      'Поток со скачанным — полноэкранный плеер с кнопкой play, сам не заводит (06.09.2026)',
       (tester) async {
     await tester.pumpWidget(await _app(downloaded: [
       DownloadedTrack(
@@ -79,10 +79,11 @@ void main() {
     ]));
     await tester.pumpAndSettle();
 
-    // Промежуточный экран с кнопкой «начать» и строкой «Слушать вперемешку»
-    // убран (Alex 06.09.2026) — вкладка сразу показывает PlayerView и сама
-    // заводит Поток.
+    // Вкладка сразу показывает полноэкранный плеер (PlayerView + стартовый вид
+    // с большой кнопкой play). Строки «Слушать вперемешку — N песен» нет; сама
+    // музыка не заводится — только по нажатию (Alex 06.09.2026).
     expect(find.byType(PlayerView), findsOneWidget);
+    expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
     expect(find.textContaining('Слушать вперемешку'), findsNothing);
   });
 }
