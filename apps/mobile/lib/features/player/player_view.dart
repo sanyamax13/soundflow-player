@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
@@ -35,6 +37,14 @@ class _PlayerViewState extends State<PlayerView> {
   String? _favTrackId;
   bool _fav = false;
 
+  // Короткое сообщение поверх плеера (радио вкл/выкл, «убрал» и т.п.).
+  // Своя плашка внутри Stack, не SnackBar: SnackBar ложился то на кнопки
+  // управления, то на название и строку «Радио по этой» (Alex ловил на
+  // устройстве 06.09.2026 дважды). Эта висит по центру, над обложкой,
+  // подальше от всего, и сама гаснет.
+  String? _toastText;
+  Timer? _toastTimer;
+
   // Причины удаления (05.09.2026, просьба Alex): чтобы потом было видно,
   // какие песни объективно плохие (качество, не та версия, не музыка), а
   // какие просто не по вкусу — это разные сигналы для будущей настройки
@@ -68,6 +78,7 @@ class _PlayerViewState extends State<PlayerView> {
 
   @override
   void dispose() {
+    _toastTimer?.cancel();
     _controller?.now.removeListener(_onNowChanged);
     super.dispose();
   }
@@ -141,22 +152,15 @@ class _PlayerViewState extends State<PlayerView> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
-  /// Короткое сообщение поверх плеера. Плавающее и приподнятое над рядом
-  /// управления: обычный SnackBar ложился прямо на кнопки (перемотка, пауза,
-  /// сердечко) у самого низа экрана и они переставали нажиматься — Alex поймал
-  /// на устройстве 06.09.2026. Короткая выдержка, старое сообщение убираем.
+  /// Показать плашку-сообщение по центру плеера на ~1,8 с. Не SnackBar —
+  /// см. комментарий у [_toastText].
   void _toast(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(text),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1600),
-          margin: const EdgeInsets.only(left: 16, right: 16, bottom: 150),
-        ),
-      );
+    setState(() => _toastText = text);
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _toastText = null);
+    });
   }
 
   /// «Не та версия» одним тапом: убрать этот трек (причина wrong_version —
@@ -445,6 +449,43 @@ class _PlayerViewState extends State<PlayerView> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            // Плашка-сообщение — поверх всего, у верхнего края, по центру.
+            // Тёмная полупрозрачная, не перехватывает касания, сама гаснет.
+            SafeArea(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: const Alignment(0, -0.72),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _toastText == null
+                        ? const SizedBox.shrink()
+                        : Container(
+                            key: ValueKey(_toastText),
+                            margin: const EdgeInsets.symmetric(horizontal: 32),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.82),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
+                            ),
+                            child: Text(
+                              _toastText!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
               ),
             ),
           ],
