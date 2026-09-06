@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../app/app_scope.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../app/providers.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
@@ -11,14 +13,14 @@ import '../../data/api.dart';
 /// скачает песню на домашний компьютер и положит в каталог, телефон сразу
 /// тянет файл себе. Снизу — поиск по тому, что на сервере уже есть
 /// (тап по строке — скачать на телефон).
-class SearchScreen extends StatefulWidget {
+class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _q = TextEditingController();
   final _artist = TextEditingController();
   final _title = TextEditingController();
@@ -54,7 +56,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _search(String v) async {
     try {
-      final list = await AppScope.of(context).downloads.searchCatalog(v.trim());
+      final list = await ref.read(downloadsProvider).searchCatalog(v.trim());
       if (!mounted) return;
       setState(() => _found = list);
     } catch (_) {
@@ -67,7 +69,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final id = '${t['id']}';
     setState(() => _downloading.add(id));
     try {
-      await AppScope.of(context).downloads.download(t);
+      await ref.read(downloadsProvider).download(t);
       if (!mounted) return;
       setState(() {
         _downloading.remove(id);
@@ -95,7 +97,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _acquireError = null;
       _acquireOk = null;
     });
-    final downloads = AppScope.of(context).downloads;
+    final downloads = ref.read(downloadsProvider);
     try {
       final res = await downloads.acquireOnServer(artist: artist, title: title);
       final trackId = '${res['track_id'] ?? ''}';

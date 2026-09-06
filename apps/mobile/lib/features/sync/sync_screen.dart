@@ -2,20 +2,22 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../app/app_scope.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../app/providers.dart';
 import '../../core/theme.dart';
 
 /// Карточка «Синхронизация»: сколько событий ждут отправки, когда синхронились
 /// в последний раз, кнопка отправить сейчас. Отправляется само, как появится
 /// связь (см. [AutoSync], 06.09.2026); кнопка — на всякий случай.
-class SyncScreen extends StatefulWidget {
+class SyncScreen extends ConsumerStatefulWidget {
   const SyncScreen({super.key});
 
   @override
-  State<SyncScreen> createState() => _SyncScreenState();
+  ConsumerState<SyncScreen> createState() => _SyncScreenState();
 }
 
-class _SyncScreenState extends State<SyncScreen> {
+class _SyncScreenState extends ConsumerState<SyncScreen> {
   int? _pending;
   DateTime? _last;
   bool _busy = false;
@@ -37,7 +39,7 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _load() async {
-    final sync = AppScope.of(context).sync;
+    final sync = ref.read(syncProvider);
     final p = await sync.pendingCount();
     final l = await sync.lastSyncAt();
     if (!mounted) return;
@@ -48,12 +50,13 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _run() async {
-    final scope = AppScope.of(context);
+    final downloads = ref.read(downloadsProvider);
+    final sync = ref.read(syncProvider);
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      final bytes = (await scope.downloads.summary()).bytes;
-      final r = await scope.sync.sync(musicBytes: bytes);
+      final bytes = (await downloads.summary()).bytes;
+      final r = await sync.sync(musicBytes: bytes);
       messenger.showSnackBar(SnackBar(
         content: Text(r.sent == 0 ? 'Новых событий не было' : 'Отправлено событий: ${r.sent}'),
       ));

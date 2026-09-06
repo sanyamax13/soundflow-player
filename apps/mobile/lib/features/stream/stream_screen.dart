@@ -1,8 +1,9 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/app_scope.dart';
+import '../../app/providers.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/cover_backdrop.dart';
@@ -15,17 +16,17 @@ import '../player/player_view.dart';
 /// предупреждать» — отмена прежней просьбы 05.09 не заводить само).
 /// Порядок песен переключается иконкой «перемешать» в самом плеере. Умного
 /// подбора по звуку и фильтров по жанрам здесь пока нет.
-class StreamScreen extends StatefulWidget {
+class StreamScreen extends ConsumerStatefulWidget {
   const StreamScreen({super.key, this.onOpenLibrary});
 
   /// Перейти на вкладку «Моя музыка» (когда качать ещё нечего).
   final VoidCallback? onOpenLibrary;
 
   @override
-  State<StreamScreen> createState() => _StreamScreenState();
+  ConsumerState<StreamScreen> createState() => _StreamScreenState();
 }
 
-class _StreamScreenState extends State<StreamScreen> {
+class _StreamScreenState extends ConsumerState<StreamScreen> {
   List<DownloadedTrack>? _items;
   // Одна песня «на витрине» для фона, пока звук ещё не завёлся (первые доли
   // секунды после открытия вкладки). Выбирается один раз при загрузке.
@@ -38,7 +39,7 @@ class _StreamScreenState extends State<StreamScreen> {
   }
 
   Future<void> _load() async {
-    final items = await AppScope.of(context).downloads.list();
+    final items = await ref.read(downloadsProvider).list();
     if (!mounted) return;
     setState(() {
       _items = items;
@@ -46,7 +47,7 @@ class _StreamScreenState extends State<StreamScreen> {
     });
     // Само заводим Поток при открытии вкладки — но только если вообще ничего
     // ещё не играет (не перебиваем песню, запущенную из «Моей музыки»).
-    if (items.isNotEmpty && AppScope.of(context).player.now.value == null) {
+    if (items.isNotEmpty && ref.read(playerProvider).now.value == null) {
       _start();
     }
   }
@@ -60,8 +61,8 @@ class _StreamScreenState extends State<StreamScreen> {
         NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
     ];
     final start = _preview == null ? 0 : items.indexOf(_preview!);
-    AppScope.of(context)
-        .player
+    ref
+        .read(playerProvider)
         .playQueue(queue, startIndex: start < 0 ? 0 : start, shuffle: true)
         .catchError((_) {});
   }

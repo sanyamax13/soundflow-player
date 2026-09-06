@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 
-import '../../app/app_scope.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../app/providers.dart';
 import '../../core/theme.dart';
 
 /// «Сервер» — состояние домашнего сервера, устройства, лента событий.
 /// PIN нет: плеер личный, сервер в домашней сети.
-class AdminScreen extends StatefulWidget {
+class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
   @override
-  State<AdminScreen> createState() => _AdminScreenState();
+  ConsumerState<AdminScreen> createState() => _AdminScreenState();
 }
 
-class _AdminScreenState extends State<AdminScreen> {
+class _AdminScreenState extends ConsumerState<AdminScreen> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic> _status = const {};
@@ -26,7 +28,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _load() async {
-    final api = AppScope.of(context).api;
+    final api = ref.read(apiProvider);
     setState(() {
       _loading = true;
       _error = null;

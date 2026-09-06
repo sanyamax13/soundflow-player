@@ -8,14 +8,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:soundflow/app/providers.dart';
+import 'package:soundflow/core/theme.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
 import 'package:soundflow/data/sync_repo.dart';
+import 'package:soundflow/features/my_music/my_music_screen.dart';
 import 'package:soundflow/features/player/player_controller.dart';
-import 'package:soundflow/main.dart';
 
 class _FakeApi extends Api {
   _FakeApi();
@@ -65,11 +68,20 @@ Future<Widget> _app() async {
     ));
   }
   final sync = SyncRepo(api, db);
-  return SoundFlowApp(
-    api: api,
-    downloads: DownloadsRepo(api, db, sync),
-    player: PlayerController(),
-    sync: sync,
+  return ProviderScope(
+    overrides: [
+      apiProvider.overrideWithValue(api),
+      downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
+      playerProvider.overrideWithValue(PlayerController()),
+      syncProvider.overrideWithValue(sync),
+    ],
+    // Рендерим сам экран, без Shell/Потока — чтобы в кадр не лез мини-плеер и
+    // авто-старт «Потока» не дёргал just_audio (для картинок это лишний шум).
+    child: MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: Afisha.theme(),
+      home: const MyMusicScreen(),
+    ),
   );
 }
 
@@ -97,9 +109,6 @@ void main() {
   testWidgets('полка: список исполнителей + песни одного', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 860));
     await tester.pumpWidget(await _app());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Моя музыка').first);
     await tester.pumpAndSettle();
 
     await expectLater(find.byType(MaterialApp),

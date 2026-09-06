@@ -2,8 +2,9 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'app/app_scope.dart';
+import 'app/providers.dart';
 import 'app/shell.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
@@ -41,37 +42,30 @@ Future<void> main() async {
   // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
   // (06.09.2026). Живёт всё время работы приложения.
   AutoSync(sync, downloads).start();
-  runApp(SoundFlowApp(api: api, downloads: downloads, player: player, sync: sync));
+  runApp(
+    ProviderScope(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        downloadsProvider.overrideWithValue(downloads),
+        playerProvider.overrideWithValue(player),
+        syncProvider.overrideWithValue(sync),
+      ],
+      child: const SoundFlowApp(),
+    ),
+  );
 }
 
 class SoundFlowApp extends StatelessWidget {
-  const SoundFlowApp({
-    super.key,
-    required this.api,
-    required this.downloads,
-    required this.player,
-    required this.sync,
-  });
-
-  final Api api;
-  final DownloadsRepo downloads;
-  final PlayerController player;
-  final SyncRepo sync;
+  const SoundFlowApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return AppScope(
-      api: api,
-      downloads: downloads,
-      player: player,
-      sync: sync,
-      child: MaterialApp(
-        title: 'SoundFlow',
-        debugShowCheckedModeBanner: false,
-        theme: Afisha.theme(),
-        // Входа нет — сразу вкладки. Плеер личный, сервер в домашней сети.
-        home: const Shell(),
-      ),
+    return MaterialApp(
+      title: 'SoundFlow',
+      debugShowCheckedModeBanner: false,
+      theme: Afisha.theme(),
+      // Входа нет — сразу вкладки. Плеер личный, сервер в домашней сети.
+      home: const Shell(),
     );
   }
 }

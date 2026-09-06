@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/app_scope.dart';
+import '../../app/providers.dart';
 import '../../core/theme.dart';
 import 'cover_backdrop.dart';
 import 'player_controller.dart';
@@ -16,7 +17,7 @@ import 'player_controller.dart';
 /// - вкладка «Поток» вставляет его прямо в тело, без кнопки закрытия;
 /// - [NowPlayingScreen] открывает его поверх текущего экрана (тап по
 ///   мини-плееру), с кнопкой «вниз».
-class PlayerView extends StatefulWidget {
+class PlayerView extends ConsumerStatefulWidget {
   const PlayerView({super.key, this.onDismiss, this.emptyState});
 
   /// Кнопка «вниз» в углу. Есть, когда экран открыт поверх другого (пуш) —
@@ -29,10 +30,10 @@ class PlayerView extends StatefulWidget {
   final Widget? emptyState;
 
   @override
-  State<PlayerView> createState() => _PlayerViewState();
+  ConsumerState<PlayerView> createState() => _PlayerViewState();
 }
 
-class _PlayerViewState extends State<PlayerView> {
+class _PlayerViewState extends ConsumerState<PlayerView> {
   bool _wired = false;
   String? _favTrackId;
   bool _fav = false;
@@ -57,8 +58,8 @@ class _PlayerViewState extends State<PlayerView> {
     'tired': 'Просто надоела',
     'other': 'Другая причина',
   };
-  // Ссылку на контроллер держим в поле, а не берём через AppScope.of(context)
-  // по требованию — в dispose() контекст уже недействителен (баг вылез,
+  // Ссылку на контроллер держим в поле, а не читаем провайдер по требованию —
+  // в dispose() контекст/ref уже недействителен (баг вылез,
   // когда этот экран впервые стал не только пуш-маршрутом, а телом вкладки
   // «Поток», которое реально размонтируется при переключении вкладок/тестах).
   PlayerController? _controller;
@@ -70,7 +71,7 @@ class _PlayerViewState extends State<PlayerView> {
     super.didChangeDependencies();
     if (!_wired) {
       _wired = true;
-      _controller = AppScope.of(context).player;
+      _controller = ref.read(playerProvider);
       _p.now.addListener(_onNowChanged);
       _onNowChanged();
     }
@@ -88,7 +89,7 @@ class _PlayerViewState extends State<PlayerView> {
   Future<void> _syncFav() async {
     final cur = _p.now.value;
     if (cur == null || cur.id == _favTrackId) return;
-    final v = await AppScope.of(context).downloads.favorite(cur.id);
+    final v = await ref.read(downloadsProvider).favorite(cur.id);
     if (!mounted) return;
     setState(() {
       _favTrackId = cur.id;
@@ -101,7 +102,7 @@ class _PlayerViewState extends State<PlayerView> {
     if (cur == null) return;
     final v = !_fav;
     setState(() => _fav = v);
-    await AppScope.of(context).downloads.setFavorite(cur.id, v);
+    await ref.read(downloadsProvider).setFavorite(cur.id, v);
   }
 
   /// Спросить причину и убрать трек с телефона (и с сервера — через обычную
@@ -140,7 +141,7 @@ class _PlayerViewState extends State<PlayerView> {
       ),
     );
     if (reason == null || !mounted) return;
-    await AppScope.of(context).downloads.delete(now.id, reason: reason);
+    await ref.read(downloadsProvider).delete(now.id, reason: reason);
     if (!mounted) return;
     await _p.next();
     _toast('Убрал с телефона');
@@ -167,7 +168,7 @@ class _PlayerViewState extends State<PlayerView> {
   /// сервер потом сам подтянет другую версию, см. deleteAndReacquire) и
   /// перейти к следующему. Без листа причин, в отличие от корзины.
   Future<void> _replaceVersion(NowPlaying now) async {
-    await AppScope.of(context).downloads.delete(now.id, reason: 'wrong_version');
+    await ref.read(downloadsProvider).delete(now.id, reason: 'wrong_version');
     if (!mounted) return;
     await _p.next();
     _toast('Убрал — сервер поищет версию получше');
@@ -179,20 +180,20 @@ class _PlayerViewState extends State<PlayerView> {
   /// Поток играет вперемешку. У seed-песни нет отпечатка — честно говорим,
   /// что похожее не подобрать, и радио не зажигаем (Alex, 06.09.2026).
   Future<void> _radio(NowPlaying now) async {
-    final scope = AppScope.of(context);
     if (_p.radio.value) {
       await _p.stopRadio();
       _toast('Радио выключил');
       return;
     }
-    final all = await scope.downloads.list();
+    final all = await ref.read(downloadsProvider).list();
     if (all.length < 2) return;
     final ids = [
       for (final t in all)
         if (t.id != now.id) t.id,
     ];
     try {
-      final res = await scope.api.streamOrder(seedId: now.id, candidateIds: ids);
+      final res =
+          await ref.read(apiProvider).streamOrder(seedId: now.id, candidateIds: ids);
       if (!res.reordered) {
         _toast('У этой песни нет звукового отпечатка — похожее не подобрать');
         return;

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:soundflow/app/providers.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
@@ -34,11 +36,14 @@ Future<Widget> _app({List<DownloadedTrack> downloaded = const []}) async {
     await db.upsertDownloaded(t);
   }
   final sync = SyncRepo(api, db);
-  return SoundFlowApp(
-    api: api,
-    downloads: DownloadsRepo(api, db, sync),
-    player: PlayerController(),
-    sync: sync,
+  return ProviderScope(
+    overrides: [
+      apiProvider.overrideWithValue(api),
+      downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
+      playerProvider.overrideWithValue(PlayerController()),
+      syncProvider.overrideWithValue(sync),
+    ],
+    child: const SoundFlowApp(),
   );
 }
 

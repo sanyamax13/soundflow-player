@@ -1,8 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/app_scope.dart';
+import '../../app/providers.dart';
 import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
@@ -15,14 +16,14 @@ import '../search/search_screen.dart';
 /// сворачиваются в несколько сотен строк, до нужного добраться реально.
 /// Действия: удалить всего исполнителя, удалить песню, в избранное,
 /// «не та версия». Меню — на «трёх точках» у строки.
-class MyMusicScreen extends StatefulWidget {
+class MyMusicScreen extends ConsumerStatefulWidget {
   const MyMusicScreen({super.key});
 
   @override
-  State<MyMusicScreen> createState() => _MyMusicScreenState();
+  ConsumerState<MyMusicScreen> createState() => _MyMusicScreenState();
 }
 
-class _MyMusicScreenState extends State<MyMusicScreen> {
+class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   bool _onlyFav = false;
   List<DownloadedTrack>? _items;
   int _count = 0;
@@ -38,7 +39,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
   }
 
   Future<void> _refresh() async {
-    final d = AppScope.of(context).downloads;
+    final d = ref.read(downloadsProvider);
     final items = await d.list(onlyFavorite: _onlyFav);
     final s = await d.summary();
     if (!mounted) return;
@@ -91,12 +92,12 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
           coverPath: x.coverPath,
         ),
     ];
-    await AppScope.of(context).player.playQueue(queue,
+    await ref.read(playerProvider).playQueue(queue,
         startIndex: startIndex < 0 ? 0 : startIndex, shuffle: shuffle);
   }
 
   Future<void> _toggleFav(DownloadedTrack t) async {
-    await AppScope.of(context).downloads.setFavorite(t.id, !t.favorite);
+    await ref.read(downloadsProvider).setFavorite(t.id, !t.favorite);
     await _refresh();
   }
 
@@ -120,7 +121,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
   }
 
   Future<void> _deleteTrack(DownloadedTrack t) async {
-    final d = AppScope.of(context).downloads;
+    final d = ref.read(downloadsProvider);
     if (!await _confirm('Удалить «${t.title}»?',
         'Файл сотрётся с телефона. Скачать заново можно будет с сервера.',
         'Удалить')) {
@@ -131,7 +132,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
   }
 
   Future<void> _wrongVersion(DownloadedTrack t) async {
-    final d = AppScope.of(context).downloads;
+    final d = ref.read(downloadsProvider);
     if (!await _confirm('Не та версия?',
         '«${t.title}» удалится, сервер потом подтянет другую версию.',
         'Убрать')) {
@@ -142,7 +143,7 @@ class _MyMusicScreenState extends State<MyMusicScreen> {
   }
 
   Future<void> _deleteArtist(String artist, List<DownloadedTrack> tracks) async {
-    final d = AppScope.of(context).downloads;
+    final d = ref.read(downloadsProvider);
     if (!await _confirm('Удалить всего исполнителя?',
         '«$artist» — ${tracks.length} ${_songWord(tracks.length)}. '
             'Все файлы сотрутся с телефона. Скачать заново можно с сервера.',

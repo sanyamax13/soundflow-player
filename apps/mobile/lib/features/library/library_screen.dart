@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 
-import '../../app/app_scope.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../app/providers.dart';
 import '../../core/theme.dart';
 
 /// «Библиотека»: сколько уже скачано, кнопка «докачать ещё» — сервер сам
 /// подбирает следующую порцию (избранное вперёд) под заданный объём,
 /// телефон качает её по одному треку. Только по кнопке — фонового
 /// автоскачивания нет, Alex сам решает, когда качать ещё.
-class LibraryScreen extends StatefulWidget {
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
 enum _BatchGB { gb10, gb20, gb50 }
@@ -29,7 +31,7 @@ extension on _BatchGB {
       };
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int? _count;
   int? _bytes;
   bool _busy = false;
@@ -45,7 +47,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _load() async {
-    final s = await AppScope.of(context).downloads.summary();
+    final s = await ref.read(downloadsProvider).summary();
     if (!mounted) return;
     setState(() {
       _count = s.count;
@@ -54,7 +56,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _downloadMore() async {
-    final downloads = AppScope.of(context).downloads;
+    final downloads = ref.read(downloadsProvider);
     final messenger = ScaffoldMessenger.of(context);
     setState(() {
       _busy = true;

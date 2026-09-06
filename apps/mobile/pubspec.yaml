@@ -45,6 +45,8 @@ dependencies:
   just_audio: ^0.9.42
   audio_service: ^0.18.19
   audio_session: ^0.1.25
+  # Раздача общих сервисов по дереву + точечные перерисовки (замена AppScope).
+  flutter_riverpod: ^2.6.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

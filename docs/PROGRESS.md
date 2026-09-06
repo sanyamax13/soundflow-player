@@ -985,6 +985,18 @@
       добавлено / убрано / не нашёл / заменил на лучше / освободил место.
   13. **Riverpod** — ДЕЛАЕМ. Заменить `AppScope` (InheritedWidget-синглтоны)
       на Riverpod. Вид не меняется. Делаем ПЕРВЫМ — чистая база под 3/4/5/10/11/12.
+- [x] **Этап 41 — Riverpod вместо `AppScope`.** 06.09.2026. `flutter_riverpod`
+  2.6.1. `lib/app/providers.dart` — 4 `Provider` (`apiProvider`/`downloadsProvider`/
+  `playerProvider`/`syncProvider`), тело-заглушка, реальные экземпляры кладутся
+  через `ProviderScope(overrides: overrideWithValue(...))` в `main()` и в тестах.
+  `SoundFlowApp` больше без параметров, `AppScope` удалён. Все экраны, где был
+  `AppScope.of(context)` → `ConsumerStatefulWidget`/`ConsumerState`, вызовы →
+  `ref.read(xProvider)` (7 экранов + `Shell`). Тесты (`widget_test`,
+  `stream_test`, `search_test`, `mymusic_real_shots`) обёрнуты в `ProviderScope`.
+  `mymusic_real_shots` теперь рендерит `MyMusicScreen` напрямую (без `Shell`),
+  иначе авто-старт Потока (этап 40) тащил в кадр мини-плеер и `just_audio`.
+  `analyze` чисто, 23 теста, голдены перегенерены. Вид не изменился. На
+  устройстве не проверено.
   «Tidal»-фон под цвет обложки — был (этап 32), убран по просьбе Alex (этап 38).
   Радио по этой песне —
   сделано (этап 32) + переключатель и раскидка по артисту (этап 33);

@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
 import '../features/my_music/my_music_screen.dart';
 import '../features/player/mini_player.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/stream/stream_screen.dart';
-import 'app_scope.dart';
+import 'providers.dart';
 
 /// Каркас приложения. Вкладки (решение Alex 04.09.2026): Поток · Моя музыка ·
 /// Профиль. Настройки — внутри профиля. Чарты и альбомы убраны.
 /// Мини-плеер над вкладками — кроме «Потока», там и так плеер на весь экран.
-class Shell extends StatefulWidget {
+class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
 
   @override
-  State<Shell> createState() => _ShellState();
+  ConsumerState<Shell> createState() => _ShellState();
 }
 
-class _ShellState extends State<Shell> {
+class _ShellState extends ConsumerState<Shell> {
   int _tab = 0;
 
   static const _labels = ['Поток', 'Моя музыка', 'Профиль'];
@@ -43,7 +44,7 @@ class _ShellState extends State<Shell> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_tab != 0) MiniPlayer(controller: AppScope.of(context).player),
+          if (_tab != 0) MiniPlayer(controller: ref.read(playerProvider)),
           NavigationBar(
             backgroundColor: onStream ? Colors.transparent : Afisha.surface,
             selectedIndex: _tab,

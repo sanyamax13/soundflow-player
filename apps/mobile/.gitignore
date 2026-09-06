@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Скриншоты-расхождения golden-тестов (генерируются при падении)
+test/failures/

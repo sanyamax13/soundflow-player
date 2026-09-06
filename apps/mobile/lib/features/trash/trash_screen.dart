@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 
-import '../../app/app_scope.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../app/providers.dart';
 import '../../core/theme.dart';
 
 /// «Корзина»: песни, которые сервер убрал у себя — удалил Alex на телефоне
 /// (после синхронизации) или это оказался мусор (интервью, скит и т.п.,
 /// см. чистку каталога). Файлы не стёрты насовсем, лежат на сервере в
 /// специальной папке — можно вернуть.
-class TrashScreen extends StatefulWidget {
+class TrashScreen extends ConsumerStatefulWidget {
   const TrashScreen({super.key});
 
   @override
-  State<TrashScreen> createState() => _TrashScreenState();
+  ConsumerState<TrashScreen> createState() => _TrashScreenState();
 }
 
-class _TrashScreenState extends State<TrashScreen> {
+class _TrashScreenState extends ConsumerState<TrashScreen> {
   List<Map<String, dynamic>>? _items;
   final Set<String> _busy = {};
 
@@ -26,7 +28,7 @@ class _TrashScreenState extends State<TrashScreen> {
 
   Future<void> _load() async {
     try {
-      final list = await AppScope.of(context).api.trashList();
+      final list = await ref.read(apiProvider).trashList();
       if (!mounted) return;
       setState(() => _items = list);
     } catch (_) {
@@ -39,7 +41,7 @@ class _TrashScreenState extends State<TrashScreen> {
     final id = '${t['track_id']}';
     setState(() => _busy.add(id));
     try {
-      await AppScope.of(context).api.trashRestore(id);
+      await ref.read(apiProvider).trashRestore(id);
       if (!mounted) return;
       setState(() {
         _busy.remove(id);
