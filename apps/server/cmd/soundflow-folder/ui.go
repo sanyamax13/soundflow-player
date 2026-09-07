@@ -4,22 +4,24 @@ import (
 	"github.com/lxn/walk"
 )
 
-// Тёмный вид в духе ФармМастера (Alex TG 18729): весь экран рисуем сами на
-// одном CustomWidget — так native-кнопки Win32 не портят тёмную тему.
+// Светлый вид в стилистике «Афиши» SoundFlow (Alex TG 18732–18735): белый фон,
+// тёмный текст, лаймовый акцент, шрифт Inter. Весь экран рисуется вручную на
+// одном CustomWidget — так native-кнопки Win32 не портят вид.
 
 var (
-	cBg     = walk.RGB(0x14, 0x17, 0x1C)
-	cBar    = walk.RGB(0x0F, 0x12, 0x16)
-	cField  = walk.RGB(0x23, 0x28, 0x30)
-	cInk    = walk.RGB(0xE7, 0xEA, 0xEF)
-	cMut    = walk.RGB(0x8A, 0x94, 0xA1)
-	cFaint  = walk.RGB(0x6C, 0x76, 0x83)
-	cAccent = walk.RGB(0x3E, 0x5F, 0xE0)
-	cAccHi  = walk.RGB(0x5B, 0x79, 0xF0)
-	cStroke = walk.RGB(0x39, 0x42, 0x4E)
-	cOk     = walk.RGB(0x3F, 0xB9, 0x50)
-	cErr    = walk.RGB(0xF8, 0x51, 0x49)
-	cWhite  = walk.RGB(0xFF, 0xFF, 0xFF)
+	cBg      = walk.RGB(0xFF, 0xFF, 0xFF)
+	cHead    = walk.RGB(0xFA, 0xFA, 0xFA)
+	cField   = walk.RGB(0xF4, 0xF4, 0xF5)
+	cLimeBox = walk.RGB(0xF0, 0xFB, 0xD6) // лайм ~15% на белом — плашка адреса
+	cInk     = walk.RGB(0x18, 0x18, 0x1B)
+	cMut     = walk.RGB(0x71, 0x71, 0x7A)
+	cFaint   = walk.RGB(0xA1, 0xA1, 0xAA)
+	cLine    = walk.RGB(0xE4, 0xE4, 0xE7)
+	cLime    = walk.RGB(0xB2, 0xFF, 0x00)
+	cLimeHi  = walk.RGB(0xA3, 0xEB, 0x00)
+	cLimeInk = walk.RGB(0x0A, 0x0A, 0x0A) // текст на лайме
+	cOk      = walk.RGB(0x3F, 0x9E, 0x1E)
+	cErr     = walk.RGB(0xD1, 0x3A, 0x30)
 )
 
 type ui struct {
@@ -31,16 +33,14 @@ type ui struct {
 	status string
 	phase  int // 0 ждём, 1 читаю, 2 работает, 3 ошибка
 
-	darkDone bool
-	hover    int // -1 нет, 0 «выбрать», 1 «запустить», 2 адрес
-	rPick    walk.Rectangle
-	rGo      walk.Rectangle
-	rAddr    walk.Rectangle
+	hover int // -1 нет, 0 «выбрать», 1 «запустить», 2 адрес
+	rPick walk.Rectangle
+	rGo   walk.Rectangle
+	rAddr walk.Rectangle
 
-	// кэш ресурсов (живут всё время работы)
-	brBg, brBar, brField, brAccent, brAccHi, brIcon *walk.SolidColorBrush
-	penStroke, penAccent                            walk.Pen
-	fTitle, fLabel, fBody, fAddr, fHint, fIcon      *walk.Font
+	brBg, brHead, brField, brLimeBox, brLime, brLimeHi *walk.SolidColorBrush
+	penLine, penLime                                   walk.Pen
+	fTitle, fLabel, fBody, fBtn, fAddr, fHint, fIcon   *walk.Font
 }
 
 func newUI() *ui {
@@ -52,23 +52,25 @@ func (u *ui) ensureRes() {
 		return
 	}
 	u.brBg, _ = walk.NewSolidColorBrush(cBg)
-	u.brBar, _ = walk.NewSolidColorBrush(cBar)
+	u.brHead, _ = walk.NewSolidColorBrush(cHead)
 	u.brField, _ = walk.NewSolidColorBrush(cField)
-	u.brAccent, _ = walk.NewSolidColorBrush(cAccent)
-	u.brAccHi, _ = walk.NewSolidColorBrush(cAccHi)
-	u.brIcon, _ = walk.NewSolidColorBrush(cAccent)
-	if p, err := walk.NewCosmeticPen(walk.PenSolid, cStroke); err == nil {
-		u.penStroke = p
+	u.brLimeBox, _ = walk.NewSolidColorBrush(cLimeBox)
+	u.brLime, _ = walk.NewSolidColorBrush(cLime)
+	u.brLimeHi, _ = walk.NewSolidColorBrush(cLimeHi)
+	if p, err := walk.NewCosmeticPen(walk.PenSolid, cLine); err == nil {
+		u.penLine = p
 	}
-	if p, err := walk.NewCosmeticPen(walk.PenSolid, cAccent); err == nil {
-		u.penAccent = p
+	if p, err := walk.NewCosmeticPen(walk.PenSolid, cLime); err == nil {
+		u.penLime = p
 	}
-	u.fTitle, _ = walk.NewFont("Segoe UI", 12, walk.FontBold)
-	u.fLabel, _ = walk.NewFont("Segoe UI", 9, 0)
-	u.fBody, _ = walk.NewFont("Segoe UI", 10, 0)
-	u.fAddr, _ = walk.NewFont("Segoe UI", 13, walk.FontBold)
-	u.fHint, _ = walk.NewFont("Segoe UI", 8, 0)
-	u.fIcon, _ = walk.NewFont("Segoe UI", 12, walk.FontBold)
+	// Inter подгружен в fonts.go; если вдруг нет — GDI подставит Segoe UI.
+	u.fTitle, _ = walk.NewFont("Inter", 13, walk.FontBold)
+	u.fLabel, _ = walk.NewFont("Inter", 9, 0)
+	u.fBody, _ = walk.NewFont("Inter", 10, 0)
+	u.fBtn, _ = walk.NewFont("Inter", 10, walk.FontBold)
+	u.fAddr, _ = walk.NewFont("Inter", 13, walk.FontBold)
+	u.fHint, _ = walk.NewFont("Inter", 8, 0)
+	u.fIcon, _ = walk.NewFont("Inter", 11, walk.FontBold)
 }
 
 func (u *ui) redraw() {
@@ -105,85 +107,83 @@ func (u *ui) setStatus(msg string) { u.status = msg; u.redraw() }
 // --- отрисовка ---
 
 const (
-	padX = 20
-	barH = 54
+	padX = 22
+	barH = 56
 )
 
 func (u *ui) paint(canvas *walk.Canvas, _ walk.Rectangle) error {
 	u.ensureRes()
-	if !u.darkDone && mw != nil {
-		u.darkDone = true
-		darkTitleBar(uintptr(mw.Handle()))
-	}
 	W := u.cw.ClientBounds().Width
-
+	H := u.cw.ClientBounds().Height
 	rc := func(x, y, w, h int) walk.Rectangle { return walk.Rectangle{X: x, Y: y, Width: w, Height: h} }
-	full := rc(0, 0, W, 1000)
-	canvas.FillRectangle(u.brBg, full)
 
-	// шапка
-	canvas.FillRectangle(u.brBar, rc(0, 0, W, barH))
-	canvas.DrawLine(u.penStroke, walk.Point{X: 0, Y: barH}, walk.Point{X: W, Y: barH})
-	canvas.FillRoundedRectangle(u.brIcon, rc(padX, 11, 32, 32), walk.Size{Width: 10, Height: 10})
-	canvas.DrawText("SF", u.fIcon, cWhite, rc(padX, 10, 32, 32), walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
-	canvas.DrawText("SoundFlow — раздача музыки тестировщику", u.fTitle, cInk,
-		rc(padX+44, 0, W-padX-44, barH), walk.TextLeft|walk.TextVCenter|walk.TextSingleLine|walk.TextEndEllipsis)
+	canvas.FillRectangle(u.brBg, rc(0, 0, W, H))
 
-	y := barH + 20
+	// шапка: светлая полоса + лаймовый значок + название
+	canvas.FillRectangle(u.brHead, rc(0, 0, W, barH))
+	canvas.DrawLine(u.penLine, walk.Point{X: 0, Y: barH}, walk.Point{X: W, Y: barH})
+	canvas.FillRoundedRectangle(u.brLime, rc(padX, 12, 32, 32), walk.Size{Width: 9, Height: 9})
+	canvas.DrawText("SF", u.fIcon, cLimeInk, rc(padX, 11, 32, 32),
+		walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
+	canvas.DrawText("SoundFlow", u.fTitle, cInk, rc(padX+44, 0, W-padX-44, barH),
+		walk.TextLeft|walk.TextVCenter|walk.TextSingleLine)
+
+	y := barH + 22
+	fw := W - 2*padX
 
 	// 1. папка
 	canvas.DrawText("1. Папка со своей музыкой (можно на любом диске):", u.fLabel, cMut,
-		rc(padX, y, W-2*padX, 18), walk.TextLeft|walk.TextSingleLine)
+		rc(padX, y, fw, 16), walk.TextLeft|walk.TextSingleLine)
 	y += 22
-	fw := W - 2*padX
-	canvas.FillRectangle(u.brField, rc(padX, y, fw, 30))
-	canvas.DrawRectangle(u.penStroke, rc(padX, y, fw, 30))
+	canvas.FillRoundedRectangle(u.brField, rc(padX, y, fw, 32), walk.Size{Width: 8, Height: 8})
+	canvas.DrawRoundedRectangle(u.penLine, rc(padX, y, fw, 32), walk.Size{Width: 8, Height: 8})
 	pathTxt, pathCol := u.folder, cInk
 	if pathTxt == "" {
 		pathTxt, pathCol = "папка не выбрана", cFaint
 	}
-	canvas.DrawText(pathTxt, u.fBody, pathCol, rc(padX+10, y, fw-20, 30),
+	canvas.DrawText(pathTxt, u.fBody, pathCol, rc(padX+12, y, fw-24, 32),
 		walk.TextLeft|walk.TextVCenter|walk.TextSingleLine|walk.TextPathEllipsis)
-	y += 40
-
-	// кнопка «Выбрать папку…» — вторичная
-	u.rPick = rc(padX, y, 200, 32)
-	u.drawBtn(canvas, u.rPick, "Выбрать папку…", false, u.hover == 0)
 	y += 44
 
-	// кнопка «Запустить раздачу» — главная
-	u.rGo = rc(padX, y, fw, 40)
+	// кнопка «Выбрать папку…» — вторичная
+	u.rPick = rc(padX, y, 200, 34)
+	u.drawBtn(canvas, u.rPick, "Выбрать папку…", false, u.hover == 0)
+	y += 46
+
+	// кнопка «Запустить раздачу» — главная, лайм
+	u.rGo = rc(padX, y, fw, 42)
 	goText := "2. Запустить раздачу"
 	if u.phase == 1 {
 		goText = "Читаю песни…"
 	}
 	u.drawBtn(canvas, u.rGo, goText, true, u.hover == 1 && u.phase != 1)
-	y += 50
+	y += 54
 
 	// счётчик
 	if u.phase >= 2 {
-		canvas.DrawText("Готово к раздаче: "+itoa(u.count)+" "+songWord(u.count), u.fBody, cInk,
+		canvas.DrawText("Готово к раздаче: "+itoa(u.count)+" "+songWord(u.count), u.fBtn, cInk,
 			rc(padX, y, fw, 20), walk.TextLeft|walk.TextSingleLine)
 	}
-	y += 24
+	y += 26
 
-	// 2. адрес
-	canvas.DrawText("Адрес для телефона — впиши в SoundFlow, потом «докачать всё»:", u.fLabel, cMut,
-		rc(padX, y, fw, 18), walk.TextLeft|walk.TextSingleLine)
-	y += 20
-	u.rAddr = rc(padX, y, fw, 36)
-	canvas.FillRectangle(u.brField, u.rAddr)
+	// 3. адрес — в лаймовой плашке
+	canvas.DrawText("3. Впиши этот адрес в SoundFlow на телефоне, потом «докачать всё»:", u.fLabel, cMut,
+		rc(padX, y, fw, 16), walk.TextLeft|walk.TextSingleLine)
+	y += 22
+	u.rAddr = rc(padX, y, fw, 38)
+	canvas.FillRoundedRectangle(u.brLimeBox, u.rAddr, walk.Size{Width: 8, Height: 8})
+	pen := u.penLine
 	if u.hover == 2 && u.addr != "" {
-		canvas.DrawRectangle(u.penAccent, u.rAddr)
-	} else {
-		canvas.DrawRectangle(u.penStroke, u.rAddr)
+		pen = u.penLime
 	}
-	addrTxt, addrCol := u.addr, cAccHi
+	canvas.DrawRoundedRectangle(pen, u.rAddr, walk.Size{Width: 8, Height: 8})
+	addrTxt, addrCol := u.addr, cInk
 	if addrTxt == "" {
 		addrTxt, addrCol = "—", cFaint
 	}
-	canvas.DrawText(addrTxt, u.fAddr, addrCol, u.rAddr, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
-	y += 44
+	canvas.DrawText(addrTxt, u.fAddr, addrCol, u.rAddr,
+		walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
+	y += 48
 
 	// статус
 	sc := cMut
@@ -193,31 +193,33 @@ func (u *ui) paint(canvas *walk.Canvas, _ walk.Rectangle) error {
 	case 3:
 		sc = cErr
 	}
-	canvas.DrawText(u.status, u.fBody, sc, rc(padX, y, fw, 20), walk.TextLeft|walk.TextSingleLine|walk.TextEndEllipsis)
+	canvas.DrawText(u.status, u.fBody, sc, rc(padX, y, fw, 20),
+		walk.TextLeft|walk.TextSingleLine|walk.TextEndEllipsis)
 
 	// подсказка снизу
 	canvas.DrawText("Телефон и этот компьютер — в одной Wi-Fi. Окно не закрывать, пока телефон качает.",
-		u.fHint, cFaint, rc(padX, u.cw.ClientBounds().Height-26, fw, 18), walk.TextLeft|walk.TextSingleLine)
+		u.fHint, cFaint, rc(padX, H-24, fw, 16), walk.TextLeft|walk.TextSingleLine)
 	return nil
 }
 
 func (u *ui) drawBtn(canvas *walk.Canvas, r walk.Rectangle, text string, primary, hover bool) {
+	round := walk.Size{Width: 9, Height: 9}
 	if primary {
-		br := u.brAccent
+		br := u.brLime
 		if hover {
-			br = u.brAccHi
+			br = u.brLimeHi
 		}
-		canvas.FillRoundedRectangle(br, r, walk.Size{Width: 8, Height: 8})
-		canvas.DrawText(text, u.fBody, cWhite, r, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
+		canvas.FillRoundedRectangle(br, r, round)
+		canvas.DrawText(text, u.fBtn, cLimeInk, r, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
 		return
 	}
-	canvas.FillRoundedRectangle(u.brField, r, walk.Size{Width: 8, Height: 8})
-	pen := u.penStroke
+	canvas.FillRoundedRectangle(u.brBg, r, round)
+	pen := u.penLine
 	if hover {
-		pen = u.penAccent
+		pen = u.penLime
 	}
-	canvas.DrawRoundedRectangle(pen, r, walk.Size{Width: 8, Height: 8})
-	canvas.DrawText(text, u.fBody, cInk, r, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
+	canvas.DrawRoundedRectangle(pen, r, round)
+	canvas.DrawText(text, u.fBtn, cInk, r, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine)
 }
 
 func hit(r walk.Rectangle, x, y int) bool {

@@ -30,26 +30,27 @@ var (
 )
 
 func main() {
+	loadFonts() // Inter в процесс — до создания окна
 	U.folder = loadLastFolder()
 
-	// Тёмная рамка окна + автозапуск, если папку передали аргументом.
+	// Автозапуск, если папку передали аргументом (перетащили на exe).
 	go func() {
 		for mw == nil || U.cw == nil {
 			time.Sleep(20 * time.Millisecond)
 		}
 		arg := autostartArg()
+		if arg == "" {
+			return
+		}
 		mw.Synchronize(func() {
-			darkTitleBar(uintptr(mw.Handle()))
-			if arg != "" {
-				U.setFolder(arg)
-				onStart()
-			}
+			U.setFolder(arg)
+			onStart()
 		})
 	}()
 
 	if _, err := (MainWindow{
 		AssignTo:   &mw,
-		Title:      "SoundFlow — раздача музыки тестировщику",
+		Title:      "SoundFlow",
 		MinSize:    Size{Width: 560, Height: 490},
 		Size:       Size{Width: 560, Height: 490},
 		Layout:     VBox{MarginsZero: true, SpacingZero: true},
