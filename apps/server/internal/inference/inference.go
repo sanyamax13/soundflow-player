@@ -53,9 +53,31 @@ func Open(assetsDir string) (*Engine, error) {
 	if initErr != nil {
 		return nil, fmt.Errorf("ORT init: %w", initErr)
 	}
+
+	// Вход динамической длины (у каждого трека свой размер PCM). С включённым
+	// CPU-арена-аллокатором и планировщиком mem-pattern ORT кэширует буферы под
+	// каждый новый максимум длины и НЕ отдаёт их назад — на прогоне всей базы
+	// это растекается в десятки ГБ. Отключаем оба; тогда память держится ровно.
+	opts, err := ort.NewSessionOptions()
+	if err != nil {
+		return nil, fmt.Errorf("session options: %w", err)
+	}
+	defer opts.Destroy()
+	if err := opts.SetCpuMemArena(false); err != nil {
+		return nil, fmt.Errorf("SetCpuMemArena: %w", err)
+	}
+	if err := opts.SetMemPattern(false); err != nil {
+		return nil, fmt.Errorf("SetMemPattern: %w", err)
+	}
+	// Ограничиваем пул потоков: без лимита ORT берёт все ядра и на длинных STFT
+	// раздувает scratch. 4 достаточно, расчёт всё равно сериализован мьютексом.
+	if err := opts.SetIntraOpNumThreads(4); err != nil {
+		return nil, fmt.Errorf("SetIntraOpNumThreads: %w", err)
+	}
+
 	sess, err := ort.NewDynamicAdvancedSession(
 		filepath.Join(dir, "cnn14.onnx"),
-		[]string{"waveform"}, []string{"embedding"}, nil)
+		[]string{"waveform"}, []string{"embedding"}, opts)
 	if err != nil {
 		return nil, fmt.Errorf("сессия cnn14.onnx: %w", err)
 	}
