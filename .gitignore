@@ -29,3 +29,7 @@ apps/server/soundflow-server.exe
 _srv.out
 _srv.err
 .DS_Store
+apps/server/soundflow-folder
+apps/server/soundflow-folder.exe
+apps/server/cmd/soundflow-folder/soundflow-folder
+apps/server/cmd/soundflow-folder/*.exe

@@ -1,6 +1,7 @@
 // soundflow-folder — маленькая программа для тестировщика: указывает папку со
 // своей музыкой, программа раздаёт её телефону по Wi-Fi тем же API, что и
-// настоящий SoundFlow. Один exe, ничего ставить не нужно (Alex TG 18721–18723).
+// настоящий SoundFlow. Один exe, ничего ставить не нужно (Alex TG 18721–18729).
+// Вид — тёмный, в духе ФармМастера (весь экран рисуется в ui.go).
 package main
 
 import (
@@ -21,70 +22,46 @@ import (
 const preferredPort = "8090"
 
 var (
-	srv       = NewServer()
-	httpOnce  sync.Once
-	livePort  string
-	mw        *walk.MainWindow
-	folderEd  *walk.LineEdit
-	countLbl  *walk.Label
-	addrEd    *walk.LineEdit
-	statusLbl *walk.Label
-	startBtn  *walk.PushButton
+	srv      = NewServer()
+	httpOnce sync.Once
+	livePort string
+	mw       *walk.MainWindow
+	U        = newUI()
 )
 
 func main() {
-	// Папка передана аргументом (перетащили на exe) — подставить и запустить,
-	// как только окно создастся.
+	U.folder = loadLastFolder()
+
+	// Тёмная рамка окна + автозапуск, если папку передали аргументом.
 	go func() {
-		arg := autostartArg()
-		if arg == "" {
-			return
-		}
-		for mw == nil {
+		for mw == nil || U.cw == nil {
 			time.Sleep(20 * time.Millisecond)
 		}
+		arg := autostartArg()
 		mw.Synchronize(func() {
-			folderEd.SetText(arg)
-			onStart()
+			darkTitleBar(uintptr(mw.Handle()))
+			if arg != "" {
+				U.setFolder(arg)
+				onStart()
+			}
 		})
 	}()
 
 	if _, err := (MainWindow{
-		AssignTo: &mw,
-		Title:    "SoundFlow — раздача музыки тестировщику",
-		MinSize:  Size{Width: 640, Height: 300},
-		Size:     Size{Width: 640, Height: 320},
-		Layout: Grid{
-			Columns: 1,
-			Spacing: 8,
-			Margins: Margins{Left: 16, Top: 16, Right: 16, Bottom: 16},
-		},
+		AssignTo:   &mw,
+		Title:      "SoundFlow — раздача музыки тестировщику",
+		MinSize:    Size{Width: 560, Height: 490},
+		Size:       Size{Width: 560, Height: 490},
+		Layout:     VBox{MarginsZero: true, SpacingZero: true},
+		Background: SolidColorBrush{Color: cBg},
 		Children: []Widget{
-			Label{Text: "1. Папка со своей музыкой (можно на любом диске):"},
-			LineEdit{AssignTo: &folderEd, ReadOnly: true, Text: loadLastFolder()},
-			PushButton{Text: "Выбрать папку…", OnClicked: onPick},
-
-			PushButton{
-				AssignTo:  &startBtn,
-				Text:      "2. Запустить раздачу",
-				MinSize:   Size{Height: 34},
-				OnClicked: onStart,
-			},
-
-			Label{AssignTo: &countLbl, Text: ""},
-
-			Label{Text: "3. Впиши этот адрес в SoundFlow на телефоне, потом «докачать всё»:"},
-			LineEdit{
-				AssignTo: &addrEd, ReadOnly: true, Text: "",
-				Font: Font{PointSize: 12, Bold: true},
-			},
-
-			Label{AssignTo: &statusLbl, Text: "Выбери папку и нажми «Запустить раздачу»."},
-
-			VSpacer{},
-			Label{
-				Text:      "Телефон и этот компьютер должны быть в одной Wi-Fi сети. Окно не закрывать.",
-				TextColor: walk.RGB(110, 110, 110),
+			CustomWidget{
+				AssignTo:            &U.cw,
+				ClearsBackground:    true,
+				InvalidatesOnResize: true,
+				Paint:               U.paint,
+				OnMouseDown:         U.onMouseDown,
+				OnMouseMove:         U.onMouseMove,
 			},
 		},
 	}).Run(); err != nil {
@@ -93,8 +70,7 @@ func main() {
 	}
 }
 
-// init: путь папки можно передать аргументом (перетащить папку на exe) —
-// тогда сразу подставляем и запускаем раздачу.
+// autostartArg — путь папки можно передать аргументом (перетащить папку на exe).
 func autostartArg() string {
 	if len(os.Args) > 1 {
 		if fi, err := os.Stat(os.Args[1]); err == nil && fi.IsDir() {
@@ -107,57 +83,50 @@ func autostartArg() string {
 func onPick() {
 	dlg := new(walk.FileDialog)
 	dlg.Title = "Папка с музыкой"
-	dlg.InitialDirPath = folderEd.Text()
+	dlg.InitialDirPath = U.folder
 	if ok, err := dlg.ShowBrowseFolder(mw); err == nil && ok {
-		folderEd.SetText(dlg.FilePath)
+		U.setFolder(dlg.FilePath)
 		saveLastFolder(dlg.FilePath)
 	}
 }
 
 func onStart() {
-	dir := strings.TrimSpace(folderEd.Text())
+	dir := strings.TrimSpace(U.folder)
 	if dir == "" {
 		walk.MsgBox(mw, "Нет папки", "Сначала выбери папку с музыкой.", walk.MsgBoxIconWarning)
 		return
 	}
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		walk.MsgBox(mw, "Папка не найдена", "Такой папки нет: "+dir, walk.MsgBoxIconError)
+		walk.MsgBox(mw, "Папка не найдена", "Такой папки нет:\n"+dir, walk.MsgBoxIconError)
 		return
 	}
-	startBtn.SetEnabled(false)
-	statusLbl.SetText("Читаю песни…")
-	countLbl.SetText("")
-	addrEd.SetText("")
+	U.setBusy()
 
 	go func() {
 		items, err := Scan(dir, func(n int) {
 			if n%25 == 0 {
-				mw.Synchronize(func() { statusLbl.SetText(fmt.Sprintf("Читаю песни… %d", n)) })
+				mw.Synchronize(func() { U.setScanProgress(n) })
 			}
 		})
 		mw.Synchronize(func() {
-			startBtn.SetEnabled(true)
 			if err != nil {
-				statusLbl.SetText("Ошибка чтения папки: " + err.Error())
+				U.setError("Не прочитать папку: " + err.Error())
 				return
 			}
 			if len(items) == 0 {
-				statusLbl.SetText("В этой папке не нашёл музыкальных файлов (mp3, m4a, flac…).")
+				U.setError("В этой папке нет музыкальных файлов (mp3, m4a, flac…).")
 				return
 			}
 			srv.SetItems(items)
-			countLbl.SetText(fmt.Sprintf("Песен готово к раздаче: %d", len(items)))
-
 			if err := ensureHTTP(); err != nil {
-				statusLbl.SetText("Не удалось открыть сеть: " + err.Error())
+				U.setError("Не открыть сеть: " + err.Error())
 				return
 			}
 			host := LANAddr()
 			if host == "" {
 				host = "127.0.0.1"
 			}
-			addrEd.SetText("http://" + host + ":" + livePort)
-			statusLbl.SetText("Работает. Раздаю музыку — можно качать на телефон.")
+			U.setRunning(len(items), "http://"+host+":"+livePort)
 		})
 	}()
 }
@@ -175,8 +144,7 @@ func ensureHTTP() error {
 				ln = l
 				break
 			}
-			p := 8090 + i + 1
-			port = fmt.Sprint(p)
+			port = fmt.Sprint(8090 + i + 1)
 		}
 		if ln == nil {
 			startErr = fmt.Errorf("порты 8090–8110 заняты")
@@ -189,7 +157,7 @@ func ensureHTTP() error {
 	return startErr
 }
 
-// --- запоминаем последнюю папку рядом в %APPDATA%\SoundFlowFolder\last.txt ---
+// --- запоминаем последнюю папку в %APPDATA%\SoundFlowFolder\last.txt ---
 
 func cfgPath() string {
 	base, err := os.UserConfigDir()
