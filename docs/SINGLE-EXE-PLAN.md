@@ -69,10 +69,17 @@ Files только на чтение).
   ставили — по плану поднимаем на шаге 3). Ресемплер двигает отпечаток на
   ~1e-4 → на Go-стороне брать нормальный ресемплер, не линейный. Полный
   отчёт: `E:\soundflow-lab\cnn14-onnx-validation\REPORT.md`.
-- **Шаг 1 — SQLite как теневая база.** `soundflow.db`, схема. Одноразовый
-  импортёр Postgres → SQLite (треки/альбомы/артисты/плейлисты/вектора +
-  счётчики строк + контрольные суммы). Старый сервер работает. Новый код
-  читает SQLite в режиме read-only и сверяет «похожие/vibe/поиск» с Postgres.
+- **Шаг 1 — SQLite как теневая база. ✅ СДЕЛАНО 07.09.2026.**
+  `apps/server/internal/localdb` (modernc.org/sqlite, без CGo): схема зеркалит
+  7 таблиц Postgres, `feature_vector` → BLOB float32; `CatalogList/Search`,
+  `TrackFilePath`, `OrderBySimilarity` (перебор косинуса в памяти + тот же
+  разброс по артистам). Импортёр `apps/server/cmd/soundflow-import` — разовый
+  Postgres→`soundflow.db`, с числом строк и XOR-FNV контрольной суммой по
+  каждой таблице; `-verify` сверяет поиск и «похожие» на обеих базах.
+  Прогон на soundflow2 (8781 трек, `E:\soundflow-lab\soundflow.db`, 82 МБ):
+  суммы сошлись, поиск 6/6, «похожие» 80 seed-ов — 0 расхождений с pgvector.
+  Старый сервер и Postgres не тронуты. Отдельных таблиц альбомов/артистов/
+  плейлистов в текущей схеме нет — есть поля в `tracks` + `legacy_marks`.
 - **Шаг 2 — слои.** Разложить: `internal/domain`, `/db`, `/library`,
   `/recommendation`, `/audio`, `/inference`, `/jobs`, `/logging`, `/api`,
   `/desktop`. GUI зовёт сервисный слой напрямую, НЕ через localhost HTTP.
