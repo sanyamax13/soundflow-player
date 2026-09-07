@@ -1,117 +1,54 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/dhowden/tag"
 	"github.com/go-chi/chi/v5"
 
-	"soundflow/server/internal/localdb"
+	"soundflow/server/internal/api"
+	"soundflow/server/internal/config"
+	"soundflow/server/internal/litestore"
+	"soundflow/server/internal/music"
+	"soundflow/server/internal/pathmap"
 )
 
-// Телефонный HTTP-API на SQLite. Тот же путь /v1/*, что у старого сервера, но
-// без Postgres. В этот заход — чтение + радио + приём событий синка.
+// startPhoneServer поднимает HTTP на :8090:
+//   - /v1/*  — телефонный + админский API. Тот же проверенный код, что у старого
+//     сервера (internal/api), только база — SQLite через litestore, а не Postgres.
+//   - /api/* — ручки окна-дашборда (тот же дашборд открывается и браузером).
+//   - /*     — вшитый frontend.
+//
+// Acquire («Добавить музыку») пока не подключён — до перевода Python-качалки в
+// тонкий сервис; соответствующие ручки честно отвечают 503 (s.Acquire == nil).
 func (s *Service) startPhoneServer() {
+	cfg := config.Load()
+
+	pm := cfg.PathMap
+	if len(pm.LocalRoots()) == 0 {
+		if root := os.Getenv("SOUNDFLOW_AUDIO_ROOT"); root != "" {
+			pm = pathmap.New(
+				pathmap.Pair{Canonical: `E:\soundflow-data\cache`, Local: filepath.Join(root, "cache")},
+				pathmap.Pair{Canonical: `E:\soundflow-data\music`, Local: filepath.Join(root, "music")},
+			)
+		}
+	}
+
+	apiSrv := &api.Server{
+		DB:                 litestore.New(s.db),
+		Music:              music.New(cfg.MusicDir),
+		PathMap:            pm,
+		StartedAt:          s.startedAt,
+		GeneratedCoversDir: cfg.GeneratedCoversDir,
+	}
+
 	r := chi.NewRouter()
-	r.Get("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]any{"ok": true, "db": "sqlite", "tracks": s.countTracks()})
-	})
-	r.Get("/v1/tracks", func(w http.ResponseWriter, req *http.Request) {
-		lim := atoiDef(req.URL.Query().Get("limit"), 20000)
-		list, err := s.db.CatalogList(lim)
-		httpJSON(w, list, err)
-	})
-	r.Get("/v1/search", func(w http.ResponseWriter, req *http.Request) {
-		list, err := s.db.CatalogSearch(req.URL.Query().Get("q"), atoiDef(req.URL.Query().Get("limit"), 100))
-		httpJSON(w, list, err)
-	})
-	r.Get("/v1/music/{id}/file", s.hAudio)
-	r.Get("/v1/cover/{id}", func(w http.ResponseWriter, req *http.Request) {
-		id := chi.URLParam(req, "id")
-		if url, ok, _ := s.db.TrackCoverURL(id); ok && (len(url) > 4 && url[:4] == "http") {
-			http.Redirect(w, req, url, http.StatusFound)
-			return
-		}
-		// обложка из тегов файла
-		path, ok, _ := s.db.TrackFilePath(id)
-		if !ok {
-			http.Error(w, "нет обложки", 404)
-			return
-		}
-		if pic := embeddedCover(s.localPath(path)); pic != nil {
-			w.Header().Set("Content-Type", pic.mime)
-			_, _ = w.Write(pic.data)
-			return
-		}
-		http.Error(w, "нет обложки", 404)
-	})
-	r.Post("/v1/stream/order", func(w http.ResponseWriter, req *http.Request) {
-		var body struct {
-			SeedID       string   `json:"seed_id"`
-			CandidateIDs []string `json:"candidate_ids"`
-		}
-		_ = json.NewDecoder(req.Body).Decode(&body)
-		cands := body.CandidateIDs
-		if len(cands) == 0 {
-			cands, _ = s.db.CandidateIDsAll(0)
-		}
-		ordered, reordered, err := s.db.OrderBySimilarity(body.SeedID, cands)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		writeJSON(w, map[string]any{"ordered": ordered, "reordered": reordered})
-	})
-	r.Post("/v1/library/next-batch", func(w http.ResponseWriter, req *http.Request) {
-		var body struct {
-			ExcludeIDs  []string `json:"exclude_ids"`
-			BudgetBytes int64    `json:"budget_bytes"`
-		}
-		_ = json.NewDecoder(req.Body).Decode(&body)
-		if body.BudgetBytes <= 0 {
-			body.BudgetBytes = 1 << 30
-		}
-		list, total, err := s.db.NextLibraryBatch(body.ExcludeIDs, body.BudgetBytes)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		writeJSON(w, map[string]any{"tracks": list, "total_bytes": total})
-	})
-	r.Post("/v1/sync/events", func(w http.ResponseWriter, req *http.Request) {
-		var body struct {
-			Device struct {
-				ID, Name, AppVersion string
-				MusicBytes           int64 `json:"music_bytes"`
-			} `json:"device"`
-			Events []localdb.SyncEvent `json:"events"`
-		}
-		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		acc, err := s.db.SaveSync(localdb.Device{
-			ID: body.Device.ID, Name: body.Device.Name,
-			AppVersion: body.Device.AppVersion, MusicBytes: body.Device.MusicBytes,
-		}, body.Events)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		writeJSON(w, map[string]any{"accepted": acc, "count": len(acc)})
-	})
-	r.Get("/v1/sync/report", func(w http.ResponseWriter, req *http.Request) {
-		dev := req.URL.Query().Get("device")
-		last, total, err := s.db.SyncReport(dev)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		writeJSON(w, map[string]any{"last_sync": last, "total_events": total})
-	})
+	// /v1/* целиком отдаём проверенному роутеру internal/api (он сам маршрутит
+	// от /v1). chi.Handle не срезает префикс — путь приходит как есть.
+	r.Handle("/v1/*", apiSrv.Router())
 
 	// то же окно доступно и в обычном браузере: /api/* + вшитый frontend
 	s.mountAPI(r)
@@ -122,19 +59,6 @@ func (s *Service) startPhoneServer() {
 	if err := s.phoneSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		_ = s.db.AddServerLog("error", "", "", "телефонный API упал: "+err.Error(), 0)
 	}
-}
-
-func (s *Service) countTracks() int64 {
-	c, _ := s.db.Counts()
-	return c.Tracks
-}
-
-func httpJSON(w http.ResponseWriter, v any, err error) {
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	writeJSON(w, v)
 }
 
 type cover struct {
