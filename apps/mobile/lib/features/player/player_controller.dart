@@ -9,7 +9,7 @@ import 'package:just_audio/just_audio.dart';
 /// `audio_service` (см. audio_handler.dart). Гэплесс, нормализация —
 /// следующими шагами.
 class PlayerController {
-  PlayerController({this.onPlay, this.onSkip}) {
+  PlayerController({this.onPlay, this.onSkip, this.onDuration}) {
     _initSession();
   }
 
@@ -46,6 +46,10 @@ class PlayerController {
   /// Вызывается, когда пользователь сам перескочил вперёд/назад — событие «пропуск».
   final void Function(NowPlaying meta)? onSkip;
 
+  /// Плеер узнал длительность играющего файла — повод записать её (и оценку
+  /// битрейта) в «Мою музыку», если там ещё нет (Alex TG 18704).
+  final void Function(String trackId, Duration total)? onDuration;
+
   AudioPlayer? _player;
   ConcatenatingAudioSource? _source;
   List<NowPlaying> _queue = const [];
@@ -70,7 +74,11 @@ class PlayerController {
     final np = AudioPlayer();
     _subs.add(np.playingStream.listen((v) => playing.value = v));
     _subs.add(np.positionStream.listen((v) => position.value = v));
-    _subs.add(np.durationStream.listen((v) => duration.value = v ?? Duration.zero));
+    _subs.add(np.durationStream.listen((v) {
+      duration.value = v ?? Duration.zero;
+      final id = now.value?.id;
+      if (v != null && v > Duration.zero && id != null) onDuration?.call(id, v);
+    }));
     _subs.add(np.currentIndexStream.listen((i) {
       if (i == null || i < 0 || i >= _queue.length) return;
       _index = i;

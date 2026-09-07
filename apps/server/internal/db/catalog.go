@@ -19,8 +19,10 @@ type CatalogTrack struct {
 	ReleaseKind string `json:"release_kind"`
 	Explicit    bool   `json:"explicit"`
 	CoverURL    string `json:"cover_url"`
-	Favorite    bool   `json:"favorite"`   // был в избранном старого плеера
-	SizeBytes   int64  `json:"size_bytes"` // размер файла (для бюджета «докачать ещё N ГБ»)
+	Favorite    bool   `json:"favorite"`     // был в избранном старого плеера
+	SizeBytes   int64  `json:"size_bytes"`   // размер файла (для бюджета «докачать ещё N ГБ»)
+	BitrateKbps int    `json:"bitrate_kbps"` // характеристики файла — для строки в «Моей музыке»
+	MimeType    string `json:"mime_type"`
 }
 
 // NewTrack + NewTrackFile — что вставляем после успешного скачивания.
@@ -115,10 +117,13 @@ func (d *Pool) RecordRejected(ctx context.Context, normKey, sourceURL, provider,
 // catalogSelect — общая выборка: помечает favorite из legacy_marks и прячет
 // треки, отмеченные там как blocked (в старом плеере удалены/скрыты).
 const catalogSelect = `
-	SELECT t.id, t.artist, t.title, t.album, COALESCE(t.duration_sec,0),
+	SELECT t.id, t.artist, t.title, t.album,
+	       COALESCE(tf.duration_sec, t.duration_sec, 0),
 	       t.release_kind, t.explicit, t.cover_url,
 	       COALESCE(lm.kind = 'favorite', false) AS favorite,
-	       COALESCE(tf.size_bytes, 0) AS size_bytes
+	       COALESCE(tf.size_bytes, 0) AS size_bytes,
+	       COALESCE(tf.bitrate_kbps, 0),
+	       COALESCE(tf.mime_type, '')
 	FROM tracks t
 	LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
 	LEFT JOIN track_files tf ON tf.track_id = t.id AND NOT tf.rejected
@@ -149,7 +154,7 @@ func (d *Pool) catalogQuery(ctx context.Context, sql string, args ...any) ([]Cat
 	out := make([]CatalogTrack, 0)
 	for rows.Next() {
 		var t CatalogTrack
-		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite, &t.SizeBytes); err != nil {
+		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite, &t.SizeBytes, &t.BitrateKbps, &t.MimeType); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -186,7 +191,7 @@ func (d *Pool) NextLibraryBatch(ctx context.Context, excludeIDs []string, budget
 	var total int64
 	for rows.Next() {
 		var t CatalogTrack
-		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite, &t.SizeBytes); err != nil {
+		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec, &t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite, &t.SizeBytes, &t.BitrateKbps, &t.MimeType); err != nil {
 			return nil, 0, err
 		}
 		if len(out) > 0 && total >= budgetBytes {

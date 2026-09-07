@@ -21,8 +21,11 @@ class Api {
   final Dio _dio;
 
   /// Список треков с сервера.
-  Future<List<Map<String, dynamic>>> tracks() async {
-    final res = await _dio.get<Map<String, dynamic>>('/v1/tracks');
+  Future<List<Map<String, dynamic>>> tracks({int? limit}) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/v1/tracks',
+      queryParameters: limit == null ? null : {'limit': limit},
+    );
     final list = (res.data?['tracks'] as List?) ?? const [];
     return list.cast<Map<String, dynamic>>();
   }

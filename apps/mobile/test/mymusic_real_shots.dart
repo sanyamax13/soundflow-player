@@ -23,7 +23,7 @@ import 'package:soundflow/features/player/player_controller.dart';
 class _FakeApi extends Api {
   _FakeApi();
   @override
-  Future<List<Map<String, dynamic>>> tracks() async => const [];
+  Future<List<Map<String, dynamic>>> tracks({int? limit}) async => const [];
 }
 
 const _seed = <(String artist, String title)>[

@@ -24,6 +24,7 @@ Future<void> main() async {
   final player = PlayerController(
     onPlay: (m) => sync.record('play', trackId: m.id),
     onSkip: (m) => sync.record('skip', trackId: m.id),
+    onDuration: (id, total) => downloads.noteFileMeta(id, total),
   );
   // Медиа-сессия Android — чтобы кнопки на Bluetooth-магнитоле в машине,
   // наушниках, руле и экране блокировки управляли плеером (05.09.2026,
@@ -39,6 +40,9 @@ Future<void> main() async {
   // Докачать обложки уже скачанным трекам без неё — фоном, не ждём (может
   // быть небыстро на большой библиотеке). См. downloads_repo.dart, 05.09.2026.
   unawaited(downloads.backfillCovers());
+  // Дописать характеристики (битрейт/формат/длина) уже скачанным — фоном,
+  // один запрос каталога (Alex TG 18704).
+  unawaited(downloads.backfillMeta());
   // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
   // (06.09.2026). Живёт всё время работы приложения.
   AutoSync(sync, downloads).start();

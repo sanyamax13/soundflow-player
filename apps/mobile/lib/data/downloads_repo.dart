@@ -69,6 +69,9 @@ class DownloadsRepo {
       bytes: size,
       addedAt: DateTime.now().millisecondsSinceEpoch,
       coverPath: coverPath,
+      bitrateKbps: (track['bitrate_kbps'] as num?)?.toInt(),
+      format: formatFromMime(track['mime_type'] as String?),
+      durationSec: (track['duration_sec'] as num?)?.toInt(),
     ));
     await _sync?.record('download', trackId: id);
     // Был в избранном старого плеера — ставим сердечко (только добавляем).
@@ -160,6 +163,9 @@ class DownloadsRepo {
         addedAt: t.addedAt,
         favorite: t.favorite,
         coverPath: cp,
+        bitrateKbps: t.bitrateKbps,
+        format: t.format,
+        durationSec: t.durationSec,
       ));
     } catch (_) {
       // не нашлась — не страшно, попробуем в другой раз при следующем запуске
@@ -169,6 +175,54 @@ class DownloadsRepo {
   Future<void> setFavorite(String id, bool value) async {
     await _db.setFavorite(id, value);
     await _sync?.record(value ? 'like' : 'unlike', trackId: id);
+  }
+
+  /// Плеер узнал длительность играющего файла — записываем её и оценку
+  /// битрейта (размер·8/длительность, привязка к обычным ступеням), если
+  /// характеристик ещё нет. Так они появляются у всех песен, что слушали,
+  /// без запроса к серверу (Alex TG 18704).
+  Future<void> noteFileMeta(String id, Duration total) async {
+    final sec = total.inSeconds;
+    if (sec <= 0) return;
+    final row = await _db.downloadedById(id);
+    if (row == null || (row.durationSec ?? 0) > 0) return;
+    int? kbps;
+    if (row.bytes > 0) {
+      final raw = (row.bytes * 8 / 1000 / sec).round();
+      const tiers = [64, 96, 128, 160, 192, 224, 256, 320];
+      final near = tiers.firstWhere((t) => (t - raw).abs() <= 24, orElse: () => -1);
+      kbps = near > 0 ? near : (raw / 16).round() * 16;
+    }
+    await _db.updateMeta(id, durationSec: sec, bitrateKbps: kbps);
+  }
+
+  /// Дописать характеристики (битрейт/формат/длительность) уже скачанным
+  /// песням, у которых их нет — они появились в ответе сервера позже
+  /// (Alex TG 18704). Один запрос всего каталога, сверка по id. Фоном при
+  /// старте, как backfillCovers.
+  Future<void> backfillMeta() async {
+    final need = [
+      for (final t in await _db.allDownloaded())
+        if ((t.format ?? '').isEmpty && (t.bitrateKbps ?? 0) == 0 && (t.durationSec ?? 0) == 0)
+          t.id,
+    ];
+    if (need.isEmpty) return;
+    List<Map<String, dynamic>> catalog;
+    try {
+      catalog = await _api.tracks(limit: 10000);
+    } catch (_) {
+      return; // нет сети — попробуем в следующий раз
+    }
+    final byId = {for (final m in catalog) '${m['id']}': m};
+    for (final id in need) {
+      final m = byId[id];
+      if (m == null) continue;
+      final fmt = formatFromMime(m['mime_type'] as String?);
+      final br = (m['bitrate_kbps'] as num?)?.toInt();
+      final dur = (m['duration_sec'] as num?)?.toInt();
+      if ((fmt ?? '').isEmpty && (br ?? 0) == 0 && (dur ?? 0) == 0) continue;
+      await _db.updateMeta(id, bitrateKbps: br, format: fmt, durationSec: dur);
+    }
   }
 
   /// В избранном ли скачанный трек (для сердечка в плеере).

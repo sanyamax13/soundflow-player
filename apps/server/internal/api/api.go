@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -90,9 +91,15 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
+	// ?limit= — по умолчанию 500, до 10000 (телефон так тянет характеристики
+	// файлов для уже скачанного, см. backfillMeta).
+	limit := 500
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 10000 {
+		limit = v
+	}
 	// Есть каталог — отдаём его; пусто — тестовые тоны (для демо до наполнения).
 	if s.DB.Ping(r.Context()) == nil {
-		if list, err := s.DB.CatalogList(r.Context(), 500); err == nil && len(list) > 0 {
+		if list, err := s.DB.CatalogList(r.Context(), limit); err == nil && len(list) > 0 {
 			writeJSON(w, http.StatusOK, map[string]any{"tracks": list})
 			return
 		}

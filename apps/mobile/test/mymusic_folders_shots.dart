@@ -25,7 +25,7 @@ import 'package:soundflow/features/removed/removed_screen.dart';
 class _FakeApi extends Api {
   _FakeApi();
   @override
-  Future<List<Map<String, dynamic>>> tracks() async => const [];
+  Future<List<Map<String, dynamic>>> tracks({int? limit}) async => const [];
 }
 
 // Реальные написания из library Alex (сервер, 07.09.2026).
@@ -69,6 +69,8 @@ Future<Db> _db() async {
     path: inMemoryDatabasePath,
     factory: databaseFactoryFfiNoIsolate,
   );
+  const brK = [320, 256, 192, 320, 128, 320];
+  const fmt = ['MP3', 'MP3', 'MP3', 'FLAC', 'M4A', 'MP3'];
   for (var i = 0; i < _seed.length; i++) {
     final (artist, title) = _seed[i];
     await db.upsertDownloaded(DownloadedTrack(
@@ -79,6 +81,9 @@ Future<Db> _db() async {
       bytes: (7 + i % 6) * 1024 * 1024,
       addedAt: 1000 - i,
       favorite: i % 6 == 0,
+      bitrateKbps: brK[i % brK.length],
+      format: fmt[i % fmt.length],
+      durationSec: 150 + (i * 23) % 190,
     ));
   }
   for (final (id, artist, title) in _broken) {

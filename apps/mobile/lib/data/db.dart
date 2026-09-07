@@ -16,7 +16,7 @@ class Db {
     final db = await f.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 4,
+        version: 5,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
@@ -28,6 +28,11 @@ class Db {
             await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN cover_path TEXT');
           }
           if (from < 4) await _createRemoved(db);
+          if (from < 5) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN bitrate_kbps INTEGER');
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN format TEXT');
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN duration_sec INTEGER');
+          }
         },
       ),
     );
@@ -36,14 +41,17 @@ class Db {
 
   static Future<void> _createDownloads(Database db) => db.execute('''
         CREATE TABLE downloaded_tracks (
-          id         TEXT PRIMARY KEY,
-          title      TEXT NOT NULL,
-          artist     TEXT NOT NULL,
-          path       TEXT NOT NULL,
-          bytes      INTEGER NOT NULL,
-          favorite   INTEGER NOT NULL DEFAULT 0,
-          cover_path TEXT,
-          added_at   INTEGER NOT NULL
+          id           TEXT PRIMARY KEY,
+          title        TEXT NOT NULL,
+          artist       TEXT NOT NULL,
+          path         TEXT NOT NULL,
+          bytes        INTEGER NOT NULL,
+          favorite     INTEGER NOT NULL DEFAULT 0,
+          cover_path   TEXT,
+          added_at     INTEGER NOT NULL,
+          bitrate_kbps INTEGER,
+          format       TEXT,
+          duration_sec INTEGER
         )
       ''');
 
@@ -122,6 +130,18 @@ class Db {
         where: 'id = ?',
         whereArgs: [id],
       );
+
+  /// Дописать характеристики файла (пришли с сервера позже) — только
+  /// непустые значения, чтобы не затирать уже известное.
+  Future<void> updateMeta(String id,
+      {int? bitrateKbps, String? format, int? durationSec}) {
+    final v = <String, Object?>{};
+    if ((bitrateKbps ?? 0) > 0) v['bitrate_kbps'] = bitrateKbps;
+    if ((format ?? '').isNotEmpty) v['format'] = format;
+    if ((durationSec ?? 0) > 0) v['duration_sec'] = durationSec;
+    if (v.isEmpty) return Future.value();
+    return _db.update('downloaded_tracks', v, where: 'id = ?', whereArgs: [id]);
+  }
 
   // --- Убранные (журнал удалений) ---
 
@@ -244,6 +264,9 @@ class DownloadedTrack {
     required this.addedAt,
     this.favorite = false,
     this.coverPath,
+    this.bitrateKbps,
+    this.format,
+    this.durationSec,
   });
 
   final String id;
@@ -255,6 +278,12 @@ class DownloadedTrack {
   final int addedAt;
   final String? coverPath; // локальный файл обложки на телефоне; null — нет
 
+  /// Характеристики файла — приходят с сервера (там считаются при скачивании).
+  /// null у старых записей, пока фоновая докачка (backfillMeta) не заполнит.
+  final int? bitrateKbps;
+  final String? format; // MP3 / FLAC / M4A / OGG …
+  final int? durationSec;
+
   Map<String, Object?> toMap() => {
         'id': id,
         'title': title,
@@ -264,6 +293,9 @@ class DownloadedTrack {
         'favorite': favorite ? 1 : 0,
         'cover_path': coverPath,
         'added_at': addedAt,
+        'bitrate_kbps': bitrateKbps,
+        'format': format,
+        'duration_sec': durationSec,
       };
 
   static DownloadedTrack fromMap(Map<String, Object?> m) => DownloadedTrack(
@@ -275,5 +307,45 @@ class DownloadedTrack {
         favorite: (m['favorite'] as int? ?? 0) == 1,
         coverPath: m['cover_path'] as String?,
         addedAt: m['added_at'] as int,
+        bitrateKbps: m['bitrate_kbps'] as int?,
+        format: m['format'] as String?,
+        durationSec: m['duration_sec'] as int?,
       );
+
+  /// Короткая строка характеристик: «320k · MP3 · 3:45» (пустые части
+  /// пропускаются). Вес добавляется отдельно на экране.
+  String get specs {
+    final parts = <String>[];
+    if ((bitrateKbps ?? 0) > 0) parts.add('${bitrateKbps}k');
+    if ((format ?? '').isNotEmpty) parts.add(format!);
+    final d = durationSec ?? 0;
+    if (d > 0) parts.add('${d ~/ 60}:${(d % 60).toString().padLeft(2, '0')}');
+    return parts.join(' · ');
+  }
+}
+
+/// MP3 / FLAC / … из mime-типа сервера («audio/mpeg» → «MP3»).
+String? formatFromMime(String? mime) {
+  switch ((mime ?? '').toLowerCase()) {
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'MP3';
+    case 'audio/flac':
+    case 'audio/x-flac':
+      return 'FLAC';
+    case 'audio/mp4':
+    case 'audio/aac':
+    case 'audio/x-m4a':
+      return 'M4A';
+    case 'audio/ogg':
+    case 'audio/opus':
+      return 'OGG';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'WAV';
+    case '':
+      return null;
+    default:
+      return (mime ?? '').split('/').last.toUpperCase();
+  }
 }

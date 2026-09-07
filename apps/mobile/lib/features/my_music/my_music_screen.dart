@@ -456,7 +456,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
               itemCount: tracks.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, color: Afisha.line),
-              itemBuilder: (_, i) => _songRow(tracks, i, folder.display),
+              itemBuilder: (_, i) => _songRow(tracks, i),
             ),
           ),
         ],
@@ -464,22 +464,20 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     );
   }
 
-  Widget _songRow(List<DownloadedTrack> tracks, int i, String folderName) {
+  Widget _songRow(List<DownloadedTrack> tracks, int i) {
     final t = tracks[i];
-    // Полное написание исполнителя показываем, только если оно отличается от
-    // имени папки — тогда видно, что это совместка («9 грамм, Artizio»).
-    final sub = t.artist.trim() != folderName.trim() && !isBrokenName(t.artist)
-        ? '${t.artist}  ·  ${_mb(t.bytes)}'
-        : _mb(t.bytes);
+    // Одна строка характеристик: «320k · MP3 · 3:45 · 7.7 МБ». Совместки в
+    // строку не выносим (Alex TG 18714) — полное написание видно в теге.
+    final spec = [if (t.specs.isNotEmpty) t.specs, _mb(t.bytes)].join(' · ');
     return ListTile(
       contentPadding: const EdgeInsets.only(left: 16, right: 4),
       leading: CoverThumb(
           path: t.coverPath, url: coverUrlFor(t.id), size: 44),
       title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(sub,
+      subtitle: Text(spec,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Afisha.inkDim, fontSize: 12)),
+          style: const TextStyle(color: Afisha.inkDim, fontSize: 11.5)),
       onTap: () => _playList(tracks, i),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

@@ -13,7 +13,7 @@ import 'package:soundflow/main.dart';
 class _FakeApi extends Api {
   _FakeApi();
   @override
-  Future<List<Map<String, dynamic>>> tracks() async => [
+  Future<List<Map<String, dynamic>>> tracks({int? limit}) async => [
         {'id': 'test-tone', 'title': 'Тестовый тон 440 Гц', 'artist': 'SoundFlow'},
       ];
   @override

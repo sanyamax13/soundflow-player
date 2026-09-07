@@ -14,7 +14,7 @@ import 'package:soundflow/main.dart';
 class _FakeApi extends Api {
   _FakeApi();
   @override
-  Future<List<Map<String, dynamic>>> tracks() async => const [];
+  Future<List<Map<String, dynamic>>> tracks({int? limit}) async => const [];
   @override
   Future<({List<String> ids, bool reordered})> streamOrder({
     required String seedId,
