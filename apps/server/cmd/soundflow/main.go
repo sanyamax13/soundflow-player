@@ -1,13 +1,16 @@
+//go:build !headless
+
 // SoundFlow.exe — «сервер в одном приложении»: окно (WebView2 через Wails),
 // каталог в SQLite (soundflow.db), звуковой отпечаток в этом же процессе
 // (onnxruntime.dll + cnn14.onnx), без Docker и Python.
 //
 // Рядом с exe должны лежать: onnxruntime.dll, cnn14.onnx (+ cnn14.onnx.data),
 // ffmpeg.exe (или ffmpeg в PATH). База и логи — в %LocalAppData%\SoundFlow\.
+//
+// Сборка headless (для сервера без окна): go build -tags headless — см. main_headless.go.
 package main
 
 import (
-	"embed"
 	"log"
 
 	"github.com/wailsapp/wails/v2"
@@ -15,9 +18,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
-
-//go:embed all:frontend
-var assets embed.FS
 
 func main() {
 	svc, err := NewService()
