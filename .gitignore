@@ -24,6 +24,17 @@ apps/mobile/web/
 apps/server/bin/
 apps/server/soundflow-server
 apps/server/soundflow-server.exe
+apps/server/soundflow-fingerprint
+apps/server/soundflow-fingerprint.exe
+apps/server/soundflow.exe
+# рантайм-ассеты «сервера в одном exe» — качаются/собираются отдельно, ставятся рядом с exe
+apps/server/onnxruntime.dll
+apps/server/cnn14.onnx
+apps/server/cnn14.onnx.data
+apps/server/**/onnxruntime.dll
+apps/server/*.db
+apps/server/*.db-wal
+apps/server/*.db-shm
 
 # --- прочее ---
 _srv.out
