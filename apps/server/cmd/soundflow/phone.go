@@ -9,11 +9,13 @@ import (
 	"github.com/dhowden/tag"
 	"github.com/go-chi/chi/v5"
 
+	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/api"
 	"soundflow/server/internal/config"
 	"soundflow/server/internal/litestore"
 	"soundflow/server/internal/music"
 	"soundflow/server/internal/pathmap"
+	"soundflow/server/internal/sidecar"
 )
 
 // startPhoneServer поднимает HTTP на :8090:
@@ -37,12 +39,22 @@ func (s *Service) startPhoneServer() {
 		}
 	}
 
+	store := litestore.New(s.db)
 	apiSrv := &api.Server{
-		DB:                 litestore.New(s.db),
+		DB:                 store,
 		Music:              music.New(cfg.MusicDir),
 		PathMap:            pm,
 		StartedAt:          s.startedAt,
 		GeneratedCoversDir: cfg.GeneratedCoversDir,
+	}
+
+	// «Добавить музыку»: скачивание — тонкий Python-сайдкар (Яндекс/musify/
+	// торренты), отпечаток скачанного — локально ONNX (localFinder).
+	if cfg.SidecarURL != "" {
+		apiSrv.Acquire = &acquire.Service{
+			DB:     store,
+			Finder: &localFinder{Client: sidecar.New(cfg.SidecarURL), eng: s.eng, pm: pm},
+		}
 	}
 
 	r := chi.NewRouter()
