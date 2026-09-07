@@ -44,3 +44,4 @@ apps/server/soundflow-folder
 apps/server/soundflow-folder.exe
 apps/server/cmd/soundflow-folder/soundflow-folder
 apps/server/cmd/soundflow-folder/*.exe
+apps/server/build/dist/
