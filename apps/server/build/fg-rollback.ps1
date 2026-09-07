@@ -1,8 +1,8 @@
-# fg-rollback.ps1 — вернуть боевой сервер на fg к старому D:\soundflow2\srv.exe.
-# Обратка к fg-cutover.ps1. Ничего не удаляет из нового — просто останавливает
-# новый сервер и поднимает старый + сторож.
+# fg-rollback.ps1 - revert the live SoundFlow server on fg back to the old
+# D:\soundflow2\srv.exe. Undo of fg-cutover.ps1. Removes nothing from the new
+# setup - just stops the new server and brings the old one back up.
 #
-# ЗАПУСКАТЬ НА fg, от админа.
+# RUN ON fg, elevated. ASCII-only on purpose (ssh -> cmd -> powershell codepage).
 
 [CmdletBinding()]
 param([switch]$Yes)
@@ -11,40 +11,32 @@ function Say($m){ Write-Host "[rollback] $m" -ForegroundColor Cyan }
 function Warn($m){ Write-Host "[rollback] $m" -ForegroundColor Yellow }
 
 if (-not $Yes) {
-  $a = Read-Host "Откат: остановить новый soundflow-srv, вернуть старый SoundFlow2. Продолжить? (yes)"
-  if ($a -ne "yes") { Warn "отменено"; return }
+  $a = Read-Host "Rollback: stop new soundflow-srv, bring back old SoundFlow2. Continue? (yes)"
+  if ($a -ne "yes") { Warn "cancelled"; return }
 }
 
-# 1. стоп нового
-$new = Get-ScheduledTask -TaskName SoundFlowSrv -EA SilentlyContinue
+# 1. stop the new one
+$new = Get-ScheduledTask -TaskName SoundFlowSrv -ErrorAction SilentlyContinue
 if ($new) {
-  Say "стоп задачи SoundFlowSrv"
-  Stop-ScheduledTask SoundFlowSrv -EA SilentlyContinue
+  Say "stop task SoundFlowSrv"
+  Stop-ScheduledTask SoundFlowSrv -ErrorAction SilentlyContinue
   Disable-ScheduledTask SoundFlowSrv | Out-Null
 }
-Get-Process soundflow-srv -EA SilentlyContinue | Stop-Process -Force
+Get-Process soundflow-srv -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 2
 
-# 2. старт старого
-Say "старт задачи SoundFlow2"
+# 2. start the old one
+Say "start task SoundFlow2"
 Start-ScheduledTask SoundFlow2
 $ok = $false
-1..25 | ForEach-Object {
+for ($i=1; $i -le 25; $i++) {
   Start-Sleep 1
-  try { $h = Invoke-RestMethod "http://127.0.0.1:8090/v1/health" -TimeoutSec 3; Say "старый /v1/health: $($h | ConvertTo-Json -Compress)"; $ok = $true; return } catch {}
+  try { $h = Invoke-RestMethod "http://127.0.0.1:8090/v1/health" -TimeoutSec 3; Say ("old /v1/health: " + ($h | ConvertTo-Json -Compress)); $ok = $true; break } catch {}
 }
-if (-not $ok) { Warn "старый сервер не ответил за 25 с — смотри D:\soundflow2\srv.log" }
+if (-not $ok) { Warn "old server did not answer in 25s - see D:\soundflow2\srv.log" }
 
-# 3. сторож обратно
-$wd = Get-ScheduledTask -TaskName soundflow-watchdog -EA SilentlyContinue
-if ($wd) { Say "включаю soundflow-watchdog"; Enable-ScheduledTask soundflow-watchdog | Out-Null }
+# 3. watchdog back on
+$wd = Get-ScheduledTask -TaskName soundflow-watchdog -ErrorAction SilentlyContinue
+if ($wd) { Say "enable soundflow-watchdog"; Enable-ScheduledTask soundflow-watchdog | Out-Null }
 
-# 4. сайдкар, если был остановлен
-$sc = Get-Service soundflow-sidecar -EA SilentlyContinue
-if ($sc -and $sc.Status -ne "Running") {
-  Say "поднимаю службу soundflow-sidecar"
-  Set-Service soundflow-sidecar -StartupType Automatic
-  Start-Service soundflow-sidecar
-}
-
-Say "откат завершён. Новый soundflow.db и exe остались в D:\soundflow-srv (не удалял)."
+Say "rollback done. New soundflow.db and exe stay in D:\soundflow-srv (not removed)."
