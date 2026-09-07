@@ -192,11 +192,16 @@ Files только на чтение).
     yandex, musify, mp3party, rutor/rutracker/nnmclub/tapochek (+ curl_cffi,
     yandex_music, playwright, qbittorrent-api). Тест: каждый из 3 источников
     Alex реально качает трек.
-  - **Пересчёт отпечатков (шаг 3 по всей базе):** на brain, `sffp.exe -fg
-    soundflow-fg -workers 3` → `E:\soundflow-lab\soundflow-new.db`, лог
-    `E:\soundflow-lab\_fgscan\refp-full.log`. 07.09 ~2000/8781, ~0.8 трек/с,
-    память ровно ~1.2 ГБ, ETA ~2.5 ч. ~0.5% FAIL — файлов нет на диске fg
-    (скиты, интервью, часть переименованного); список соберём в конце.
+  - **Пересчёт отпечатков (шаг 3 по всей базе) — ЗАВЕРШЁН 07.09.2026.** На brain
+    (`sffp.exe -fg soundflow-fg -workers 3` → `soundflow-new.db`), 3ч15м. Записано
+    8744, ошибок 37 (файлы пропали на fg: 11 интервью Laura Branigan, 4 рэп-скита,
+    ~20 треков). Итог: отпечаток у **8764/8781 (99.8%)**, integrity_check ok.
+    Радио на свежих векторах проверено — осмысленно (Muse→Kings of Leon/Foo
+    Fighters/Fleetwood Mac).
+  - **Пакет переключения:** `E:\soundflow-lab\_cutover\` (629 МБ) — `soundflow-
+    srv.exe` + `onnxruntime.dll` + `cnn14.onnx`(+.data) + `ffmpeg.exe`(soxr) +
+    финальная `soundflow.db`. Готов к scp на fg + `fg-cutover.ps1`. Ждёт
+    Alex + телефон.
 
 ## Открытые вопросы
 
