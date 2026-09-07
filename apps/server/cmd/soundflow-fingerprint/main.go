@@ -213,13 +213,28 @@ func fgPath(canon string) string {
 	return ""
 }
 
+// sanitize делает из канонического пути безопасное имя для локального temp-файла.
+// Строгий белый список [A-Za-z0-9._-]: всё прочее → '_'. Важно на Windows —
+// scp молча (exit 0, 0 байт) не пишет назначение, если в имени есть апостроф,
+// а также спотыкается на '&', пробелах, юникоде. Расширение сохраняем.
 func sanitize(s string) string {
-	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_", "*", "_", "?", "_", "\"", "_")
-	b := r.Replace(s)
-	if len(b) > 120 {
-		b = b[len(b)-120:]
+	ext := filepath.Ext(s)
+	var b strings.Builder
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
 	}
-	return b
+	out := b.String()
+	if len(out) > 110 {
+		out = out[len(out)-110:]
+	}
+	if !strings.HasSuffix(out, ext) {
+		out += ext
+	}
+	return out
 }
 
 // ---------------- -compare ----------------
