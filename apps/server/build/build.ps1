@@ -22,7 +22,10 @@ if (Test-Path "C:\ProgramData\mingw64\mingw64\bin") { $env:PATH = "C:\ProgramDat
 if (Test-Path "E:\go\bin") { $env:PATH = "E:\go\bin;$env:PATH" }
 Push-Location $root
 try {
-  go build -ldflags "-H windowsgui -s -w" -o (Join-Path $app "SoundFlow.exe") ./cmd/soundflow
+  # Wails v2: без тегов production бинарь показывает окно-ошибку «wails applications
+  # will not build without the correct build tags». desktop,production — как в
+  # https://wails.io/docs/guides/manual-builds/
+  go build -tags "desktop,production" -ldflags "-H windowsgui -s -w" -o (Join-Path $app "SoundFlow.exe") ./cmd/soundflow
 } finally { Pop-Location }
 
 Write-Host "== ассеты модели ==" -ForegroundColor Cyan
