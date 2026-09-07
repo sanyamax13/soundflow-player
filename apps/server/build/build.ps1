@@ -36,7 +36,10 @@ foreach ($f in "onnxruntime.dll","cnn14.onnx","cnn14.onnx.data") {
 # из soundflow-import (Postgres -> SQLite) и живут в %LocalAppData%\SoundFlow.
 
 Write-Host "== ffmpeg.exe ==" -ForegroundColor Cyan
-# Предпочитаем небольшой ffmpeg рядом с ассетами (essentials ~87 МБ), иначе — из PATH.
+# ВАЖНО: нужна сборка ffmpeg С libsoxr — декод отпечатка использует
+# `aresample=resampler=soxr`. Сборка "essentials" от gyan.dev soxr НЕ содержит
+# (падает "Requested resampling engine is unavailable"). Берём "full" (~223 МБ)
+# из $AssetsDir\ffmpeg.exe, иначе из PATH (проверь `ffmpeg -buildconf | findstr soxr`).
 $ff = $null
 if (Test-Path (Join-Path $AssetsDir "ffmpeg.exe")) { $ff = Join-Path $AssetsDir "ffmpeg.exe" }
 if (-not $ff) { $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source }
