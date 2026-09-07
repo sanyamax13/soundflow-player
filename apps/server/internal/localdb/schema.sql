@@ -1,0 +1,121 @@
+-- Схема soundflow.db — лёгкая (SQLite) копия каталога для «сервера в одном exe».
+-- Зеркалит те же таблицы, что PostgreSQL-схема (internal/db/migrations), с
+-- поправкой на типы SQLite:
+--   text[]        -> TEXT (JSON-массив)
+--   timestamptz   -> TEXT (ISO-8601, как пришло из Postgres)
+--   jsonb         -> TEXT
+--   vector(2048)  -> BLOB (2048 float32, little-endian, 8192 байта; NULL если нет)
+--   boolean       -> INTEGER 0/1
+-- Пока это ТЕНЕВАЯ база: пишет в неё только одноразовый импортёр
+-- (cmd/soundflow-import), рабочий сервер по-прежнему на Postgres.
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS tracks (
+    id             TEXT PRIMARY KEY,
+    artist         TEXT NOT NULL DEFAULT '',
+    title          TEXT NOT NULL DEFAULT '',
+    album          TEXT NOT NULL DEFAULT '',
+    year           INTEGER,
+    duration_sec   INTEGER,
+    language       TEXT NOT NULL DEFAULT '',
+    genre_tags     TEXT NOT NULL DEFAULT '[]',
+    release_kind   TEXT NOT NULL DEFAULT 'studio',
+    explicit       INTEGER NOT NULL DEFAULT 0,
+    is_alt_version INTEGER NOT NULL DEFAULT 0,
+    cover_path     TEXT NOT NULL DEFAULT '',
+    cover_ok       INTEGER NOT NULL DEFAULT 0,
+    normalized_key TEXT NOT NULL DEFAULT '',
+    energy         REAL,
+    valence        REAL,
+    feature_vector BLOB,
+    cover_url      TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL DEFAULT '',
+    -- lower(artist||' '||title||' '||album), Unicode-aware (считает импортёр на
+    -- Go): SQLite LIKE/lower() кириллицу не сворачивают, поэтому ищем по этому.
+    search_text    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS tracks_normalized_key_idx ON tracks (normalized_key);
+CREATE INDEX IF NOT EXISTS tracks_artist_idx ON tracks (lower(artist));
+CREATE INDEX IF NOT EXISTS tracks_search_idx ON tracks (search_text);
+
+CREATE TABLE IF NOT EXISTS track_files (
+    id             TEXT PRIMARY KEY,
+    track_id       TEXT REFERENCES tracks(id) ON DELETE CASCADE,
+    normalized_key TEXT NOT NULL DEFAULT '',
+    file_path      TEXT NOT NULL DEFAULT '',
+    mime_type      TEXT NOT NULL DEFAULT '',
+    bitrate_kbps   INTEGER,
+    size_bytes     INTEGER NOT NULL DEFAULT 0,
+    duration_sec   INTEGER,
+    source         TEXT NOT NULL DEFAULT '',
+    quality_tier   TEXT NOT NULL DEFAULT 'unknown',
+    loudness_lufs  REAL,
+    true_peak_db   REAL,
+    rejected       INTEGER NOT NULL DEFAULT 0,
+    reject_reason  TEXT NOT NULL DEFAULT '',
+    downloaded_at  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS track_files_track_id_idx ON track_files (track_id);
+CREATE UNIQUE INDEX IF NOT EXISTS track_files_normalized_key_uq ON track_files (normalized_key);
+
+CREATE TABLE IF NOT EXISTS devices (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL DEFAULT '',
+    app_version  TEXT NOT NULL DEFAULT '',
+    music_bytes  INTEGER NOT NULL DEFAULT 0,
+    last_sync_at TEXT,
+    created_at   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS sync_events (
+    event_uuid TEXT PRIMARY KEY,
+    device_id  TEXT NOT NULL DEFAULT '',
+    kind       TEXT NOT NULL DEFAULT '',
+    track_id   TEXT NOT NULL DEFAULT '',
+    payload    TEXT NOT NULL DEFAULT '{}',
+    client_ts  INTEGER NOT NULL DEFAULT 0,
+    applied_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS sync_events_device_idx ON sync_events (device_id, applied_at);
+
+CREATE TABLE IF NOT EXISTS server_log (
+    id     INTEGER PRIMARY KEY,
+    at     TEXT NOT NULL DEFAULT '',
+    kind   TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    title  TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    bytes  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS server_log_at_idx ON server_log (at);
+
+CREATE TABLE IF NOT EXISTS legacy_marks (
+    normalized_key TEXT PRIMARY KEY,
+    kind           TEXT NOT NULL DEFAULT '',
+    artist         TEXT NOT NULL DEFAULT '',
+    title          TEXT NOT NULL DEFAULT '',
+    marked_at      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rejected_track_files (
+    id             INTEGER PRIMARY KEY,
+    normalized_key TEXT NOT NULL DEFAULT '',
+    source_url     TEXT,
+    provider       TEXT NOT NULL DEFAULT '',
+    artist         TEXT NOT NULL DEFAULT '',
+    title          TEXT NOT NULL DEFAULT '',
+    reason         TEXT NOT NULL DEFAULT '',
+    rejected_at    TEXT NOT NULL DEFAULT ''
+);
+CREATE UNIQUE INDEX IF NOT EXISTS rejected_track_files_uq ON rejected_track_files (normalized_key, source_url);
+
+-- Итоги последнего импорта: число строк и контрольная сумма по каждой таблице.
+-- Позволяет быстро сверить теневую базу с Postgres без повторного прохода.
+CREATE TABLE IF NOT EXISTS import_meta (
+    table_name TEXT PRIMARY KEY,
+    row_count  INTEGER NOT NULL,
+    checksum   TEXT NOT NULL,
+    imported_at TEXT NOT NULL
+);

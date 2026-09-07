@@ -1,0 +1,236 @@
+// Package localdb — лёгкая (SQLite) копия каталога для «SoundFlow в одном exe».
+// Пока теневая: наполняется одноразовым импортёром из Postgres
+// (cmd/soundflow-import), рабочий сервер продолжает читать Postgres. Задача
+// пакета — доказать, что «поиск / похожие / докачать» на SQLite дают тот же
+// результат (см. cmd/soundflow-import -verify и localdb_test.go).
+//
+// Драйвер — modernc.org/sqlite: чистый Go, без CGo, чтобы SoundFlow.exe
+// собирался и переносился копированием.
+package localdb
+
+import (
+	"database/sql"
+	_ "embed"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+
+	_ "modernc.org/sqlite"
+)
+
+//go:embed schema.sql
+var schemaSQL string
+
+// DB — открытая soundflow.db.
+type DB struct {
+	sql *sql.DB
+}
+
+// Open открывает (создаёт при отсутствии) базу по пути и накатывает схему.
+// Для read-only доступа рабочего кода передавай ?mode=ro в DSN снаружи.
+func Open(path string) (*DB, error) {
+	h, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := h.Exec(schemaSQL); err != nil {
+		h.Close()
+		return nil, fmt.Errorf("schema: %w", err)
+	}
+	return &DB{sql: h}, nil
+}
+
+// SQL — доступ к нижележащему *sql.DB (нужен импортёру для batch-вставок).
+func (d *DB) SQL() *sql.DB { return d.sql }
+
+func (d *DB) Close() error {
+	if d == nil || d.sql == nil {
+		return nil
+	}
+	return d.sql.Close()
+}
+
+// CatalogTrack — трек каталога (та же форма, что db.CatalogTrack).
+type CatalogTrack struct {
+	ID          string `json:"id"`
+	Artist      string `json:"artist"`
+	Title       string `json:"title"`
+	Album       string `json:"album"`
+	DurationSec int    `json:"duration_sec"`
+	ReleaseKind string `json:"release_kind"`
+	Explicit    bool   `json:"explicit"`
+	CoverURL    string `json:"cover_url"`
+	Favorite    bool   `json:"favorite"`
+	SizeBytes   int64  `json:"size_bytes"`
+	BitrateKbps int    `json:"bitrate_kbps"`
+	MimeType    string `json:"mime_type"`
+}
+
+// то же, что const catalogSelect в internal/db/catalog.go, но на SQLite-диалекте
+const catalogSelect = `
+	SELECT t.id, t.artist, t.title, t.album,
+	       COALESCE(tf.duration_sec, t.duration_sec, 0),
+	       t.release_kind, t.explicit, t.cover_url,
+	       COALESCE(lm.kind = 'favorite', 0) AS favorite,
+	       COALESCE(tf.size_bytes, 0) AS size_bytes,
+	       COALESCE(tf.bitrate_kbps, 0),
+	       COALESCE(tf.mime_type, '')
+	FROM tracks t
+	LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
+	LEFT JOIN track_files tf ON tf.track_id = t.id AND tf.rejected = 0
+	WHERE lm.kind IS NOT 'blocked'`
+
+func (d *DB) scanCatalog(rows *sql.Rows) ([]CatalogTrack, error) {
+	defer rows.Close()
+	out := make([]CatalogTrack, 0)
+	for rows.Next() {
+		var t CatalogTrack
+		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec,
+			&t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite,
+			&t.SizeBytes, &t.BitrateKbps, &t.MimeType); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// CatalogList — весь каталог, новые сверху. t.id вторым ключом — чтобы порядок
+// был устойчивым при одинаковом created_at (иначе выборка с LIMIT «плавает»).
+func (d *DB) CatalogList(limit int) ([]CatalogTrack, error) {
+	rows, err := d.sql.Query(catalogSelect+`
+		ORDER BY t.created_at DESC, t.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return d.scanCatalog(rows)
+}
+
+// CatalogSearch — поиск по артисту/названию/альбому. Ищем по колонке
+// search_text (заранее приведена к нижнему регистру Unicode-aware импортёром),
+// т.к. SQLite LIKE/lower() не сворачивают кириллицу.
+func (d *DB) CatalogSearch(q string, limit int) ([]CatalogTrack, error) {
+	like := "%" + strings.ToLower(q) + "%"
+	rows, err := d.sql.Query(catalogSelect+`
+		AND t.search_text LIKE ?
+		ORDER BY t.created_at DESC, t.id DESC LIMIT ?`, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	return d.scanCatalog(rows)
+}
+
+// TrackFilePath — канонический путь файла трека.
+func (d *DB) TrackFilePath(trackID string) (string, bool, error) {
+	var p string
+	err := d.sql.QueryRow(
+		`SELECT file_path FROM track_files WHERE track_id = ? AND rejected = 0 LIMIT 1`, trackID,
+	).Scan(&p)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return p, true, nil
+}
+
+// featureVector — отпечаток трека ([]float32) или nil.
+func (d *DB) featureVector(trackID string) ([]float32, error) {
+	var b []byte
+	err := d.sql.QueryRow(`SELECT feature_vector FROM tracks WHERE id = ?`, trackID).Scan(&b)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return blobToVec(b), nil
+}
+
+// OrderBySimilarity — то же поведение, что db.Pool.OrderBySimilarity, но
+// перебором косинуса в памяти на Go (без pgvector). candidateIDs упорядочивает
+// по близости к seedID; seedID исключает; кандидатов без отпечатка (или всё,
+// если у seed нет отпечатка) оставляет в хвосте в исходном порядке; не даёт
+// больше двух треков одного исполнителя подряд.
+func (d *DB) OrderBySimilarity(seedID string, candidateIDs []string) (ordered []string, reordered bool, err error) {
+	ordered = make([]string, 0, len(candidateIDs))
+	seen := map[string]bool{seedID: true}
+
+	seedVec, err := d.featureVector(seedID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	type cand struct {
+		id     string
+		artist string
+		cos    float64
+	}
+	var byVec []cand
+
+	if len(seedVec) > 0 && len(candidateIDs) > 0 {
+		for _, id := range candidateIDs {
+			if id == seedID {
+				continue
+			}
+			var artist string
+			var b []byte
+			e := d.sql.QueryRow(`SELECT artist, feature_vector FROM tracks WHERE id = ?`, id).Scan(&artist, &b)
+			if errors.Is(e, sql.ErrNoRows) {
+				continue
+			}
+			if e != nil {
+				return nil, false, e
+			}
+			v := blobToVec(b)
+			if len(v) == 0 {
+				continue
+			}
+			byVec = append(byVec, cand{id: id, artist: artist, cos: cosine(seedVec, v)})
+			seen[id] = true
+		}
+		// ближе (больше косинус) — раньше; тай-брейк по id для устойчивости
+		sort.SliceStable(byVec, func(i, j int) bool {
+			if byVec[i].cos != byVec[j].cos {
+				return byVec[i].cos > byVec[j].cos
+			}
+			return byVec[i].id < byVec[j].id
+		})
+	}
+
+	reordered = len(byVec) > 0
+
+	// не больше двух одного исполнителя подряд (как в Postgres-версии)
+	var lastArtist string
+	run := 0
+	for len(byVec) > 0 {
+		pick := 0
+		if run >= 2 {
+			for i, c := range byVec {
+				if !strings.EqualFold(c.artist, lastArtist) {
+					pick = i
+					break
+				}
+			}
+		}
+		c := byVec[pick]
+		ordered = append(ordered, c.id)
+		byVec = append(byVec[:pick], byVec[pick+1:]...)
+		if strings.EqualFold(c.artist, lastArtist) {
+			run++
+		} else {
+			lastArtist = c.artist
+			run = 1
+		}
+	}
+
+	for _, id := range candidateIDs {
+		if !seen[id] {
+			ordered = append(ordered, id)
+			seen[id] = true
+		}
+	}
+	return ordered, reordered, nil
+}
