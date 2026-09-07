@@ -20,7 +20,7 @@ import (
 )
 
 type Server struct {
-	DB        *db.Pool
+	DB        Store
 	Music     *music.Service
 	Acquire   *acquire.Service
 	PathMap   pathmap.Mapper

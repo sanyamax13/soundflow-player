@@ -43,13 +43,19 @@ func main() {
 		log.Printf("сайдкар на связи: %s", cfg.SidecarURL)
 	}
 
+	// DB — интерфейс api.Store. Если база не поднялась, оставляем интерфейс
+	// НИЛОМ (а не типизированным nil-*db.Pool), чтобы s.DB == nil в обработчиках
+	// работало как раньше.
 	srv := &api.Server{
-		DB:                 pool,
 		Music:              music.New(cfg.MusicDir),
-		Acquire:            &acquire.Service{DB: pool, Finder: sc},
+		Acquire:            &acquire.Service{Finder: sc},
 		PathMap:            cfg.PathMap,
 		StartedAt:          time.Now(),
 		GeneratedCoversDir: cfg.GeneratedCoversDir,
+	}
+	if pool != nil {
+		srv.DB = pool
+		srv.Acquire.DB = pool
 	}
 
 	httpSrv := &http.Server{

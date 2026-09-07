@@ -49,7 +49,7 @@ type Result struct {
 // пропускаем (не гадаем). Уже есть в каталоге (по normalized_key) или трек
 // отмечен в legacy_marks как blocked (Alex его удалил/скрыл в старом
 // плеере) — тоже пропускаем, старым удалениям не перечим.
-func Scan(ctx context.Context, p *db.Pool, pm pathmap.Mapper, roots []string) (Result, error) {
+func Scan(ctx context.Context, p Store, pm pathmap.Mapper, roots []string) (Result, error) {
 	var res Result
 	if p == nil {
 		return res, errors.New("importer: нет базы")
@@ -93,7 +93,7 @@ func Scan(ctx context.Context, p *db.Pool, pm pathmap.Mapper, roots []string) (R
 	return res, nil
 }
 
-func importOne(ctx context.Context, p *db.Pool, pm pathmap.Mapper, localPath, mime string) error {
+func importOne(ctx context.Context, p Store, pm pathmap.Mapper, localPath, mime string) error {
 	artist, title, album := readTags(localPath)
 	if artist == "" || title == "" {
 		a2, t2, ok := fromFilename(localPath)
@@ -212,7 +212,7 @@ type SweepResult struct {
 // файл насовсем: переносит в _trash и метит blocked, чтобы не всплыл опять
 // при повторном импорте/скачивании. Возвращает список того, что убрали —
 // показать Alex, что именно посчиталось мусором.
-func Sweep(ctx context.Context, p *db.Pool, pm pathmap.Mapper) (SweepResult, []db.SweepRow, error) {
+func Sweep(ctx context.Context, p Store, pm pathmap.Mapper) (SweepResult, []db.SweepRow, error) {
 	var res SweepResult
 	if p == nil {
 		return res, nil, errors.New("importer: нет базы")

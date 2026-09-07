@@ -35,7 +35,7 @@ type Finder interface {
 }
 
 type Service struct {
-	DB     *db.Pool
+	DB     Store
 	Finder Finder
 }
 
