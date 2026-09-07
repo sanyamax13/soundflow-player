@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/providers.dart';
 import 'app/shell.dart';
+import 'core/config.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
 import 'data/auto_sync.dart';
@@ -17,8 +18,12 @@ import 'features/player/player_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final api = Api();
   final db = await Db.open();
+  // Адрес сервера пользователь задаёт в Профиле — берём сохранённый, иначе
+  // адрес по умолчанию (см. core/config.dart).
+  final savedUrl = await db.kvGet('server_url');
+  if (savedUrl != null && savedUrl.isNotEmpty) apiBase = savedUrl;
+  final api = Api(baseUrl: apiBase);
   final sync = SyncRepo(api, db);
   final downloads = DownloadsRepo(api, db, sync);
   final player = PlayerController(
@@ -50,6 +55,7 @@ Future<void> main() async {
     ProviderScope(
       overrides: [
         apiProvider.overrideWithValue(api),
+        dbProvider.overrideWithValue(db),
         downloadsProvider.overrideWithValue(downloads),
         playerProvider.overrideWithValue(player),
         syncProvider.overrideWithValue(sync),

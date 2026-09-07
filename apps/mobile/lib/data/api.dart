@@ -12,13 +12,42 @@ class AcquireException implements Exception {
 
 /// Клиент к серверу на Go. Входа нет — плеер личный, сервер в домашней сети.
 class Api {
-  Api()
+  Api({String? baseUrl})
       : _dio = Dio(BaseOptions(
-          baseUrl: apiBaseUrl,
+          baseUrl: baseUrl ?? apiBase,
           connectTimeout: const Duration(seconds: 8),
-        ));
+        )) {
+    apiBase = _dio.options.baseUrl; // держим глобальный адрес в согласии с клиентом
+  }
 
   final Dio _dio;
+
+  /// Текущий адрес сервера, к которому обращается клиент.
+  String get baseUrl => _dio.options.baseUrl;
+
+  /// Сменить адрес сервера на лету (Профиль → «Адрес сервера»). Ввод
+  /// приводится к `http://хост:порт`. Сохранение в базу — на вызывающем.
+  void setBaseUrl(String raw) {
+    final v = normalizeServerUrl(raw);
+    _dio.options.baseUrl = v;
+    apiBase = v;
+  }
+
+  /// Проверить сервер по адресу, НЕ переключаясь на него (кнопка «Проверить»
+  /// в настройке адреса). true — ответил на /v1/health.
+  static Future<bool> ping(String raw) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: normalizeServerUrl(raw),
+        connectTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ));
+      final r = await dio.get<Map<String, dynamic>>('/v1/health');
+      return r.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Список треков с сервера.
   Future<List<Map<String, dynamic>>> tracks({int? limit}) async {

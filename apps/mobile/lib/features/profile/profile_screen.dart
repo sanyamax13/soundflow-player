@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
 import '../removed/removed_screen.dart';
+import 'server_url_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
 /// заглушки, приедут своими шагами.
@@ -38,6 +40,14 @@ class ProfileScreen extends StatelessWidget {
             subtitle: 'состояние, синхронизация, устройства, события',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
+            ),
+          ),
+          _Row(
+            icon: Icons.lan_outlined,
+            title: 'Адрес сервера',
+            subtitle: apiBase.replaceFirst('http://', ''),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
             ),
           ),
           const _Row(icon: Icons.settings_outlined, title: 'Настройки', subtitle: 'скоро'),
