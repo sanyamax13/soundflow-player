@@ -144,17 +144,35 @@ Files только на чтение).
   - `run.cmd` даёт маппинг: `E:\soundflow-data\{cache,music}` ↔ `D:\SoundFlow\
     {cache,music}`. Для новой версии на fg: `SOUNDFLOW_AUDIO_ROOT=D:\SoundFlow`,
     `SOUNDFLOW_DB=<...>\soundflow.db`, `SOUNDFLOW_ADDR=0.0.0.0:8090`.
-  - **Последовательность (черновик, делать с Alex):** пересчёт отпечатков готов
-    → отключить задачу `soundflow-watchdog` → остановить задачу `SoundFlow2`
-    + убить `srv.exe` (порт 8090) → положить свежую `soundflow.db` + `soundflow-
-    srv.exe` + ассеты в папку на fg → новая задача планировщика на `soundflow-
-    srv.exe` с env → старт → Alex проверяет на ТЕЛЕФОНЕ через vdsmusic.ru:
-    воспроизведение, поиск, рекомендации, докачка. Откат: вернуть задачу
-    `SoundFlow2`, `srv.exe` и Postgres не удаляли.
-  - **Пересчёт отпечатков (шаг 3 по всей базе):** идёт на brain, тянет аудио с
-    fg по scp в `soundflow-new.db`. На 07.09 ~600/8781, ~0.8 трек/с, ETA ~2.5 ч,
-    память ровно ~1 ГБ (после фикса арены). ~1 FAIL на 200 — файлы, которых на
-    диске fg уже нет; список соберём в конце.
+  - **Порт телефонного API (полный, Alex TG 18812 «по плану»):**
+    - M1 ✅ `92dde77` — `internal/api`/`importer`/`acquire` на интерфейсе `Store`.
+      `db.Pool` его удовлетворяет; `cmd/soundflow-server` (srv.exe) не изменился.
+    - M2 ✅ `714e949` — `internal/litestore.Store`: весь набор методов (~35) на
+      SQLite (обёртка над `localdb.DB` + raw SQL). `iface_test.go` стережёт.
+    - M3 ✅ `dfc398a`+`de61997` — `cmd/soundflow/startPhoneServer` отдаёт
+      `api.Router()` (не рукописные ручки) на `/v1/*`; `PathMap` из
+      `SIDECAR_*_DIR`/`SOUNDFLOW_AUDIO_ROOT`. `Acquire` = `acquire.Service{DB:
+      litestore, Finder: localFinder}`, где `localFinder` = `sidecar.Client`
+      (скачивание) + ONNX (`AnalyzeFeatures` — отпечаток скачанного в процессе).
+      Проверено на brain против `soundflow-new.db`: health/tracks/search/
+      admin.{status,log,devices,blocklist}/trash/sync.report — форма как у
+      старого srv.exe; `/v1/tracks/acquire` 502 без сайдкара (штатно);
+      `/v1/admin/reanalyze` крутит ONNX-догон в процессе, без питона.
+    - M4 ⏭ полная сверка ручек старый srv.exe ↔ новый на живых данных (после
+      пересчёта отпечатков; `stream/order` сверять по смыслу — вектора Go≠старые).
+    - M5 ⏭ на fg: слим питон-сайдкара (убрать torch/panns/librosa + youtube*.py
+      + yt-dlp/bgutil из pyproject; `uv sync`), затем `fg-cutover.ps1`.
+  - **Последовательность переключения (черновик, с Alex):** пересчёт готов →
+    слим сайдкара → отключить `soundflow-watchdog` → стоп `SoundFlow2` + `srv.exe`
+    (порт 8090) → `soundflow.db` + `soundflow-srv.exe` + ассеты в `D:\soundflow-srv`
+    → задача `SoundFlowSrv` (env) → старт → Alex проверяет на ТЕЛЕФОНЕ через
+    vdsmusic.ru. Откат: `fg-rollback.ps1` (вернуть `SoundFlow2`; Postgres/`srv.exe`
+    не трогали).
+  - **Пересчёт отпечатков (шаг 3 по всей базе):** на brain, `sffp.exe -fg
+    soundflow-fg -workers 3` → `E:\soundflow-lab\soundflow-new.db`, лог
+    `E:\soundflow-lab\_fgscan\refp-full.log`. 07.09 ~2000/8781, ~0.8 трек/с,
+    память ровно ~1.2 ГБ, ETA ~2.5 ч. ~0.5% FAIL — файлов нет на диске fg
+    (скиты, интервью, часть переименованного); список соберём в конце.
 
 ## Открытые вопросы
 
