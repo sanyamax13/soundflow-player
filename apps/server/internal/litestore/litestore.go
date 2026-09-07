@@ -47,12 +47,16 @@ func toDBCatalog(in []localdb.CatalogTrack) []db.CatalogTrack {
 }
 
 // parseTime — TEXT ISO-8601 из SQLite → *time.Time (nil для пустой строки).
+// Возвращаем в локальной зоне: старый srv.exe (pgx + timestamptz) отдаёт время
+// на проводе в локальной зоне сервера, телефон на это не завязан, но так
+// ответы совпадают байт-в-байт при сверке.
 func parseTime(s string) *time.Time {
 	if s == "" {
 		return nil
 	}
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999999-07:00", "2006-01-02 15:04:05"} {
 		if t, err := time.Parse(layout, s); err == nil {
+			t = t.Local()
 			return &t
 		}
 	}
@@ -404,7 +408,7 @@ func (s *Store) RecentServerLog(ctx context.Context, limit int) ([]db.ServerLogR
 	out := make([]db.ServerLogRow, len(rows))
 	for i, r := range rows {
 		out[i] = db.ServerLogRow{
-			At: r.At, Kind: r.Kind, Artist: r.Artist, Title: r.Title,
+			At: r.At.Local(), Kind: r.Kind, Artist: r.Artist, Title: r.Title,
 			Detail: r.Detail, Bytes: r.Bytes,
 		}
 	}
