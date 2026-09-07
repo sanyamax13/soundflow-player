@@ -17,8 +17,9 @@
 param(
   [string]$SrcDir   = "D:\soundflow-srv-incoming",  # куда положены новые файлы
   [string]$AppDir   = "D:\soundflow-srv",           # рабочая папка нового сервера
-  [string]$AudioRoot= "D:\SoundFlow",               # E:\soundflow-data -> сюда
-  [string]$Addr     = "0.0.0.0:8090",
+  [string]$AudioRoot  = "D:\SoundFlow",             # E:\soundflow-data -> сюда
+  [string]$Addr       = "0.0.0.0:8090",
+  [string]$SidecarURL = "http://127.0.0.1:8001",    # Python-качалка, оставляем как есть
   [switch]$DryRun,
   [switch]$Yes
 )
@@ -88,6 +89,8 @@ set SOUNDFLOW_DB=$AppDir\soundflow.db
 set SOUNDFLOW_ASSETS=$AppDir
 set SOUNDFLOW_ADDR=$Addr
 set SOUNDFLOW_AUDIO_ROOT=$AudioRoot
+rem sidecar не трогаем на этом шаге — новый сервер зовёт его как есть
+set SOUNDFLOW_SIDECAR_URL=$SidecarURL
 cd /d $AppDir
 soundflow-srv.exe 1>>$AppDir\srv.log 2>&1
 "@
@@ -124,5 +127,6 @@ if (-not $ok) {
 Say "ГОТОВО. Старый сервер и Postgres на месте (откат — fg-rollback.ps1)."
 Say "Сторож soundflow-watchdog оставлен ОТКЛЮЧЁННЫМ — включить после проверки телефона:"
 Say "  Enable-ScheduledTask soundflow-watchdog"
-Say "Служба soundflow-sidecar (Python PANNs) ещё крутится вхолостую — остановить после проверки:"
-Say "  Stop-Service soundflow-sidecar; Set-Service soundflow-sidecar -StartupType Manual"
+Say "Python-сайдкар (soundflow-sidecar) НЕ трогали — новый сервер зовёт его для"
+Say "«Добавить музыку». Урезание питона (torch/youtube/soundcloud/soulseek) —"
+Say "отдельным шагом позже, когда новый сервер обкатан."

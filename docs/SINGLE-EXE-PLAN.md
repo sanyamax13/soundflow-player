@@ -158,16 +158,36 @@ Files только на чтение).
       admin.{status,log,devices,blocklist}/trash/sync.report — форма как у
       старого srv.exe; `/v1/tracks/acquire` 502 без сайдкара (штатно);
       `/v1/admin/reanalyze` крутит ONNX-догон в процессе, без питона.
-    - M4 ⏭ полная сверка ручек старый srv.exe ↔ новый на живых данных (после
-      пересчёта отпечатков; `stream/order` сверять по смыслу — вектора Go≠старые).
-    - M5 ⏭ на fg: слим питон-сайдкара (убрать torch/panns/librosa + youtube*.py
-      + yt-dlp/bgutil из pyproject; `uv sync`), затем `fg-cutover.ps1`.
-  - **Последовательность переключения (черновик, с Alex):** пересчёт готов →
-    слим сайдкара → отключить `soundflow-watchdog` → стоп `SoundFlow2` + `srv.exe`
-    (порт 8090) → `soundflow.db` + `soundflow-srv.exe` + ассеты в `D:\soundflow-srv`
-    → задача `SoundFlowSrv` (env) → старт → Alex проверяет на ТЕЛЕФОНЕ через
-    vdsmusic.ru. Откат: `fg-rollback.ps1` (вернуть `SoundFlow2`; Postgres/`srv.exe`
+    - M4 ✅ `679c43a` — `cmd/soundflow-apidiff` сверил старый srv.exe (fg:8090
+      через ssh-туннель) ↔ новый (SQLite): 13 проверок совпали. Отличия: блок
+      `disk` в `admin/status` появляется только при `SOUNDFLOW_AUDIO_ROOT`
+      (проверено — `music_bytes` точь-в-точь как у старого); порядок событий с
+      равным `applied_at` не детерминирован ни там ни там (админ-лента).
+      Фикс `litestore`: время на проводе в локальной зоне (как pgx у старого).
+    - M5 ⏭ переключение `fg-cutover.ps1` — **сайдкар НЕ трогаем** (новый exe
+      зовёт его как есть). Слим питона (убрать torch/panns/librosa + youtube/
+      soundcloud/soulseek/rutube + deps) — ОТДЕЛЬНЫЙ шаг после, миграцию не
+      держит. Так: одно изменение за раз, откат мгновенный.
+  - **Последовательность переключения (с Alex, нужен телефон):** пересчёт готов →
+    отключить `soundflow-watchdog` → стоп `SoundFlow2` + `srv.exe` (порт 8090) →
+    `soundflow.db` + `soundflow-srv.exe` + ассеты в `D:\soundflow-srv` → задача
+    `SoundFlowSrv` (env: `SOUNDFLOW_DB`, `SOUNDFLOW_ASSETS`, `SOUNDFLOW_ADDR=
+    0.0.0.0:8090`, `SOUNDFLOW_AUDIO_ROOT=D:\SoundFlow`, `SOUNDFLOW_SIDECAR_URL=
+    http://127.0.0.1:8001`) → старт → Alex проверяет на ТЕЛЕФОНЕ через
+    vdsmusic.ru: воспроизведение, поиск, радио, докачка, «Добавить музыку».
+    Откат: `fg-rollback.ps1` (вернуть `SoundFlow2`; Postgres/`srv.exe`/сайдкар
     не трогали).
+  - **Слим сайдкара (отдельный шаг, детали):** `d:\soundflow-app` git repo,
+    ветка. Удалить `src/providers/{youtube.py,youtube_music_download.py,rutube.py,
+    soundcloud.py,soundcloud_download.py,soulseek.py,soulseek_download.py,
+    audio_features.py}` + их регистрацию в `audio_chain.py`/`main.py`. Из
+    `pyproject.toml` убрать torch/torchaudio/panns-inference/librosa/yt-dlp/
+    bgutil-ytdlp-pot-provider/slskd-api. `main.py` сам зовёт `yt_dlp` (3 места —
+    проверить, для чего; если только youtube/resolve — убрать). `uv sync`.
+    Docker: погасить `soundflow-bgutil-pot`, `soundflow-slskd`. Оставить:
+    yandex, musify, mp3party, rutor/rutracker/nnmclub/tapochek (+ curl_cffi,
+    yandex_music, playwright, qbittorrent-api). Тест: каждый из 3 источников
+    Alex реально качает трек.
   - **Пересчёт отпечатков (шаг 3 по всей базе):** на brain, `sffp.exe -fg
     soundflow-fg -workers 3` → `E:\soundflow-lab\soundflow-new.db`, лог
     `E:\soundflow-lab\_fgscan\refp-full.log`. 07.09 ~2000/8781, ~0.8 трек/с,
