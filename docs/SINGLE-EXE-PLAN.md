@@ -137,10 +137,14 @@ Files только на чтение).
     (Go, :8090, запуск задачей планировщика `SoundFlow2` → `run.cmd`, логи
     `srv.log`). Питон-сайдкар PANNs — служба `soundflow-sidecar` (nssm, Auto).
     Ещё: `soundflow-web` (служба), старый слой bun/TypeScript API на :8000 +
-    второй Postgres (`soundflow-postgres` :5432) — не трогаем. Телефон ходит
-    НЕ напрямую: WireGuard-туннель (`WireGuardTunnel$wg0`) → VDS `vdsmusic.ru`
-    (nginx) → fg:8090. Сторож `soundflow-watchdog` — только шлёт Alex TG-алерты,
-    сам не перезапускает; на время переключения ОТКЛЮЧИТЬ (иначе засыплет).
+    второй Postgres (`soundflow-postgres` :5432) — не трогаем.
+    **Телефон ходит ПРЯМО на LAN `192.168.1.73:8090`** — в `apps/mobile/lib/core/
+    config.dart` `apiBaseUrl` по умолчанию именно этот адрес, слова `vdsmusic`
+    в коде приложения нет. WireGuard-туннель + VDS `vdsmusic.ru` на fg —
+    старое наследие, приложение через него НЕ ходит; выключить как ненужное
+    отдельно, к переключению отношения не имеет. Сторож `soundflow-watchdog` —
+    только TG-алерты Alex; на время переключения ОТКЛЮЧИТЬ (иначе засыплет
+    «WG упал / Postgres лёг»).
   - `run.cmd` даёт маппинг: `E:\soundflow-data\{cache,music}` ↔ `D:\SoundFlow\
     {cache,music}`. Для новой версии на fg: `SOUNDFLOW_AUDIO_ROOT=D:\SoundFlow`,
     `SOUNDFLOW_DB=<...>\soundflow.db`, `SOUNDFLOW_ADDR=0.0.0.0:8090`.
@@ -173,10 +177,10 @@ Files только на чтение).
     `soundflow.db` + `soundflow-srv.exe` + ассеты в `D:\soundflow-srv` → задача
     `SoundFlowSrv` (env: `SOUNDFLOW_DB`, `SOUNDFLOW_ASSETS`, `SOUNDFLOW_ADDR=
     0.0.0.0:8090`, `SOUNDFLOW_AUDIO_ROOT=D:\SoundFlow`, `SOUNDFLOW_SIDECAR_URL=
-    http://127.0.0.1:8001`) → старт → Alex проверяет на ТЕЛЕФОНЕ через
-    vdsmusic.ru: воспроизведение, поиск, радио, докачка, «Добавить музыку».
-    Откат: `fg-rollback.ps1` (вернуть `SoundFlow2`; Postgres/`srv.exe`/сайдкар
-    не трогали).
+    http://127.0.0.1:8001`) → старт → Alex проверяет на ТЕЛЕФОНЕ по домашнему
+    Wi-Fi (`192.168.1.73:8090`, адрес в приложении уже такой): воспроизведение,
+    поиск, радио, докачка, «Добавить музыку». Откат: `fg-rollback.ps1`
+    (вернуть `SoundFlow2`; Postgres/`srv.exe`/сайдкар не трогали).
   - **Слим сайдкара (отдельный шаг, детали):** `d:\soundflow-app` git repo,
     ветка. Удалить `src/providers/{youtube.py,youtube_music_download.py,rutube.py,
     soundcloud.py,soundcloud_download.py,soulseek.py,soulseek_download.py,
