@@ -88,10 +88,45 @@ class DownloadsRepo {
     if (row != null) {
       final f = File(row.path);
       if (f.existsSync()) f.deleteSync();
+      // В журнал «Убранные» — для статистики (сколько убрано, сколько места
+      // освободилось, по причине). Заменяет «Корзину» (Alex TG 18689).
+      await _db.addRemoved(
+        id: id,
+        title: row.title,
+        artist: row.artist,
+        bytes: row.bytes,
+        reason: reason ?? '',
+        removedAt: DateTime.now().millisecondsSinceEpoch,
+      );
     }
     await _db.deleteDownloaded(id);
     await _sync?.record('delete',
         trackId: id, payload: reason == null ? null : {'reason': reason});
+  }
+
+  /// Поправить нечитаемые теги скачанной песни (кнопка «Исправить имя»,
+  /// Alex TG 18693). Заодно кладём событие — сервер тоже узнает.
+  Future<void> rename(String id,
+      {required String artist, required String title}) async {
+    await _db.updateTags(id, artist: artist, title: title);
+    await _sync?.record('rename',
+        trackId: id, payload: {'artist': artist, 'title': title});
+  }
+
+  // --- Убранные ---
+
+  Future<List<Map<String, Object?>>> removedList() => _db.removedList();
+  Future<({int count, int bytes})> removedTotals() => _db.removedTotals();
+  Future<Map<String, ({int count, int bytes})>> removedByReason() =>
+      _db.removedByReason();
+  Future<void> removedClear() => _db.removedClear();
+
+  /// Скачать заново то, что раньше убрали (кнопка в «Убранных»). Файл на
+  /// сервере мог остаться — пробуем прямую загрузку по id; получилось —
+  /// убираем из журнала.
+  Future<void> redownload(String id, {required String title, required String artist}) async {
+    await download({'id': id, 'title': title, 'artist': artist});
+    await _db.removedForget(id);
   }
 
   /// Докачать обложки уже скачанным трекам, у которых их пока нет — чтобы

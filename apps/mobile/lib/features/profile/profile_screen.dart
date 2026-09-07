@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
-import '../trash/trash_screen.dart';
+import '../removed/removed_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
 /// заглушки, приедут своими шагами.
@@ -25,11 +25,11 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           _Row(
-            icon: Icons.delete_outline,
-            title: 'Корзина',
-            subtitle: 'убранные песни — можно вернуть',
+            icon: Icons.auto_delete_outlined,
+            title: 'Убранные',
+            subtitle: 'что удалено и сколько места освободилось',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const TrashScreen()),
+              MaterialPageRoute<void>(builder: (_) => const RemovedScreen()),
             ),
           ),
           _Row(

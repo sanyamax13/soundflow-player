@@ -33,8 +33,6 @@ class _FakeApi extends Api {
   Future<List<Map<String, dynamic>>> adminEvents({int limit = 20}) async => const [];
   @override
   Future<List<Map<String, dynamic>>> searchCatalog(String q) async => const [];
-  @override
-  Future<List<Map<String, dynamic>>> trashList() async => const [];
 }
 
 // В testWidgets крутится FakeAsync — фоновый изолят sqflite не отвечает.
@@ -139,16 +137,16 @@ void main() {
     expect(find.text('Докачать ещё 20 ГБ'), findsOneWidget);
   });
 
-  testWidgets('в Профиле есть «Корзина», пустая — понятная надпись', (tester) async {
+  testWidgets('в Профиле есть «Убранные», пустая — понятная надпись', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Корзина'), findsOneWidget);
+    expect(find.text('Убранные'), findsOneWidget);
 
-    await tester.tap(find.text('Корзина'));
+    await tester.tap(find.text('Убранные'));
     await tester.pumpAndSettle();
-    expect(find.text('Пусто — ничего не убрано'), findsOneWidget);
+    expect(find.text('Пока ничего не убрано'), findsOneWidget);
   });
 }

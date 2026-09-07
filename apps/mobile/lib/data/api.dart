@@ -145,25 +145,6 @@ class Api {
     );
   }
 
-  /// «Корзина» — список убранного (удалено с телефона или зачищено как
-  /// мусор), можно вернуть.
-  Future<List<Map<String, dynamic>>> trashList() async {
-    final res = await _dio.get<Map<String, dynamic>>('/v1/trash');
-    return ((res.data?['tracks'] as List?) ?? const []).cast<Map<String, dynamic>>();
-  }
-
-  /// Вернуть трек из «Корзины»: файл на место, метка снята.
-  Future<void> trashRestore(String trackId) async {
-    await _dio.post<Map<String, dynamic>>('/v1/trash/restore', data: {'track_id': trackId});
-  }
-
-  /// Очистить «Корзину» — стереть насовсем всё, что в ней лежит. Возвращает,
-  /// сколько файлов удалено.
-  Future<int> trashPurge() async {
-    final res = await _dio.post<Map<String, dynamic>>('/v1/trash/purge');
-    return (res.data?['deleted'] as num?)?.toInt() ?? 0;
-  }
-
   /// Состояние сервера для экрана «Сервер».
   Future<Map<String, dynamic>> adminStatus() async {
     final res = await _dio.get<Map<String, dynamic>>('/v1/admin/status');

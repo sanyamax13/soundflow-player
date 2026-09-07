@@ -1141,8 +1141,8 @@ class _HelpOverlay extends StatelessWidget {
                 row(Icons.more_horiz, 'Долгое нажатие',
                     'меню: радио, не хочу эту версию, скрыть исполнителя, больше/меньше такого, удалить, почему играет'),
                 row(Icons.graphic_eq, 'Вести по волне', 'перемотка'),
-                row(Icons.delete_outline, 'Корзина внизу',
-                    'убрать песню с телефона (спросит причину)'),
+                row(Icons.delete_outline, 'Урна внизу',
+                    'убрать песню с телефона совсем (спросит причину)'),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,

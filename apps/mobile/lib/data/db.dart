@@ -5,7 +5,8 @@ import 'package:sqflite/sqflite.dart';
 /// - `events_queue` — события (лайк, удаление, что слушал), копятся офлайн,
 ///   уходят на сервер батчем при синхронизации (этап 3 плана).
 /// - `kv` — мелкие настройки (id устройства, время последней синхронизации).
-/// Дальше сюда приедут stream_buffer, trash, vibe_state (см. §7 плана).
+/// - `removed_tracks` — журнал удалений для экрана «Убранные».
+/// Дальше сюда приедут stream_buffer, vibe_state (см. §7 плана).
 class Db {
   Db._(this._db);
   final Database _db;
@@ -15,16 +16,18 @@ class Db {
     final db = await f.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
+          await _createRemoved(db);
         },
         onUpgrade: (db, from, _) async {
           if (from < 2) await _createSync(db);
           if (from < 3) {
             await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN cover_path TEXT');
           }
+          if (from < 4) await _createRemoved(db);
         },
       ),
     );
@@ -41,6 +44,21 @@ class Db {
           favorite   INTEGER NOT NULL DEFAULT 0,
           cover_path TEXT,
           added_at   INTEGER NOT NULL
+        )
+      ''');
+
+  /// «Убранные» — что удалено из «Моей музыки»: для экрана статистики
+  /// (сколько песен убрано, сколько места освободилось, по какой причине).
+  /// Заменяет «Корзину» (Alex TG 18689, 07.09.2026). Локальный журнал —
+  /// экран работает офлайн, без сервера.
+  static Future<void> _createRemoved(Database db) => db.execute('''
+        CREATE TABLE removed_tracks (
+          id         TEXT PRIMARY KEY,
+          title      TEXT NOT NULL,
+          artist     TEXT NOT NULL,
+          bytes      INTEGER NOT NULL DEFAULT 0,
+          reason     TEXT NOT NULL DEFAULT '',
+          removed_at INTEGER NOT NULL
         )
       ''');
 
@@ -94,6 +112,74 @@ class Db {
 
   Future<void> deleteDownloaded(String id) =>
       _db.delete('downloaded_tracks', where: 'id = ?', whereArgs: [id]);
+
+  /// Поправить теги уже скачанной песни (кнопка «Исправить имя» для
+  /// нечитаемых названий, Alex TG 18693).
+  Future<void> updateTags(String id, {required String artist, required String title}) =>
+      _db.update(
+        'downloaded_tracks',
+        {'artist': artist, 'title': title},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+  // --- Убранные (журнал удалений) ---
+
+  Future<void> addRemoved({
+    required String id,
+    required String title,
+    required String artist,
+    required int bytes,
+    required String reason,
+    required int removedAt,
+  }) =>
+      _db.insert(
+        'removed_tracks',
+        {
+          'id': id,
+          'title': title,
+          'artist': artist,
+          'bytes': bytes,
+          'reason': reason,
+          'removed_at': removedAt,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+  Future<List<Map<String, Object?>>> removedList() => _db.query(
+        'removed_tracks',
+        orderBy: 'removed_at DESC',
+      );
+
+  Future<({int count, int bytes})> removedTotals() async {
+    final r = await _db.rawQuery(
+        'SELECT count(*) AS c, COALESCE(SUM(bytes),0) AS b FROM removed_tracks');
+    return (
+      count: (r.first['c'] as int?) ?? 0,
+      bytes: (r.first['b'] as int?) ?? 0,
+    );
+  }
+
+  /// Разбивка по причине: причина → (сколько песен, сколько байт).
+  Future<Map<String, ({int count, int bytes})>> removedByReason() async {
+    final rows = await _db.rawQuery(
+        'SELECT reason, count(*) AS c, COALESCE(SUM(bytes),0) AS b '
+        'FROM removed_tracks GROUP BY reason ORDER BY c DESC');
+    return {
+      for (final row in rows)
+        (row['reason'] as String? ?? ''): (
+          count: (row['c'] as int?) ?? 0,
+          bytes: (row['b'] as int?) ?? 0,
+        ),
+    };
+  }
+
+  /// Убрать одну запись из журнала (после «скачать заново» или вручную).
+  Future<void> removedForget(String id) =>
+      _db.delete('removed_tracks', where: 'id = ?', whereArgs: [id]);
+
+  /// Очистить журнал целиком (музыку не трогает — она и так удалена).
+  Future<void> removedClear() => _db.delete('removed_tracks');
 
   // --- Очередь событий ---
 
