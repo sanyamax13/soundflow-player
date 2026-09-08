@@ -5,6 +5,19 @@
 `internal/acquire.Finder`). Курс «убрать fg» — качалка переезжает на brain
 рядом с `SoundFlow.exe`.
 
+## Статус (08.09.2026)
+
+- Slim + venv на brain + режим 1 «Найти трек» — СДЕЛАНО (коммиты `e55d47c`,
+  `6ebe7b6`). Проверено e2e.
+- Режим 2 «Торренты — обзор» — СДЕЛАНО (коммит `b2c2d83`):
+  `torrent_browse.py` (`search_all` + `download_pick`), `rustorka_album.py`,
+  ручки `/torrent/{search,download}`, Go `torrent.go` + `ensureQBittorrent`,
+  окно `#find` с переключателем. Проверен только поиск. НЕ проверено:
+  скачивание торрента до конца (нужен настроенный Web UI qBittorrent),
+  парсер rustorka (нужна `RUSTORKA_COOKIE` от Alex).
+- Осталось: PyInstaller-упаковка + qBittorrent в установщик; item 4
+  «автоподбор по вкусу».
+
 ## Решение по архитектуре (Alex TG 18937–18957 + 2 сторонних ИИ 18949–18952)
 
 - Python НЕ переписывать на Go сейчас. Держать дочерним процессом, которым

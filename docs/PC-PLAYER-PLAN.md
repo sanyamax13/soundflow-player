@@ -93,12 +93,17 @@ Alex: «собирай и продолжай приложение делать �
      скрыто), окно `#find` — поля артист+название + список попыток. Работает:
      тест Lorna Shore/Bad Omens/Sleep Token/Ghost → Яндекс 320 в каталог +
      отпечаток. Яндекс через yandex-music 3.0 отдаёт где 320, где 192.
-   - **Режим 2 «Торренты — обзор» — ОСТАЛОСЬ.** Поиск по артисту на
-     nnmclub/rutor/tapochek/rustorka → список релизов (формат, сиды, размер)
-     → галочки → скачать альбом через qBittorrent. `providers/torrent_browse.py`
-     сейчас заглушка; провайдеры `*_album.py` есть, rustorka написать с нуля.
-     qBittorrent на brain стоит (`C:\Program Files\qBittorrent`), выключен —
-     SoundFlow должен поднимать и его. Токены/куки трекеров сняты с fg.
+   - **Режим 2 «Торренты — обзор» — СДЕЛАНО 08.09, коммит `b2c2d83`.**
+     Переключатель «Один трек / Альбом с торрента» в разделе `#find`. Артист
+     → `search_all` (parallel по nnmclub/rutor/tapochek/rustorka) → список
+     релизов (альбом, год, формат, битрейт, размер, сиды, трекер) с галочками
+     → «Скачать выбранное» → `download_pick` качает альбом через qBittorrent,
+     треки в каталог. `torrent_browse.py` — рабочий; `rustorka_album.py`
+     новый (парсер вживую не сверян, без cookie молчит). `torrent.go` +
+     `ensureQBittorrent` (поднимает `qbittorrent.exe`, Web UI :8080 из
+     `downloader/.env`). **Проверен только поиск** (Кино → 12, Би-2 → 40);
+     скачивание до конца и rustorka-парсер — нет (нужен Web UI qBittorrent +
+     `RUSTORKA_COOKIE` от Alex).
 4. **Автоподбор по вкусу** + импорт плейлистов Яндекса (Alex TG 18833–18839).
    Большой отдельный план. После п.3. `chart_routes.py`/`parsers/` в
    `apps/downloader` оставлены под это.
