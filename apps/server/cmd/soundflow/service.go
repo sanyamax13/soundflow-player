@@ -138,6 +138,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Post("/api/reindex", s.hReindex)
 	r.Post("/api/stop", s.hStop)
 	r.Get("/audio/{id}", s.hAudio)
+	r.Get("/api/cover/{id}", s.hCover)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -253,6 +254,25 @@ func (s *Service) hAudio(w http.ResponseWriter, r *http.Request) {
 	fi, _ := f.Stat()
 	w.Header().Set("Content-Type", "audio/mpeg")
 	http.ServeContent(w, r, filepath.Base(local), fi.ModTime(), f)
+}
+
+// hCover — обложка, вшитая в сам файл трека (ID3). Нет — 404, фронт покажет
+// заглушку. Для окна-плеера.
+func (s *Service) hCover(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	path, ok, err := s.db.TrackFilePath(id)
+	if err != nil || !ok {
+		http.Error(w, "нет трека", 404)
+		return
+	}
+	c := embeddedCover(s.localPath(path))
+	if c == nil {
+		http.Error(w, "нет обложки", 404)
+		return
+	}
+	w.Header().Set("Content-Type", c.mime)
+	w.Header().Set("Cache-Control", "max-age=86400")
+	_, _ = w.Write(c.data)
 }
 
 // localPath — канонический путь -> путь на этой машине. Пока считаем, что exe
@@ -449,10 +469,15 @@ func atoiDef(s string, d int) int {
 }
 
 func localAddr(addr string) string {
-	// ":8090" -> "<ip этой машины>:8090" для показа в окне
+	// ":8090" / "0.0.0.0:8090" / "127.0.0.1:8090" -> "<ip в домашней сети>:8090"
+	// для показа в окне (этот адрес вписывают в телефон).
+	port := addr
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		port = addr[i:]
+	}
 	host := hostIP()
 	if host == "" {
-		return "127.0.0.1" + addr
+		host = "127.0.0.1"
 	}
-	return host + addr
+	return host + port
 }

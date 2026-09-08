@@ -31,68 +31,98 @@
   .disk{font-size:12px; color:var(--mut)}
 
   .body{flex:1; display:flex; min-height:0}
-  .nav{width:140px; border-right:1px solid var(--line); padding:12px 8px; display:flex; flex-direction:column; gap:2px; flex-shrink:0}
-  .nav a{font-size:13px; color:var(--mut); padding:8px 11px; border-radius:8px; font-weight:600; cursor:pointer; position:relative}
+  .nav{width:150px; border-right:1px solid var(--line); padding:12px 8px; display:flex; flex-direction:column; gap:2px; flex-shrink:0}
+  .nav a{font-size:13px; color:var(--mut); padding:9px 11px; border-radius:8px; font-weight:600; cursor:pointer; position:relative}
+  .nav a:hover{background:var(--field)}
   .nav a.on{color:var(--ink); background:var(--field)}
   .nav a.on::before{content:""; position:absolute; left:0; top:7px; bottom:7px; width:3px; border-radius:2px; background:var(--lime)}
   .nav .gap{flex:1}
   .nav .ver{font-size:10px; color:var(--faint); padding:0 11px}
 
   .main{flex:1; display:flex; flex-direction:column; min-width:0}
-  .center{flex:1; display:flex; min-height:0}
-  .pane{flex:1; display:flex; flex-direction:column; min-width:0; padding:14px 16px}
+  .view{flex:1; display:none; flex-direction:column; min-width:0; padding:14px 16px; overflow:auto}
+  .view.on{display:flex}
+  .view h2{font-size:15px; margin-bottom:12px}
 
-  .bar{display:flex; align-items:center; gap:8px; margin-bottom:10px}
+  .bar{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-shrink:0}
   .search{flex:1; height:32px; border:1px solid var(--line); border-radius:8px; background:var(--field);
     padding:0 11px; font-size:13px}
   .btn{height:32px; padding:0 13px; border-radius:8px; font-size:12px; font-weight:700; border:1px solid var(--line);
     background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap}
+  .btn:hover{background:var(--field)}
   .btn.primary{background:var(--lime); border-color:var(--lime); color:var(--lime-ink)}
+  .btn.primary:hover{filter:brightness(.96)}
   .btn.danger{color:var(--err); border-color:#eecccb}
   .btn:disabled{opacity:.45; cursor:default}
 
-  .sum{font-size:12px; color:var(--mut); margin-bottom:9px}
+  .sum{font-size:12px; color:var(--mut); margin-bottom:9px; flex-shrink:0}
   .sum b{color:var(--ink)}
 
   .tree{flex:1; border:1px solid var(--line); border-radius:10px; overflow:auto}
   .row{display:flex; align-items:center; gap:7px; height:32px; padding:0 10px; font-size:12.5px;
-    border-bottom:1px solid var(--line); white-space:nowrap; cursor:default}
+    border-bottom:1px solid var(--line); white-space:nowrap}
   .row:last-child{border-bottom:none}
-  .row .tw{width:12px; color:var(--faint); font-size:10px; cursor:pointer; text-align:center}
-  .row .ico{width:16px; text-align:center}
+  .row .tw{width:12px; color:var(--faint); font-size:10px; cursor:pointer; text-align:center; flex-shrink:0}
+  .row .ico{width:16px; text-align:center; flex-shrink:0}
   .row .nm{overflow:hidden; text-overflow:ellipsis}
   .row .sp{flex:1}
   .row .meta{color:var(--mut); font-size:11px}
   .row.root{background:var(--head); font-weight:700}
   .row.artist,.row.folder{font-weight:600}
-  .row.track{color:var(--mut); font-size:12px; height:29px}
+  .row.track{color:var(--mut); font-size:12px; height:29px; cursor:pointer}
+  .row.track:hover{background:var(--limebox)}
+  .row.track.playing{background:var(--limebox)}
+  .row.track.playing .ti{color:var(--ok)}
   .row.track .ti{color:var(--ink)}
   .fp{font-size:10.5px; font-weight:800}
   .fp.full{color:var(--ok)} .fp.part{color:var(--warn)} .fp.none{color:var(--faint)}
   .yes{color:var(--ok); font-weight:800} .no{color:var(--faint); font-weight:800}
   .muted{color:var(--faint); font-size:12px; padding:16px}
 
-  .side{width:300px; border-left:1px solid var(--line); padding:14px 14px; display:flex; flex-direction:column; gap:16px; flex-shrink:0; overflow:auto}
-  .card h4{font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--mut); margin-bottom:8px}
-  .dev{display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px solid var(--line)}
-  .dev:last-child{border-bottom:none}
-  .dev .ic{width:24px; height:24px; border-radius:6px; background:var(--field); display:flex; align-items:center; justify-content:center; font-size:12px}
-  .dev .nm{font-size:12px; font-weight:600}
-  .dev .m{font-size:10.5px; color:var(--mut)}
-  .dev .sp{flex:1}
-  .job .lbl{display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:4px}
+  /* Устройства / Задачи / Журнал */
+  .list .item{display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--line)}
+  .list .item:last-child{border-bottom:none}
+  .list .ic{width:34px; height:34px; border-radius:8px; background:var(--field); display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0}
+  .list .tt{font-size:13px; font-weight:600}
+  .list .mm{font-size:11.5px; color:var(--mut)}
+  .list .sp{flex:1}
+  .tag{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; background:var(--field); color:var(--mut)}
+  .tag.wifi{background:#eaf6ff; color:#1b6fb0}
+  .tag.wire{background:#eef7e9; color:var(--ok)}
+  .job{padding:10px 4px; border-bottom:1px solid var(--line)}
+  .job:last-child{border-bottom:none}
+  .job .lbl{display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px}
   .job .lbl span:last-child{color:var(--mut)}
-  .track2{height:6px; border-radius:3px; background:var(--field); overflow:hidden}
+  .track2{height:7px; border-radius:4px; background:var(--field); overflow:hidden}
   .track2>i{display:block; height:100%; background:var(--lime)}
-
-  .log{height:150px; border-top:1px solid var(--line); background:#fcfcfc; display:flex; flex-direction:column; flex-shrink:0}
-  .log .lh{display:flex; align-items:center; gap:7px; padding:7px 15px; font-size:10.5px; text-transform:uppercase;
-    letter-spacing:.04em; color:var(--mut); border-bottom:1px solid var(--line)}
-  .log .lh .dot{width:6px; height:6px; border-radius:50%; background:var(--lime)}
-  .log .rows{flex:1; overflow:auto; padding:7px 15px; font-family:ui-monospace,Consolas,monospace; font-size:11px; line-height:1.7}
-  .log .t{color:var(--faint)}
-  .log .k{display:inline-block; min-width:64px; font-weight:700}
+  .logrows{flex:1; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fcfcfc;
+    padding:10px 14px; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; line-height:1.8}
+  .logrows .t{color:var(--faint)}
+  .logrows .k{display:inline-block; min-width:64px; font-weight:700}
   .k.info{color:#2563eb} .k.error{color:var(--err)} .k.added{color:var(--ok)} .k.removed{color:var(--warn)}
+
+  .set{max-width:520px}
+  .set .f{display:flex; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px}
+  .set .f b{color:var(--mut); font-weight:600}
+  .set .f span{text-align:right; word-break:break-all}
+
+  /* Плеер */
+  .player{height:66px; border-top:1px solid var(--line); background:var(--head);
+    display:flex; align-items:center; gap:14px; padding:0 16px; flex-shrink:0}
+  .player .cov{width:46px; height:46px; border-radius:8px; background:var(--field); object-fit:cover; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--faint)}
+  .player .now{min-width:150px; max-width:230px; overflow:hidden}
+  .player .now .t1{font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .player .now .t2{font-size:11.5px; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .player .ctrls{display:flex; align-items:center; gap:6px; flex-shrink:0}
+  .pbtn{width:34px; height:34px; border-radius:50%; border:1px solid var(--line); background:#fff; cursor:pointer;
+    font-size:14px; display:flex; align-items:center; justify-content:center}
+  .pbtn:hover{background:var(--field)}
+  .pbtn.play{width:40px; height:40px; background:var(--lime); border-color:var(--lime); color:var(--lime-ink); font-size:16px}
+  .player .seek{flex:1; display:flex; align-items:center; gap:9px; min-width:120px}
+  .player .seek .rng{flex:1; accent-color:var(--ok)}
+  .player .seek .tm{font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .player.empty .cov,.player.empty .now,.player.empty .seek{opacity:.4}
 </style>
 </head>
 <body>
@@ -107,57 +137,100 @@
 
   <div class="body">
     <nav class="nav">
-      <a class="on">Каталог</a>
-      <a onclick="alert('later')">Устройства</a>
-      <a onclick="alert('later')">Задачи</a>
-      <a onclick="alert('later')">Журнал</a>
-      <a onclick="alert('later')">Настройки</a>
+      <a data-v="catalog" class="on">Каталог</a>
+      <a data-v="devices">Устройства</a>
+      <a data-v="jobs">Задачи</a>
+      <a data-v="log">Журнал</a>
+      <a data-v="settings">Настройки</a>
       <div class="gap"></div>
       <div class="ver">SoundFlow.exe<br>v0.1 · sqlite</div>
     </nav>
 
     <div class="main">
-      <div class="center">
-        <section class="pane">
-          <div class="bar">
-            <input class="search" id="q" placeholder="Поиск по трекам, артистам, альбомам…" autocomplete="off">
-            <button class="btn primary" id="btnScan">Сканировать папку</button>
-            <button class="btn" id="btnReindex">Переиндексировать</button>
-            <button class="btn danger" id="btnStop">Стоп</button>
-          </div>
-          <div class="sum" id="sum">загрузка…</div>
-          <div class="tree" id="tree"><div class="muted">загрузка каталога…</div></div>
-        </section>
+      <!-- Каталог -->
+      <section class="view on" id="v-catalog">
+        <div class="bar">
+          <input class="search" id="q" placeholder="Поиск по трекам, артистам, альбомам…" autocomplete="off">
+          <button class="btn primary" id="btnPick">Выбрать папку</button>
+          <button class="btn" id="btnReindex">Переиндексировать</button>
+          <button class="btn danger" id="btnStop">Стоп</button>
+        </div>
+        <div class="sum" id="sum">загрузка…</div>
+        <div class="tree" id="tree"><div class="muted">загрузка каталога…</div></div>
+      </section>
 
-        <aside class="side">
-          <div class="card">
-            <h4>Устройства</h4>
-            <div id="devices"><div class="muted" style="padding:6px 0">нет подключённых</div></div>
-          </div>
-          <div class="card">
-            <h4>Задачи</h4>
-            <div id="jobs"><div class="muted" style="padding:6px 0">ничего не выполняется</div></div>
-          </div>
-        </aside>
-      </div>
+      <!-- Устройства -->
+      <section class="view" id="v-devices">
+        <h2>Устройства</h2>
+        <div class="list" id="devices"><div class="muted">нет подключённых</div></div>
+      </section>
 
-      <div class="log">
-        <div class="lh"><span class="dot"></span>Журнал сервера</div>
-        <div class="rows" id="log"></div>
-      </div>
+      <!-- Задачи -->
+      <section class="view" id="v-jobs">
+        <h2>Задачи</h2>
+        <div id="jobs"><div class="muted">ничего не выполняется</div></div>
+      </section>
+
+      <!-- Журнал -->
+      <section class="view" id="v-log">
+        <h2>Журнал сервера</h2>
+        <div class="logrows" id="log"></div>
+      </section>
+
+      <!-- Настройки -->
+      <section class="view" id="v-settings">
+        <h2>Настройки</h2>
+        <div class="set" id="set"><div class="muted">загрузка…</div></div>
+      </section>
     </div>
   </div>
+
+  <!-- Плеер -->
+  <div class="player empty" id="player">
+    <div class="cov" id="pcov">♪</div>
+    <div class="now">
+      <div class="t1" id="pt1">ничего не играет</div>
+      <div class="t2" id="pt2">выбери песню в каталоге</div>
+    </div>
+    <div class="ctrls">
+      <button class="pbtn" id="pPrev" title="предыдущая">⏮</button>
+      <button class="pbtn play" id="pPlay" title="играть/пауза">▶</button>
+      <button class="pbtn" id="pNext" title="следующая">⏭</button>
+    </div>
+    <div class="seek">
+      <span class="tm" id="pCur">0:00</span>
+      <input class="rng" id="pRng" type="range" min="0" max="1000" value="0">
+      <span class="tm" id="pDur">0:00</span>
+    </div>
+  </div>
+  <audio id="au"></audio>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => (s||"").replace(/[<>&]/g, x => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[x]));
-const fmtDur = s => { s=s|0; return (s/60|0)+":"+String(s%60).padStart(2,"0"); };
+const fmtDur = s => { s=Math.max(0,s|0); return (s/60|0)+":"+String(s%60).padStart(2,"0"); };
 const fmtGB = b => b>0 ? (b/1073741824).toFixed(0)+" ГБ" : "—";
 const nfmt = n => (n||0).toLocaleString("ru-RU");
 
 async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-async function jpost(u){ const r = await fetch(u,{method:"POST"}); return r.ok ? r.json() : Promise.reject(await r.text()); }
+async function jpost(u){ const r = await fetch(u,{method:"POST"}); return r.ok ? r.json().catch(()=>({})) : Promise.reject(await r.text()); }
 
+/* ---------- навигация по разделам ---------- */
+const VIEWS = ["catalog","devices","jobs","log","settings"];
+function showView(name){
+  if(!VIEWS.includes(name)) name = "catalog";
+  document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.dataset.v===name));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id==="v-"+name));
+  if(location.hash.slice(1) !== name) location.hash = name;
+  if(name==="devices") loadDevices();
+  if(name==="jobs") loadJobs();
+  if(name==="log") loadLog();
+  if(name==="settings") loadSettings();
+}
+document.querySelectorAll(".nav a").forEach(a => a.onclick = () => showView(a.dataset.v));
+window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
+
+/* ---------- инфо в шапке ---------- */
 async function loadInfo(){
   try{
     const d = await jget("/api/info");
@@ -168,17 +241,24 @@ async function loadInfo(){
     else { st.className="pill off"; st.innerHTML='<span class="dot"></span>без модели отпечатков'; }
     $("#sum").innerHTML = `<b>${nfmt(d.tracks)}</b> треков · <b>${nfmt(d.albums)}</b> папок · отпечаток у <b>${nfmt(d.with_vector)}</b>`;
     $("#btnReindex").disabled = !d.has_model || d.with_vector >= d.tracks;
+    window._info = d;
   }catch(e){ $("#status").className="pill off"; }
 }
 
-let expanded = new Set();
+/* ---------- каталог (дерево) ---------- */
+let collapsed = new Set();   // свёрнутые корни
+let expanded = new Set();    // раскрытые вложенные папки
+let list = [];               // плоский список видимых треков — очередь плеера
+
 async function loadCatalog(){
   try{
     const roots = await jget("/api/catalog");
     const box = $("#tree");
-    if(!roots.length){ box.innerHTML = '<div class="muted">каталог пуст — нажми «Сканировать папку»</div>'; return; }
+    if(!roots.length){ box.innerHTML = '<div class="muted">каталог пуст — нажми «Выбрать папку»</div>'; list=[]; return; }
     box.innerHTML = "";
+    list = [];
     roots.forEach(r => renderNode(box, r, 0));
+    markPlaying();
   }catch(e){ $("#tree").innerHTML = '<div class="muted">ошибка: '+esc(e.message)+'</div>'; }
 }
 function fpBadge(t,f){
@@ -189,65 +269,49 @@ function fpBadge(t,f){
 }
 function renderNode(box, n, depth){
   const key = n.path;
-  const open = expanded.has(key) || depth===0;
+  const isRoot = depth===0;
+  const open = isRoot ? !collapsed.has(key) : expanded.has(key);
   const hasKids = (n.children&&n.children.length) || (n.items&&n.items.length);
   const row = document.createElement("div");
   row.className = "row " + (n.kind||"folder");
   row.style.paddingLeft = (10 + depth*16) + "px";
-  const ico = n.kind==="root" ? "📁" : (n.kind==="album" ? "💿" : "📁");
+  const ico = n.kind==="album" ? "💿" : "📁";
   row.innerHTML =
     `<span class="tw">${hasKids ? (open?"▾":"▸") : ""}</span>`+
     `<span class="ico">${ico}</span>`+
     `<span class="nm">${esc(n.name)}</span><span class="sp"></span>`+
     `<span class="meta">${nfmt(n.tracks)} трек.</span>&nbsp;&nbsp;${fpBadge(n.tracks,n.with_fp)}`;
   if(hasKids){
-    row.querySelector(".tw").onclick = () => { open?expanded.delete(key):expanded.add(key); loadCatalog(); };
+    const toggle = () => {
+      if(isRoot){ collapsed.has(key)?collapsed.delete(key):collapsed.add(key); }
+      else { expanded.has(key)?expanded.delete(key):expanded.add(key); }
+      loadCatalog();
+    };
+    row.querySelector(".tw").onclick = toggle;
+    row.style.cursor = "pointer";
+    row.onclick = e => { if(!e.target.classList.contains("tw")) toggle(); };
   }
   box.appendChild(row);
   if(!open) return;
   (n.children||[]).forEach(c => renderNode(box, c, depth+1));
   (n.items||[]).forEach(it => {
+    const i = list.length;
+    list.push(it);
     const tr = document.createElement("div");
     tr.className = "row track";
+    tr.dataset.i = i;
     tr.style.paddingLeft = (10 + (depth+1)*16 + 18) + "px";
     tr.innerHTML =
       `<span class="ti">${esc(it.title)}</span>`+
       `<span class="meta">&nbsp;·&nbsp;${esc(it.artist)}</span><span class="sp"></span>`+
       `<span class="meta">${fmtDur(it.duration_sec)}${it.bitrate_kbps?" · "+it.bitrate_kbps:""}</span>`+
       `&nbsp;&nbsp;<span class="${it.has_fp?'yes':'no'}">${it.has_fp?'✓':'—'}</span>`;
+    tr.onclick = () => playAt(i);
     box.appendChild(tr);
   });
 }
 
-async function loadSide(){
-  try{
-    const devs = await jget("/api/devices");
-    $("#devices").innerHTML = devs.length ? devs.map(d =>
-      `<div class="dev"><div class="ic">📱</div><div><div class="nm">${esc(d.name||d.id)}</div>`+
-      `<div class="m">${d.events} событий${d.last_sync_at?" · "+new Date(d.last_sync_at).toLocaleString("ru-RU"):""}</div></div></div>`
-    ).join("") : '<div class="muted" style="padding:6px 0">нет подключённых</div>';
-  }catch(e){}
-  try{
-    const jobs = await jget("/api/jobs");
-    $("#jobs").innerHTML = jobs.length ? jobs.map(j => {
-      const pct = j.total ? Math.min(100, Math.round(j.done*100/j.total)) : (j.running?15:100);
-      return `<div class="job"><div class="lbl"><span>${esc(j.label)}</span>`+
-        `<span>${j.running ? j.done+"/"+(j.total||"?") : (j.note||"готово")}</span></div>`+
-        `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
-    }).join("") : '<div class="muted" style="padding:6px 0">ничего не выполняется</div>';
-    const anyRun = jobs.some(j=>j.running);
-    $("#btnScan").disabled = anyRun;
-  }catch(e){}
-  try{
-    const log = await jget("/api/log?limit=80");
-    $("#log").innerHTML = log.map(l =>
-      `<div><span class="t">${new Date(l.at).toLocaleTimeString("ru-RU")}</span>&nbsp;&nbsp;`+
-      `<span class="k ${esc(l.kind)}">${esc(l.kind)}</span> ${esc(l.detail||(l.artist+" — "+l.title))}</div>`
-    ).join("");
-  }catch(e){}
-}
-
-$("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
+/* ---------- поиск ---------- */
 let sTmr;
 $("#q").addEventListener("input", () => { clearTimeout(sTmr); sTmr = setTimeout(doSearch, 220); });
 async function doSearch(){
@@ -256,28 +320,145 @@ async function doSearch(){
   const rows = await jget("/api/search?q="+encodeURIComponent(s));
   const box = $("#tree");
   box.innerHTML = rows.length ? "" : '<div class="muted">ничего не найдено</div>';
+  list = [];
   rows.forEach(t => {
+    const i = list.length; list.push(t);
     const tr = document.createElement("div");
-    tr.className = "row track"; tr.style.paddingLeft = "14px";
+    tr.className = "row track"; tr.style.paddingLeft = "14px"; tr.dataset.i = i;
     tr.innerHTML = `<span class="ti">${esc(t.title)}</span><span class="meta">&nbsp;·&nbsp;${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span>`+
       `<span class="sp"></span><span class="meta">${fmtDur(t.duration_sec)}</span>`;
+    tr.onclick = () => playAt(i);
     box.appendChild(tr);
   });
+  markPlaying();
 }
 
-$("#btnScan").onclick = async () => {
+/* ---------- плеер ---------- */
+const au = $("#au");
+let cur = -1;   // индекс в list
+
+function playAt(i){
+  if(i<0 || i>=list.length) return;
+  cur = i;
+  const t = list[i];
+  au.src = "/audio/" + encodeURIComponent(t.id);
+  au.play().catch(()=>{});
+  $("#player").classList.remove("empty");
+  $("#pt1").textContent = t.title || "—";
+  $("#pt2").textContent = t.artist || "";
+  const cov = $("#pcov");
+  cov.textContent = "♪";
+  const img = new Image();
+  img.onload = () => { cov.textContent=""; cov.style.backgroundImage = `url(/api/cover/${encodeURIComponent(t.id)})`; cov.style.backgroundSize="cover"; };
+  img.onerror = () => { cov.style.backgroundImage=""; cov.textContent="♪"; };
+  img.src = "/api/cover/" + encodeURIComponent(t.id);
+  markPlaying();
+}
+function playNext(){ if(cur+1 < list.length) playAt(cur+1); }
+function playPrev(){ if(au.currentTime > 3){ au.currentTime = 0; return; } if(cur > 0) playAt(cur-1); }
+function markPlaying(){
+  document.querySelectorAll(".row.track").forEach(r => r.classList.toggle("playing", +r.dataset.i === cur));
+}
+$("#pPlay").onclick = () => { if(au.src){ au.paused ? au.play() : au.pause(); } else playNext(); };
+$("#pNext").onclick = playNext;
+$("#pPrev").onclick = playPrev;
+au.addEventListener("play",  () => $("#pPlay").textContent = "⏸");
+au.addEventListener("pause", () => $("#pPlay").textContent = "▶");
+au.addEventListener("ended", playNext);
+au.addEventListener("loadedmetadata", () => $("#pDur").textContent = fmtDur(au.duration));
+au.addEventListener("timeupdate", () => {
+  $("#pCur").textContent = fmtDur(au.currentTime);
+  if(au.duration) $("#pRng").value = Math.round(au.currentTime/au.duration*1000);
+});
+$("#pRng").addEventListener("input", () => { if(au.duration) au.currentTime = $("#pRng").value/1000*au.duration; });
+
+/* ---------- Устройства ---------- */
+async function loadDevices(){
+  try{
+    const devs = await jget("/api/devices");
+    $("#devices").innerHTML = devs.length ? devs.map(d => {
+      const tr = (d.transport||"").toLowerCase();
+      let tag = '<span class="tag">связь неизвестна</span>';
+      if(tr==="wifi") tag = '<span class="tag wifi">Wi-Fi</span>';
+      else if(tr==="ethernet"||tr==="wire"||tr==="usb") tag = '<span class="tag wire">Провод</span>';
+      else if(tr==="mobile") tag = '<span class="tag">Моб. интернет</span>';
+      else if(tr) tag = `<span class="tag">${esc(d.transport)}</span>`;
+      const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
+      return `<div class="item"><div class="ic">📱</div>`+
+        `<div><div class="tt">${esc(d.name||d.id)}</div>`+
+        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}</div></div>`+
+        `<div class="sp"></div>${tag}</div>`;
+    }).join("") : '<div class="muted">нет подключённых</div>';
+  }catch(e){ $("#devices").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
+}
+
+/* ---------- Задачи ---------- */
+async function loadJobs(){
+  try{
+    const jobs = await jget("/api/jobs");
+    $("#jobs").innerHTML = jobs.length ? jobs.map(j => {
+      const pct = j.total ? Math.min(100, Math.round(j.done*100/j.total)) : (j.running?12:100);
+      return `<div class="job"><div class="lbl"><span>${esc(j.label)}</span>`+
+        `<span>${j.running ? j.done+" / "+(j.total||"?") : (j.note||"готово")}</span></div>`+
+        `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
+    }).join("") : '<div class="muted">ничего не выполняется</div>';
+    $("#btnReindex").disabled = jobs.some(j=>j.running) || $("#btnReindex").disabled;
+  }catch(e){}
+}
+
+/* ---------- Журнал ---------- */
+async function loadLog(){
+  try{
+    const log = await jget("/api/log?limit=200");
+    $("#log").innerHTML = log.map(l =>
+      `<div><span class="t">${new Date(l.at).toLocaleTimeString("ru-RU")}</span>&nbsp;&nbsp;`+
+      `<span class="k ${esc(l.kind)}">${esc(l.kind)}</span> ${esc(l.detail||((l.artist||"")+" — "+(l.title||"")))}</div>`
+    ).join("");
+  }catch(e){}
+}
+
+/* ---------- Настройки ---------- */
+async function loadSettings(){
+  if(!window._info){ try{ await loadInfo(); }catch(e){} }
+  const d = window._info;
+  if(!d){ $("#set").innerHTML = '<div class="muted">нет данных</div>'; return; }
+  $("#set").innerHTML =
+    `<div class="f"><b>Адрес для телефона</b><span>${esc(d.addr)}</span></div>`+
+    `<div class="f"><b>База каталога</b><span>${esc(d.db_path||"—")}</span></div>`+
+    `<div class="f"><b>Модель отпечатков</b><span>${d.has_model?"загружена":"нет (onnxruntime.dll / cnn14.onnx рядом с exe)"}</span></div>`+
+    `<div class="f"><b>Треков в каталоге</b><span>${nfmt(d.tracks)}</span></div>`+
+    `<div class="f"><b>Со звуковым отпечатком</b><span>${nfmt(d.with_vector)}</span></div>`+
+    `<div class="f"><b>Файлов музыки</b><span>${nfmt(d.files)}</span></div>`+
+    `<div class="f"><b>Свободно на диске</b><span>${fmtGB(d.disk_free)}</span></div>`+
+    `<div class="f"><b>Работает</b><span>${Math.round((d.uptime_sec||0)/60)} мин</span></div>`;
+}
+
+/* ---------- кнопки каталога ---------- */
+$("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
+$("#btnPick").onclick = async () => {
   let dir = "";
-  try{ if(window.go && window.go.main && window.go.main.Service) dir = await window.go.main.Service.PickFolder(); }catch(e){}
+  try{ if(window.go && window.go.main && window.go.main.Service) dir = await window.go.main.Service.PickFolder(); }
+  catch(e){}
   if(!dir) dir = prompt("Путь к папке с музыкой:", "");
   if(!dir) return;
-  try{ await fetch("/api/scan?dir="+encodeURIComponent(dir),{method:"POST"}).then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); }); }
-  catch(e){ alert("Не запустить скан: "+e); }
+  try{
+    await fetch("/api/scan?dir="+encodeURIComponent(dir),{method:"POST"}).then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); });
+    showView("jobs");
+  }catch(e){ alert("Не запустить скан: "+e); }
 };
-$("#btnReindex").onclick = () => jpost("/api/reindex").catch(e => alert("Переиндексация: "+e));
+$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Переиндексация: "+e));
 $("#btnStop").onclick = () => jpost("/api/stop");
 
-function tick(){ loadInfo(); loadSide(); }
-loadInfo(); loadCatalog(); loadSide();
+/* ---------- обновление ---------- */
+function tick(){
+  loadInfo();
+  const on = id => $("#v-"+id).classList.contains("on");
+  if(on("devices")) loadDevices();
+  if(on("jobs")) loadJobs();
+  if(on("log")) loadLog();
+}
+loadInfo(); loadCatalog();
+showView(location.hash.slice(1) || "catalog");
 setInterval(tick, 2000);
 </script>
 </body>
