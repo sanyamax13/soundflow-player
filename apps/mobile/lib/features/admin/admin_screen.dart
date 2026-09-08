@@ -88,9 +88,19 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     try {
       final bytes = (await downloads.summary()).bytes;
       final r = await sync.sync(musicBytes: bytes);
+      // Кнопка должна делать ПОЛНЫЙ обмен: отдать события И забрать/выполнить
+      // план, который собрали в окне на компе (Alex 08.09.2026 — жал
+      // «Синхронизировать сейчас», а план не подхватывался, качалось только
+      // по таймеру раз в 3 мин).
+      final plan = await downloads.applyPendingPlan();
+      final parts = <String>[
+        if (r.sent > 0) 'отправлено ${r.sent}',
+        if (plan.added > 0) 'скачано ${plan.added}',
+        if (plan.removed > 0) 'убрано ${plan.removed}',
+        if (plan.failed > 0) 'не вышло ${plan.failed}',
+      ];
       messenger.showSnackBar(SnackBar(
-        content: Text(
-            r.sent == 0 ? 'Новых событий не было' : 'Отправлено событий: ${r.sent}'),
+        content: Text(parts.isEmpty ? 'Всё уже синхронизировано' : parts.join(', ')),
       ));
     } catch (_) {
       messenger.showSnackBar(const SnackBar(content: Text('Сервер не ответил')));
