@@ -69,21 +69,25 @@ void main() {
   });
 
   testWidgets(
-      'Поток со скачанным — полноэкранный плеер с кнопкой play, сам не заводит (06.09.2026)',
+      'Поток со скачанным — полноэкранный плеер, сам не заводит (06.09.2026)',
       (tester) async {
-    await tester.pumpWidget(await _app(downloaded: [
+    final app = await _app(downloaded: [
       DownloadedTrack(
           id: 'a', title: 'Песня А', artist: 'Кто-то', path: '/tmp/a', bytes: 10, addedAt: 1),
       DownloadedTrack(
           id: 'b', title: 'Песня Б', artist: 'Кто-то', path: '/tmp/b', bytes: 20, addedAt: 2),
-    ]));
-    await tester.pumpAndSettle();
+    ]);
+    await tester.binding.setSurfaceSize(const Size(400, 860));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(app);
+    // Не pumpAndSettle: в тесте нет аудиоплагина, у плеера висят стримы.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
-    // Вкладка сразу показывает полноэкранный плеер (PlayerView + стартовый вид
-    // с большой кнопкой play). Строки «Слушать вперемешку — N песен» нет; сама
-    // музыка не заводится — только по нажатию (Alex 06.09.2026).
+    // Вкладка показывает полноэкранный плеер, а не голую кнопку play. Строки
+    // «Слушать вперемешку — N песен» нет; музыка не заводится сама — только
+    // по нажатию (Alex 06.09.2026: очередь заряжается на паузе).
     expect(find.byType(PlayerView), findsOneWidget);
-    expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
     expect(find.textContaining('Слушать вперемешку'), findsNothing);
   });
 }

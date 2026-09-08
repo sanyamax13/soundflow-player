@@ -115,7 +115,18 @@ class PlayerController {
     if (p != null) return p;
     final np = AudioPlayer();
     _subs.add(np.playbackEventStream.listen((_) {}, onError: _onPlaybackError));
-    _subs.add(np.playingStream.listen((v) => playing.value = v));
+    _subs.add(np.playingStream.listen((v) {
+      playing.value = v;
+      // Событие «слушал» — по факту начала воспроизведения (в т.ч. первый
+      // play по заряженной на паузе очереди «Потока»). Дедуп по _lastPlayId.
+      if (v) {
+        final t = now.value;
+        if (t != null && t.id != _lastPlayId) {
+          _lastPlayId = t.id;
+          onPlay?.call(t);
+        }
+      }
+    }));
     _subs.add(np.positionStream.listen((v) => position.value = v));
     _subs.add(np.durationStream.listen((v) {
       duration.value = v ?? Duration.zero;
@@ -133,8 +144,10 @@ class PlayerController {
       _index = i;
       final track = _queue[i];
       now.value = track;
-      // Событие «слушал» — только на смену трека, а не на каждый повтор по кругу.
-      if (track.id != _lastPlayId) {
+      // Авто-переход к следующему во время игры — тоже «слушал». На паузе
+      // (зарядка очереди «Потока») не пишем — это сделает playingStream по
+      // нажатию play. Дедуп по _lastPlayId.
+      if (track.id != _lastPlayId && (_player?.playing ?? false)) {
         _lastPlayId = track.id;
         onPlay?.call(track);
       }
@@ -146,12 +159,15 @@ class PlayerController {
     return np;
   }
 
-  /// Поставить очередь и начать играть с [startIndex].
+  /// Поставить очередь и начать играть с [startIndex]. [autoplay] = false —
+  /// только зарядить очередь (плеер на паузе): вкладка «Поток» так показывает
+  /// полный плеер с обложкой и кнопками ещё до нажатия play.
   Future<void> playQueue(
     List<NowPlaying> tracks, {
     int startIndex = 0,
     bool shuffle = false,
     bool loop = true,
+    bool autoplay = true,
   }) async {
     if (tracks.isEmpty) return;
     _queue = List.of(tracks);
@@ -173,7 +189,7 @@ class PlayerController {
       await p.setAudioSource(src, initialIndex: _index, initialPosition: Duration.zero);
       now.value = _queue[_index];
       // currentIndexStream отдаст этот же индекс и запишет play — второй раз тут не зовём.
-      await p.play();
+      if (autoplay) await p.play();
     } catch (e, st) {
       // Не роняем экран, с которого запустили: пишем в чёрный ящик, дальше
       // авто-перескок по битым разрулит _onPlaybackError.
