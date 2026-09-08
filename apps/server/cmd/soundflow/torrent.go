@@ -209,6 +209,8 @@ func (s *Service) addAlbumTracks(ctx context.Context, tracks []struct {
 		if t.Artist == "" || t.Title == "" || t.FilePath == "" {
 			continue
 		}
+		// правило: без рекламных хвостов качалок в метаданных
+		t.Artist, t.Title, t.Album = quality.CleanTags(t.Artist, t.Title, t.Album)
 		key := quality.NormalizedKey(t.Artist, t.Title)
 		if ex, err := s.store.TrackByKey(ctx, key); err == nil && ex != nil {
 			skipped++

@@ -60,6 +60,10 @@ type Result struct {
 }
 
 func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
+	// 0. Правило (Alex 08.09.2026): в каталог не пускаем рекламные хвосты
+	//    качалок в метаданных — «(Muzjazz.com)», «[mp3xa.cc]», «t.me/…».
+	req.Artist, req.Title, _ = quality.CleanTags(req.Artist, req.Title, "")
+
 	// 1. Отсев по названию (концерт/караоке/мусор) — не тратим цепочку на мусор.
 	if v := quality.Screen(req.Artist, req.Title, ""); !v.OK {
 		return Result{Reason: v.Reason}, ErrRejected

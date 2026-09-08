@@ -107,6 +107,9 @@ func importOne(ctx context.Context, p Store, pm pathmap.Mapper, localPath, mime 
 			title = t2
 		}
 	}
+	// Правило (Alex 08.09.2026): срезать рекламные хвосты качалок из тегов
+	// («(Topmuzon.net)», « by www.2baksa.net», «t.me/…»).
+	artist, title, album = quality.CleanTags(artist, title, album)
 
 	if v := quality.Screen(artist, title, ""); !v.OK {
 		return errSkip
