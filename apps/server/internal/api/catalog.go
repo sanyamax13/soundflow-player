@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -189,9 +190,23 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(data)
 		return
 	}
-	if url, found, err := s.DB.TrackCoverURL(r.Context(), id); err == nil && found && strings.HasPrefix(url, "http") {
-		http.Redirect(w, r, url, http.StatusFound)
-		return
+	if url, found, err := s.DB.TrackCoverURL(r.Context(), id); err == nil && found {
+		// ИИ-нарисованная обложка (этап 28): в БД лежит абсолютная ссылка на
+		// ручку /v1/generated-covers/, исторически с IP старого сервера fg.
+		// fg гаснет (курс «сервер в одном приложении») — не редиректим наружу,
+		// а отдаём PNG сами из GeneratedCoversDir по имени файла.
+		if i := strings.Index(url, "/v1/generated-covers/"); i >= 0 && s.GeneratedCoversDir != "" {
+			p := filepath.Join(s.GeneratedCoversDir, filepath.Base(url[i+len("/v1/generated-covers/"):]))
+			if st, err := os.Stat(p); err == nil && !st.IsDir() {
+				w.Header().Set("Cache-Control", "public, max-age=604800")
+				http.ServeFile(w, r, p)
+				return
+			}
+		}
+		if strings.HasPrefix(url, "http") {
+			http.Redirect(w, r, url, http.StatusFound)
+			return
+		}
 	}
 	http.NotFound(w, r)
 }

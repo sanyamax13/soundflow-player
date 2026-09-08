@@ -39,13 +39,21 @@ func (s *Service) startPhoneServer() {
 		}
 	}
 
+	// ИИ-нарисованные обложки (этап 28): по умолчанию — папка рядом с базой
+	// (E:\soundflow-data\generated_covers), env перебивает. Раньше их отдавал
+	// fg; курс «сервер в одном приложении» — отдаём отсюда.
+	gcov := cfg.GeneratedCoversDir
+	if gcov == "" {
+		gcov = filepath.Join(filepath.Dir(s.dbPath), "generated_covers")
+	}
+
 	store := litestore.New(s.db)
 	apiSrv := &api.Server{
 		DB:                 store,
 		Music:              music.New(cfg.MusicDir),
 		PathMap:            pm,
 		StartedAt:          s.startedAt,
-		GeneratedCoversDir: cfg.GeneratedCoversDir,
+		GeneratedCoversDir: gcov,
 	}
 	s.phoneAPI = apiSrv // окну нужен для строки «качает прямо сейчас»
 	s.store = store     // окну нужен для acquire («Найти трек»)
