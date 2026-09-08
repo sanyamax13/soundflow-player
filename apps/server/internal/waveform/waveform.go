@@ -80,7 +80,7 @@ func Bars(pcm []float32, n int) []byte {
 		if hi <= 1e-6 {
 			return nil // тишина
 		}
-		lo, hi = 0, hi // почти ровный трек — растягиваем от нуля
+		lo = 0 // почти ровный трек — растягиваем от нуля
 	}
 
 	out := make([]byte, n)

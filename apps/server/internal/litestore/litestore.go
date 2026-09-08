@@ -106,7 +106,9 @@ func (s *Store) NextLibraryBatch(ctx context.Context, excludeIDs []string, budge
 }
 
 func (s *Store) OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) ([]string, bool, error) {
-	return s.d.OrderBySimilarity(seedID, candidateIDs)
+	// «Умное радио» (TASTE-PLAN §7): OrderRadio учитывает вкус поверх
+	// близости звука; нет сигналов вкуса — он сам падает на чистый косинус.
+	return s.d.OrderRadio(seedID, candidateIDs)
 }
 
 func (s *Store) TrackFilePath(ctx context.Context, trackID string) (string, bool, error) {
