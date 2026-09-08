@@ -49,7 +49,11 @@ Future<void> _boot() async {
   final downloads = DownloadsRepo(api, db, sync);
   final player = PlayerController(
     onPlay: (m) => sync.record('play', trackId: m.id),
-    onSkip: (m) => sync.record('skip', trackId: m.id),
+    onSkip: (m, pos, total) => sync.record('skip', trackId: m.id, payload: {
+      'position_ms': pos.inMilliseconds,
+      'duration_ms': total.inMilliseconds,
+    }),
+    onComplete: (m) => sync.record('complete', trackId: m.id),
     onDuration: (id, total) => downloads.noteFileMeta(id, total),
   );
   // Медиа-сессия Android — чтобы кнопки на Bluetooth-магнитоле в машине,

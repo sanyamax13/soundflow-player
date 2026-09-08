@@ -11,9 +11,14 @@ import '../../core/crash_log.dart';
 /// `audio_service` (см. audio_handler.dart). Гэплесс, нормализация —
 /// следующими шагами.
 class PlayerController {
-  PlayerController({this.onPlay, this.onSkip, this.onDuration}) {
+  PlayerController({this.onPlay, this.onSkip, this.onComplete, this.onDuration}) {
     _initSession();
   }
+
+  // true между вызовом next/prev/jumpTo и приходом нового индекса — чтобы
+  // авто-переход (трек доиграл) не спутать с ручным перескоком.
+  bool _userSeek = false;
+  int _prevIndex = -1;
 
   // Пришло что-то поверх музыки (голосовое в мессенджере, звонок) и это
   // временно (не насовсем отдали фокус другому приложению) — запоминаем,
@@ -45,8 +50,13 @@ class PlayerController {
   /// сюда вешаем запись события «слушал».
   final void Function(NowPlaying meta)? onPlay;
 
-  /// Вызывается, когда пользователь сам перескочил вперёд/назад — событие «пропуск».
-  final void Function(NowPlaying meta)? onSkip;
+  /// Пользователь сам перескочил вперёд/назад — событие «пропуск». Отдаём
+  /// позицию и длительность: сервер по ним отличает «бросил сразу» от
+  /// «дослушал почти до конца» (обучение вкусу, TASTE-PLAN §1).
+  final void Function(NowPlaying meta, Duration position, Duration total)? onSkip;
+
+  /// Трек доиграл сам до конца (не перескок) — событие «дослушал».
+  final void Function(NowPlaying meta)? onComplete;
 
   /// Плеер узнал длительность играющего файла — повод записать её (и оценку
   /// битрейта) в «Мою музыку», если там ещё нет (Alex TG 18704).
@@ -114,6 +124,12 @@ class PlayerController {
     }));
     _subs.add(np.currentIndexStream.listen((i) {
       if (i == null || i < 0 || i >= _queue.length) return;
+      // Индекс сменился сам (не перескоком) → предыдущий трек доиграл до конца.
+      if (i != _prevIndex && _prevIndex >= 0 && _prevIndex < _queue.length) {
+        if (!_userSeek) onComplete?.call(_queue[_prevIndex]);
+      }
+      _userSeek = false;
+      _prevIndex = i;
       _index = i;
       final track = _queue[i];
       now.value = track;
@@ -140,6 +156,8 @@ class PlayerController {
     if (tracks.isEmpty) return;
     _queue = List.of(tracks);
     _index = startIndex.clamp(0, tracks.length - 1);
+    _prevIndex = _index; // новая очередь — не считаем сменой трека
+    _userSeek = false;
     _lastPlayId = null;
     _consecutiveErrors = 0;
     radio.value = false;
@@ -167,10 +185,17 @@ class PlayerController {
   Future<void> playSingle(NowPlaying track) =>
       playQueue([track], startIndex: 0, loop: false);
 
+  void _reportSkip() {
+    final p = _player;
+    _userSeek = true;
+    onSkip?.call(now.value ?? _queue[_index],
+        p?.position ?? Duration.zero, p?.duration ?? Duration.zero);
+  }
+
   Future<void> next() async {
     final p = _player;
     if (p == null) return;
-    onSkip?.call(now.value ?? _queue[_index]);
+    _reportSkip();
     await p.seekToNext();
   }
 
@@ -182,7 +207,7 @@ class PlayerController {
       await p.seek(Duration.zero);
       return;
     }
-    onSkip?.call(now.value ?? _queue[_index]);
+    _reportSkip();
     await p.seekToPrevious();
   }
 
@@ -196,7 +221,7 @@ class PlayerController {
   Future<void> jumpTo(int i) async {
     final p = _player;
     if (p == null || i < 0 || i >= _queue.length) return;
-    onSkip?.call(now.value ?? _queue[_index]);
+    _reportSkip();
     await p.seek(Duration.zero, index: i);
   }
 
