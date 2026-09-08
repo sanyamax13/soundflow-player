@@ -11,7 +11,7 @@
     --lime:#b2ff00; --lime-ink:#0a0a0a; --ok:#3f9e1e; --err:#d13a30; --warn:#b98900;
   }
   *{box-sizing:border-box; margin:0; padding:0}
-  html,body{height:100%}
+  html,body{height:100%; overflow:hidden}
   body{font-family:Inter,"Segoe UI",system-ui,sans-serif; color:var(--ink);
     background:var(--bg); display:flex; flex-direction:column; overflow:hidden}
 
@@ -39,7 +39,7 @@
   .nav .gap{flex:1}
   .nav .ver{font-size:10px; color:var(--faint); padding:0 11px}
 
-  .main{flex:1; display:flex; flex-direction:column; min-width:0}
+  .main{flex:1; display:flex; flex-direction:column; min-width:0; min-height:0}
   .view{flex:1; display:none; flex-direction:column; min-width:0; padding:14px 16px; overflow:auto}
   .view.on{display:flex}
   .view h2{font-size:15px; margin-bottom:12px}
@@ -289,7 +289,7 @@
       <section class="view" id="v-devices">
         <div id="devList">
           <h2>Устройства</h2>
-          <div class="list" id="devices"><div class="muted">нет подключённых</div></div>
+          <div class="list" id="devicesList"><div class="muted">нет подключённых</div></div>
         </div>
         <div id="devDetail" hidden></div>
       </section>
@@ -321,13 +321,13 @@
       <!-- Задачи -->
       <section class="view" id="v-jobs">
         <h2>Задачи</h2>
-        <div id="jobs"><div class="muted">ничего не выполняется</div></div>
+        <div id="jobsList"><div class="muted">ничего не выполняется</div></div>
       </section>
 
       <!-- Журнал -->
       <section class="view" id="v-log">
         <h2>Журнал сервера</h2>
-        <div class="logrows" id="log"></div>
+        <div class="logrows" id="logRows"></div>
       </section>
 
       <!-- Настройки -->
@@ -376,6 +376,10 @@ function showView(name){
   document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.dataset.v===name));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id==="v-"+name));
   if(location.hash.slice(1).split("?")[0] !== name) location.hash = name;
+  // hash совпадает с id внутреннего блока (#devices/#jobs/#log) → браузер
+  // прокручивает к нему и шапка уезжает за верх окна (body overflow:hidden,
+  // вернуть нечем). Сбрасываем прокрутку документа (Alex 08.09.2026).
+  document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
   if(name==="find") loadAcqLog();
   if(name==="devices") loadDevices();
   if(name==="taste") loadTaste();
@@ -644,7 +648,7 @@ async function loadDevices(){
   $("#devDetail").hidden = true; $("#devList").hidden = false;
   try{
     const devs = await jget("/api/devices");
-    $("#devices").innerHTML = devs.length ? devs.map(d => {
+    $("#devicesList").innerHTML = devs.length ? devs.map(d => {
       const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
       const gb = d.music_bytes ? " · "+ (d.music_bytes/1073741824).toFixed(1) +" ГБ" : "";
       let dl = "";
@@ -659,7 +663,7 @@ async function loadDevices(){
         `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}</div>`+
         `${_devTag(d.transport)}<span style="color:var(--faint);margin-left:8px">›</span></div>`;
     }).join("") : '<div class="muted">нет подключённых. Открой SoundFlow на телефоне и впиши адрес этого компа.</div>';
-  }catch(e){ $("#devices").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
+  }catch(e){ $("#devicesList").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
 }
 
 /* --- телефон в программе: плитки по исполнителям (Alex 08.09.2026, вариант 4) --- */
@@ -749,7 +753,7 @@ function _devRender(){
   inp.addEventListener("input", e=>{ _devQ = e.target.value.trim(); _devBody(); });
   _devBody();
   // курсор в конец, чтобы можно было продолжать печатать после перерисовки
-  if (_devQ){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  if (_devQ){ inp.focus({preventScroll:true}); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
 let _devQ = "";
@@ -928,7 +932,7 @@ $("#syncNext").onclick = async () => {
 async function loadJobs(){
   try{
     const jobs = await jget("/api/jobs");
-    $("#jobs").innerHTML = jobs.length ? jobs.map(j => {
+    $("#jobsList").innerHTML = jobs.length ? jobs.map(j => {
       const pct = j.total ? Math.min(100, Math.round(j.done*100/j.total)) : (j.running?12:100);
       return `<div class="job"><div class="lbl"><span>${esc(j.label)}</span>`+
         `<span>${j.running ? j.done+" / "+(j.total||"?") : (j.note||"готово")}</span></div>`+
@@ -942,7 +946,7 @@ async function loadJobs(){
 async function loadLog(){
   try{
     const log = await jget("/api/log?limit=200");
-    $("#log").innerHTML = log.map(l =>
+    $("#logRows").innerHTML = log.map(l =>
       `<div><span class="t">${new Date(l.at).toLocaleTimeString("ru-RU")}</span>&nbsp;&nbsp;`+
       `<span class="k ${esc(l.kind)}">${esc(l.kind)}</span> ${esc(l.detail||((l.artist||"")+" — "+(l.title||"")))}</div>`
     ).join("");
