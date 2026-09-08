@@ -115,6 +115,7 @@ class TorrentSearchRequest(BaseModel):
 class TorrentCandidate(BaseModel):
     tracker: str
     forum_url: str
+    dl_ref: str = ""      # ссылка/id для скачивания .torrent (обратно в /download)
     magnet: str | None = None
     title: str            # как на трекере
     album: str | None = None
@@ -147,9 +148,9 @@ async def torrent_search(req: TorrentSearchRequest) -> TorrentSearchResponse:
 class TorrentDownloadRequest(BaseModel):
     tracker: str
     forum_url: str
-    magnet: str | None = None
+    dl_ref: str = ""     # из TorrentCandidate.dl_ref
     # Опционально: если задан — из альбома вытащить именно этот трек как
-    # «целевой» (для extra_tracks). Пусто — весь альбом равнозначно.
+    # «целевой». Пусто — весь альбом равнозначно.
     want_title: str | None = None
 
 
@@ -166,7 +167,7 @@ async def torrent_download(req: TorrentDownloadRequest) -> TorrentDownloadRespon
     mp3 (canonical пути) для добавления в каталог."""
     log.info("torrent/download: tracker=%s url=%s", req.tracker, req.forum_url)
     from .providers.torrent_browse import download_pick
-    result = await download_pick(req.tracker, req.forum_url, req.magnet, req.want_title)
+    result = await download_pick(req.tracker, req.forum_url, req.dl_ref, req.want_title)
     if result is None:
         return TorrentDownloadResponse(found=False, error="не удалось скачать")
     return TorrentDownloadResponse(

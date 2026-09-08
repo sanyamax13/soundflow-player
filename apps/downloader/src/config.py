@@ -67,6 +67,7 @@ class Config:
     rutracker_pass: str
     rutracker_cookie: str  # "bb_session=...; bb_data=..." из браузера: вход требует капчу
     nnmclub_cookie: str  # "phpbb2mysql_4_data=...; phpbb2mysql_4_sid=..." из браузера (капча)
+    rustorka_cookie: str  # "bb_session=...; bb_ssl=..." из браузера (TorrentPier)
     # CANONICAL paths которые sidecar возвращает API (БД хранит их as-is).
     # На brain == local (no-op). На fg: local=D:\SoundFlow\*, canonical=E:\soundflow-data\*.
     canonical_cache_dir: Path
@@ -139,6 +140,7 @@ class Config:
             rutracker_pass=os.environ.get("RUTRACKER_PASS", ""),
             rutracker_cookie=os.environ.get("RUTRACKER_COOKIE", ""),
             nnmclub_cookie=os.environ.get("NNMCLUB_COOKIE", ""),
+            rustorka_cookie=os.environ.get("RUSTORKA_COOKIE", ""),
             canonical_cache_dir=(
                 Path(canonical_cache_env) if canonical_cache_env else track_cache
             ),

@@ -45,6 +45,7 @@ def _cfg(
         rutracker_pass="",
         rutracker_cookie="",
         nnmclub_cookie="",
+        rustorka_cookie="",
         canonical_cache_dir=canon_cache,
         canonical_albums_dir=canon_albums,
     )

@@ -44,6 +44,8 @@ type Service struct {
 	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
 	acqT      *acqTracker // последние попытки «Найти трек»
+	torOnce   sync.Once
+	torT      *torTracker // последние закачки «Торренты — обзор»
 	startedAt time.Time
 	frontend  embed.FS
 	mu        sync.Mutex
@@ -154,6 +156,9 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Post("/api/stop", s.hStop)
 	r.Post("/api/acquire", s.hAcquire)
 	r.Get("/api/acquire/log", s.hAcquireLog)
+	r.Post("/api/torrent/search", s.hTorrentSearch)
+	r.Post("/api/torrent/download", s.hTorrentDownload)
+	r.Get("/api/torrent/log", s.hTorrentLog)
 	r.Get("/audio/{id}", s.hAudio)
 	r.Get("/api/cover/{id}", s.hCover)
 }

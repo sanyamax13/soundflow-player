@@ -61,7 +61,9 @@ RUTOR_BASE = "https://rutor.info"
 RUTOR_SEARCH_URL_TEMPLATE = (
     RUTOR_BASE + "/search/0/2/110/2/{query}"
 )  # category=Music(2), method=all-words(1), in=name+desc(1), sort=seeders desc(2)
-RUTOR_HTML_ENCODING = "cp1251"
+# rutor.info отдаёт UTF-8 (раньше был cp1251). cp1251 давал mojibake
+# «Р»СѓС‡С€РёС…» в списке релизов (08.09.2026).
+RUTOR_HTML_ENCODING = "utf-8"
 
 MIN_ALBUM_SIZE = 30 * 1024 * 1024
 MAX_ALBUM_SIZE = 300 * 1024 * 1024

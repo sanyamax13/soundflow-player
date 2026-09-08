@@ -203,6 +203,51 @@ func (d *downloaderProc) shutdown() {
 	}
 }
 
+// ensureQBittorrent — торрент-режиму нужен запущенный qBittorrent с включённым
+// Web UI (порт 8080, логин из downloader/.env). Если порт молчит — пробуем
+// запустить qbittorrent.exe. Web UI и пароль пользователь настраивает в самом
+// qBittorrent один раз (Настройки → Web UI).
+func ensureQBittorrent() error {
+	cl := &http.Client{Timeout: 2 * time.Second}
+	if resp, err := cl.Get("http://127.0.0.1:8080/"); err == nil {
+		resp.Body.Close()
+		return nil
+	}
+	exe := ""
+	for _, c := range []string{
+		os.Getenv("SOUNDFLOW_QBITTORRENT"),
+		`C:\Program Files\qBittorrent\qbittorrent.exe`,
+		`C:\Program Files (x86)\qBittorrent\qbittorrent.exe`,
+	} {
+		if c != "" {
+			if _, err := os.Stat(c); err == nil {
+				exe = c
+				break
+			}
+		}
+	}
+	if exe == "" {
+		return fmt.Errorf("qBittorrent не найден — поставь его для торрент-режима")
+	}
+	cmd := exec.Command(exe)
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("не смог запустить qBittorrent: %w", err)
+	}
+	// Дать Web UI подняться.
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if resp, err := cl.Get("http://127.0.0.1:8080/"); err == nil {
+			resp.Body.Close()
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("qBittorrent запущен, но Web UI на :8080 не ответил — включи Web UI в настройках qBittorrent")
+}
+
 // hideChildWindow — не показывать консольное окно дочернего python на Windows.
 func hideChildWindow(cmd *exec.Cmd) {
 	if runtime.GOOS != "windows" {
