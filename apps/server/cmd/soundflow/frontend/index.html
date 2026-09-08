@@ -267,8 +267,11 @@
 
       <!-- Устройства -->
       <section class="view" id="v-devices">
-        <h2>Устройства</h2>
-        <div class="list" id="devices"><div class="muted">нет подключённых</div></div>
+        <div id="devList">
+          <h2>Устройства</h2>
+          <div class="list" id="devices"><div class="muted">нет подключённых</div></div>
+        </div>
+        <div id="devDetail" hidden></div>
       </section>
 
       <!-- Окно ручной синхронизации -->
@@ -608,18 +611,22 @@ async function loadTorLog(){
 }
 
 /* ---------- Устройства ---------- */
+function _devTag(tr){
+  tr = (tr||"").toLowerCase();
+  if(tr==="wifi") return '<span class="tag wifi">Wi-Fi</span>';
+  if(tr==="ethernet"||tr==="wire"||tr==="usb") return '<span class="tag wire">Провод</span>';
+  if(tr==="mobile") return '<span class="tag">Моб. интернет</span>';
+  if(tr) return `<span class="tag">${esc(tr)}</span>`;
+  return '<span class="tag">связь неизвестна</span>';
+}
+
 async function loadDevices(){
+  $("#devDetail").hidden = true; $("#devList").hidden = false;
   try{
     const devs = await jget("/api/devices");
     $("#devices").innerHTML = devs.length ? devs.map(d => {
-      const tr = (d.transport||"").toLowerCase();
-      let tag = '<span class="tag">связь неизвестна</span>';
-      if(tr==="wifi") tag = '<span class="tag wifi">Wi-Fi</span>';
-      else if(tr==="ethernet"||tr==="wire"||tr==="usb") tag = '<span class="tag wire">Провод</span>';
-      else if(tr==="mobile") tag = '<span class="tag">Моб. интернет</span>';
-      else if(tr) tag = `<span class="tag">${esc(d.transport)}</span>`;
       const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
-      const gb = d.music_bytes ? " · на телефоне "+ (d.music_bytes/1073741824).toFixed(1) +" ГБ" : "";
+      const gb = d.music_bytes ? " · "+ (d.music_bytes/1073741824).toFixed(1) +" ГБ" : "";
       let dl = "";
       const p = d.download;
       if(p && p.active){
@@ -627,13 +634,64 @@ async function loadDevices(){
         dl = `<div class="dlrow"><div class="dlline">качает: ${esc(p.current||"…")} — ${nfmt(p.done)} из ${nfmt(p.total)}</div>`+
              `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
       }
-      return `<div class="item"><div class="ic">📱</div>`+
+      return `<div class="item" style="cursor:pointer" onclick="openDevice('${esc(d.id)}')"><div class="ic">📱</div>`+
         `<div class="grow"><div class="tt">${esc(d.name||d.id)}</div>`+
-        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}`+
-        `<button class="btn" style="margin-top:8px;height:32px" onclick="openSync('${esc(d.id)}','${esc(d.name||d.id)}')">Синхронизировать</button></div>`+
-        `${tag}</div>`;
-    }).join("") : '<div class="muted">нет подключённых</div>';
+        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}</div>`+
+        `${_devTag(d.transport)}<span style="color:var(--faint);margin-left:8px">›</span></div>`;
+    }).join("") : '<div class="muted">нет подключённых. Открой SoundFlow на телефоне и впиши адрес этого компа.</div>';
   }catch(e){ $("#devices").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
+}
+
+/* --- телефон как в iTunes: список его песен + управление --- */
+let _devOnDev = [];   // песни на телефоне
+let _devCur = "";
+
+async function openDevice(id){
+  _devCur = id;
+  $("#devList").hidden = true;
+  const box = $("#devDetail");
+  box.hidden = false;
+  box.innerHTML = '<div class="muted">открываю телефон…</div>';
+  try{
+    const [devs, prev] = await Promise.all([
+      jget("/api/devices"),
+      jget("/api/devices/"+encodeURIComponent(id)+"/sync-preview"),
+    ]);
+    const d = (devs||[]).find(x=>x.id===id) || {id, name:id};
+    _devOnDev = (prev.on_device||[]).slice().sort((a,b)=>
+      ((a.artist||"")+" "+(a.title||"")).localeCompare((b.artist||"")+" "+(b.title||""),"ru"));
+    const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
+    const gb = d.music_bytes ? (d.music_bytes/1073741824).toFixed(1)+" ГБ" : "—";
+    box.innerHTML =
+      `<div class="bar">`+
+        `<button class="btn" onclick="loadDevices()">‹ Устройства</button>`+
+        `<h2 style="margin:0;flex:1">${esc(d.name||id)}</h2>`+
+        `${_devTag(d.transport)}</div>`+
+      `<div class="sum"><b>${nfmt(_devOnDev.length)}</b> песен на телефоне · ${gb} · `+
+        `в каталоге ещё <b>${nfmt((prev.add||[]).length)}</b> · последняя связь ${last}</div>`+
+      `<div class="bar">`+
+        `<input class="search" id="devSearch" placeholder="поиск по песням на телефоне…">`+
+        `<button class="btn primary" onclick="openSync('${esc(id)}','${esc(d.name||id)}')">Изменить состав</button>`+
+        `<button class="btn" onclick="openDevice('${esc(id)}')">Обновить</button>`+
+      `</div>`+
+      `<div class="tree" id="devSongs" style="min-height:200px"></div>`;
+    $("#devSearch").addEventListener("input", e=> _devRenderSongs(e.target.value.trim().toLowerCase()));
+    _devRenderSongs("");
+  }catch(e){ box.innerHTML = '<div class="muted">не открыть: '+esc(""+e)+'<br><button class="btn" onclick="loadDevices()">назад</button></div>'; }
+}
+
+function _devRenderSongs(q){
+  const box = $("#devSongs"); if(!box) return;
+  let arr = _devOnDev;
+  if(q) arr = arr.filter(t => ((t.artist||"")+" "+(t.title||"")).toLowerCase().includes(q));
+  const shown = arr.slice(0, 800);
+  box.innerHTML = shown.length
+    ? shown.map(t =>
+        `<div class="row track"><span class="ti">${esc(t.title||t.id)}</span>`+
+        `<span class="sp"></span><span class="meta">${esc(t.artist||"")}</span>`+
+        `<span class="meta" style="margin-left:12px">${t.size_bytes?gb(t.size_bytes):""}</span></div>`
+      ).join("") + (arr.length>shown.length ? `<div class="muted">…и ещё ${nfmt(arr.length-shown.length)}. Уточни поиском.</div>` : "")
+    : (q ? '<div class="muted">ничего не найдено</div>' : '<div class="muted">на телефоне пока пусто</div>');
 }
 
 /* --- ручная синхронизация: окно выбора --- */
@@ -934,7 +992,7 @@ function tick(){
   loadInfo();
   const on = id => $("#v-"+id).classList.contains("on");
   if(on("find")){ if($("#fm-torrent").hidden) loadAcqLog(); else loadTorLog(); }
-  if(on("devices")) loadDevices();
+  if(on("devices") && $("#devDetail").hidden) loadDevices();  // не дёргать открытый телефон
   if(on("jobs")) loadJobs();
   if(on("log")) loadLog();
 }
