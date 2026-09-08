@@ -172,6 +172,25 @@
   .player .seek .rng{flex:1; accent-color:var(--ok)}
   .player .seek .tm{font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap}
   .player.empty .cov,.player.empty .now,.player.empty .seek{opacity:.4}
+
+  /* Вкус */
+  .taste-sum{display:flex; gap:20px; flex-wrap:wrap; font-size:12px; color:var(--mut); margin-bottom:14px}
+  .taste-sum b{color:var(--ink); font-size:14px}
+  .taste-cols{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px}
+  .taste-col{flex:1; min-width:230px; border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .taste-col h3{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut);
+    font-weight:800; padding:10px 12px; background:var(--head); border-bottom:1px solid var(--line); margin:0}
+  .taste-col .tr{display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12.5px; border-bottom:1px solid var(--line)}
+  .taste-col .tr:last-child{border-bottom:none}
+  .taste-col .tr .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .taste-col .tr .sp{flex:1}
+  .taste-col .tr .sc{font-variant-numeric:tabular-nums; font-weight:700}
+  .taste-col .tr .sc.pos{color:var(--ok)}
+  .taste-col .tr .sc.neg{color:var(--err)}
+  .clu{border:1px solid var(--line); border-radius:10px; padding:11px 14px; margin-bottom:10px}
+  .clu .ch{font-size:12px; font-weight:700; margin-bottom:6px}
+  .clu .ex{font-size:12px; color:var(--mut); padding:2px 0}
+  .taste-h{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:6px 0 10px}
 </style>
 </head>
 <body>
@@ -189,6 +208,7 @@
       <a data-v="catalog" class="on">Каталог</a>
       <a data-v="find">Найти и скачать</a>
       <a data-v="devices">Устройства</a>
+      <a data-v="taste">Вкус</a>
       <a data-v="jobs">Задачи</a>
       <a data-v="log">Журнал</a>
       <a data-v="settings">Настройки</a>
@@ -262,6 +282,15 @@
         </div>
       </div>
 
+      <!-- Вкус -->
+      <section class="view" id="v-taste">
+        <div class="bar">
+          <h2 style="margin:0;flex:1">Что программа поняла про вкус</h2>
+          <button class="btn" id="tasteRebuild">Пересобрать</button>
+        </div>
+        <div id="tasteBody"><div class="muted">загрузка…</div></div>
+      </section>
+
       <!-- Задачи -->
       <section class="view" id="v-jobs">
         <h2>Задачи</h2>
@@ -313,7 +342,7 @@ async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(awai
 async function jpost(u){ const r = await fetch(u,{method:"POST"}); return r.ok ? r.json().catch(()=>({})) : Promise.reject(await r.text()); }
 
 /* ---------- навигация по разделам ---------- */
-const VIEWS = ["catalog","find","devices","jobs","log","settings"];
+const VIEWS = ["catalog","find","devices","taste","jobs","log","settings"];
 function showView(name){
   name = (name||"").split("?")[0];               // #find?tq=... → find
   if(!VIEWS.includes(name)) name = "catalog";
@@ -322,6 +351,7 @@ function showView(name){
   if(location.hash.slice(1).split("?")[0] !== name) location.hash = name;
   if(name==="find") loadAcqLog();
   if(name==="devices") loadDevices();
+  if(name==="taste") loadTaste();
   if(name==="jobs") loadJobs();
   if(name==="log") loadLog();
   if(name==="settings") loadSettings();
@@ -666,6 +696,66 @@ async function loadLog(){
   }catch(e){}
 }
 
+/* ---------- Вкус ---------- */
+function plural(n, one, few, many){
+  n = Math.abs(n) % 100; const n1 = n % 10;
+  if(n > 10 && n < 20) return many;
+  if(n1 > 1 && n1 < 5) return few;
+  if(n1 === 1) return one;
+  return many;
+}
+function tasteCol(title, rows, kind, withTitle){
+  const body = (rows && rows.length)
+    ? rows.map(r => {
+        const nm = withTitle ? `${esc(r.artist)} — ${esc(r.title)}` : esc(r.artist);
+        const s = Math.round(r.score);
+        return `<div class="tr"><span class="nm">${nm}</span><span class="sp"></span>`+
+          `<span class="sc ${kind}">${kind==="pos"?"+":""}${s}</span></div>`;
+      }).join("")
+    : '<div class="tr"><span class="nm" style="color:var(--faint)">пока пусто</span></div>';
+  return `<div class="taste-col"><h3>${title}</h3>${body}</div>`;
+}
+async function loadTaste(){
+  const box = $("#tasteBody");
+  try{
+    const d = await jget("/api/taste");
+    const t = d.totals || {};
+    const sum = `<div class="taste-sum">`+
+      `<span><b>${nfmt(t.events)}</b> сигналов</span>`+
+      `<span><b>${nfmt(t.likes)}</b> лайков</span>`+
+      `<span><b>${nfmt(t.dislikes)}</b> не зашло</span>`+
+      `<span><b>${nfmt(t.skips)}</b> пропусков</span>`+
+      `<span><b>${nfmt(t.finishes)}</b> дослушано</span>`+
+      `<span><b>${nfmt(t.artists)}</b> исполнителей</span></div>`;
+
+    if((t.events||0) === 0){
+      box.innerHTML = sum +
+        '<div class="muted">Пока мало действий. Послушай музыку в приложении, ставь сердечки, убирай лишнее — '+
+        'потом нажми «Пересобрать», и здесь появится картина вкуса: кого любишь, что не заходит, '+
+        'на какие направления по звуку это раскладывается.</div>';
+      return;
+    }
+
+    const clusters = (d.clusters || []).filter(c => c.n > 0);
+    const cluHtml = clusters.length
+      ? clusters.map((c,i) =>
+          `<div class="clu"><div class="ch">Направление ${i+1} — ${nfmt(c.n)} ${plural(c.n,"песня","песни","песен")}</div>`+
+          (c.exemplars||[]).map(e => `<div class="ex">${esc(e.artist)} — ${esc(e.title)}</div>`).join("")+
+          `</div>`).join("")
+      : '<div class="muted">Направления вкуса появятся, когда наберётся несколько любимых песен с посчитанным отпечатком.</div>';
+
+    box.innerHTML = sum +
+      `<div class="taste-cols">${tasteCol("Любимые исполнители", d.top_artists, "pos", false)}`+
+      `${tasteCol("Не заходят", d.bottom_artists, "neg", false)}</div>`+
+      `<div class="taste-cols">${tasteCol("Любимые песни", d.top_tracks, "pos", true)}`+
+      `${tasteCol("Не зашли", d.bottom_tracks, "neg", true)}</div>`+
+      `<div class="taste-h">Направления вкуса (по звуку)</div>`+
+      cluHtml;
+  }catch(e){
+    box.innerHTML = '<div class="muted">ошибка: '+esc(e.message)+'</div>';
+  }
+}
+
 /* ---------- Настройки ---------- */
 async function loadSettings(){
   if(!window._info){ try{ await loadInfo(); }catch(e){} }
@@ -752,6 +842,11 @@ $("#tGo").onclick = torSearch;
 $("#tArtist").addEventListener("keydown", e => { if(e.key==="Enter") torSearch(); });
 $("#tDl").onclick = torDownload;
 $("#btnStop").onclick = () => jpost("/api/stop");
+$("#tasteRebuild").onclick = () => {
+  const b = $("#tasteRebuild"); b.disabled = true; b.textContent = "Собираю…";
+  jpost("/api/taste/rebuild").then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+e))
+    .finally(()=>{ b.disabled = false; b.textContent = "Пересобрать"; });
+};
 
 /* ---------- обновление ---------- */
 function tick(){
