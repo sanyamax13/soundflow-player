@@ -1515,6 +1515,24 @@
   - Ждём: Alex ставит v30, слушает через BT-колонку. Вылет → строка в
     Профиле с причиной / `POST /v1/client-crash` в ленте сервера → точечный
     фикс.
+  - **08.09.2026 вечер — причина найдена, `f488a19`, APK v34.** Alex дома,
+    телефон по USB (`adb reverse tcp:8090`), чёрный ящик прислал полный
+    стек:
+    `Bad state: Cannot fire new event. Controller is already firing an
+    event` → `_BroadcastStreamController.add` → `AudioPlayer.pause`
+    (just_audio) ← `PlayerController._onPlaybackError`.
+    `_onPlaybackError` вызывается СИНХРОННО из `onError` потока just_audio, а
+    внутри звал `p.pause()`/`p.seekToNext()` — те пишут в те же rxdart-Subject
+    плеера, пока контроллер ещё рассылает ошибку → re-entrancy → падало всё
+    приложение (при пачке битых файлов подряд через BT-колонку). Фикс: учёт
+    (счётчик, CrashLog) синхронный, реакция (pause/seekToNext) — в
+    `scheduleMicrotask`, отрабатывает после того как поток закончил.
+  - **APK v34** (`--split-per-abi --build-number=34 --target-platform
+    android-arm64`, vC **2034**, arm64, 19.3 МБ, sha256
+    `d9ac0f48bb5b92ff36a475238356e99f9c4f1cac6474fb934930a1e0177e81da`,
+    тот же debug keystore). Поставлен на телефон Alex по USB (`adb install
+    -r`), лежит на рабочем столе + в `SoundFlow-portable\` (v33 удалён).
+    Проверка на устройстве — Alex воспроизводит вылет под logcat.
 
 - [ ] **Этап 59 — обучение вкусу, этап 2 (сигналы + оценка).** 08.09.2026
   (Alex TG 19014). Коммит `e37e7ac`. План — `docs/TASTE-PLAN.md` §9 этап 2.
