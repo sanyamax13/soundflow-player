@@ -1357,6 +1357,21 @@
     Web UI qBittorrent + минуты на раздачу); парсер rustorka (нужна cookie
     от Alex).
 
+- [ ] **Этап 53 — ИИ-обложки (этап 28) без fg.** 08.09.2026, коммит `b8c57b7`.
+  У 499 треков `cover_url` = абсолютная ссылка `http://192.168.1.73:8090/v1/
+  generated-covers/...` (IP fg). Гасим fg → сломались бы.
+  - `/v1/cover/{id}` (`internal/api/catalog.go`): если `cover_url` ведёт на
+    `/v1/generated-covers/`, отдаём PNG сам из `GeneratedCoversDir` по имени
+    файла (не редирект наружу). 499 строк в БД не трогали — ссылка стала меткой.
+  - `cmd/soundflow/phone.go`: `GeneratedCoversDir` по умолчанию — папка
+    `generated_covers` рядом с базой (`E:\soundflow-data\generated_covers`),
+    env `SOUNDFLOW_GENERATED_COVERS_DIR` перебивает.
+  - 499 PNG (571 МБ) скопированы `fg:D:\soundflow2\generated_covers` →
+    `E:\soundflow-data\generated_covers` (tar через ssh; вне git).
+  - Проверено на копии боевой базы: `/v1/cover/<generated-трек>` → 200
+    image/png из локального файла, без 302 на fg. Работает и с env, и с
+    дефолтом. В установщик папку класть при PyInstaller-упаковке.
+
 - [ ] **Этап 47 — программа для тестировщика (Windows).** 07.09.2026
   (Alex TG 18721–18726). Тестировщик получает приложение без доступа к серверу
   Alex и без его музыки — у него своя папка с песнями. Программа
