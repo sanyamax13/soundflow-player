@@ -1612,14 +1612,23 @@
       висит `.empty`. exe пересобран (sha256
       `5537107795225ad5b037b33919c8c3c552b17645f0c40000be2ed6c88d6a1648`),
       старый → `_backup-20260908\SoundFlow.exe.pre-catrefresh-20260908-2248`.
-    - **качалка не в комплекте portable:** `findDownloaderDir()` ищет
-      `<exeDir>\downloader\` / `apps/downloader` — в `SoundFlow-portable\`
-      её нет → `s.dl == nil` → «Найти трек»/торренты не работают (и в
-      обычном запуске тоже). Надо доложить `apps/downloader` + `.venv` в
-      сборку. Спросил Alex — сейчас или потом.
-    - телефон в «Устройства» пуст: свежая база, синка с телефона не было;
-      плюс `adb devices` телефон не видел (кабель/экран/отладка). Ждём
-      точный текст ошибки установки v35 + подтверждение полного удаления.
+    - **качалка не в комплекте portable → доложена** (Alex TG 19182 «поиск
+      на торрентах делай»): `robocopy apps\downloader → SoundFlow-portable\
+      downloader\` (src + .venv 133 МБ, .env, pyproject; без tests/кэшей).
+      `.venv` создан `uv`, `home=…\Python312` — на этой машине переносится.
+      Проверено: импорты ок, `uvicorn src.main:app` отдаёт `/health` 200 из
+      новой папки; headless SoundFlow с `SOUNDFLOW_DOWNLOADER` →
+      `/api/torrent/log` и `/api/acquire/log` = `ready:true`. При обычном
+      запуске подхватится сам (`findDownloaderDir` → `<exeDir>\downloader`).
+    - **APK «Приложение не установлено» на S24+ → versionCode** (`6d751d8`):
+      `pubspec 1.0.0+1` → всегда `versionCode=1`, установщик Samsung не
+      ставит APK с versionCode ≤ уже стоящего. Бамп до `1.0.0+35`
+      (`versionCode=35`). APK пересобран (vc35, sha256
+      `9896c3bc82ae1e54f2d9b68d212e7308d25589bb86df8501507c22656d7cefe9`),
+      подпись прежняя `8ea0aa2c1923…`. Запасной путь в ЧИТАЙ: удалить старое
+      + выключить Samsung Auto Blocker.
+    - телефон в «Устройства» пуст: свежая база, синка не было; `adb devices`
+      пусто — Alex «телефон я вытащил».
   - **`Проверка-с-нуля.cmd`** в `SoundFlow-portable\` (Alex TG 19148, 19170):
     запускает `SoundFlow.exe` с `SOUNDFLOW_DB=%~dp0_test-fresh\soundflow.db`
     (пустая отдельная база, порт 8090, `type nul` создаёт файл заранее —
