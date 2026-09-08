@@ -142,6 +142,26 @@
   #syncBody .srow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--limebox); color:var(--ok); white-space:nowrap}
   #syncBody details.sgrp>summary{cursor:pointer; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
   #syncBody .sfilter{width:100%; height:30px; margin-bottom:6px; border:1px solid var(--line); border-radius:7px; padding:0 9px; font:inherit; font-size:12px; background:var(--field)}
+  /* телефон в программе: плитки по исполнителям */
+  .dtiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
+  .dtile{border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; text-align:left; padding:0; cursor:pointer; font:inherit; color:inherit}
+  .dtile:hover{border-color:var(--faint)}
+  .dtile .dart{position:relative; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#fff}
+  .dtile .dini{font-weight:800; font-size:30px; opacity:.9}
+  .dtile .dart img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+  .dtile .dcap{display:block; padding:8px 10px}
+  .dtile .dnm{display:block; font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dtile .dsub{display:block; color:var(--mut); font-size:11px; margin-top:1px}
+  .dsongs{border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line)}
+  .dsongs .drow:last-child{border-bottom:0}
+  .drow:hover{background:var(--limebox)}
+  .drow .dcv{position:relative; width:40px; height:40px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:13px; overflow:hidden}
+  .drow .dcv img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+  .drow .dm{flex:1; min-width:0}
+  .drow .dn{display:block; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .drow .da{display:block; color:var(--mut); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .drow .ds{color:var(--faint); font-size:11.5px; white-space:nowrap}
   .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
   .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
   .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
@@ -642,12 +662,37 @@ async function loadDevices(){
   }catch(e){ $("#devices").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
 }
 
-/* --- телефон как в iTunes: список его песен + управление --- */
-let _devOnDev = [];   // песни на телефоне
+/* --- телефон в программе: плитки по исполнителям (Alex 08.09.2026, вариант 4) --- */
+let _devOnDev = [];      // все песни на телефоне
+let _devArtists = [];    // [{name, tracks:[...], bytes}] сорт. по имени
 let _devCur = "";
+let _devOpenArtist = null; // null = сетка плиток; иначе имя исполнителя
+let _devMeta = {};
+
+function _devInitials(s){
+  const t = (s||"").replace(/^[^\p{L}\p{N}]+/u, "");
+  return (t.slice(0,2) || "?").toUpperCase();
+}
+function _devColor(s){
+  let h = 0; for (const c of (s||"?")) h = (h*31 + c.charCodeAt(0)) >>> 0;
+  return `hsl(${h%360} 42% 52%)`;
+}
+// Склейка написаний одного исполнителя — как в телефоне (artist_grouping.dart):
+// «Баста», «Баста & Zivert», «БАСТА, ЮНА», «Баста feat. HammAli» → «Баста».
+const _artSep = /\s*(?:,(?!\s*(?:the|los|las|die|el|le)\b)|;|\/|\\|\bfeat\.?(?=\s|$)|\bft\.?(?=\s|$)|\bfeaturing\b|\bprod\.?(?=\s|$)|\bvs\.?(?=\s|$)|\bпри участии\b)/i;
+function _primaryArtist(raw){
+  const a = (raw||"").trim();
+  if(!a) return "";
+  const head = a.split(_artSep)[0].replace(/^[\s\-–—.]+|[\s\-–—.]+$/g, "");
+  return head || a;
+}
+function _artistKey(raw){
+  return _primaryArtist(raw).toLowerCase().replace(/ё/g,"е").replace(/\s+/g," ");
+}
+function _casing(s){ const lo=/\p{Ll}/u.test(s), up=/\p{Lu}/u.test(s); return lo&&up?0:lo?1:2; }
 
 async function openDevice(id){
-  _devCur = id;
+  _devCur = id; _devOpenArtist = null;
   $("#devList").hidden = true;
   const box = $("#devDetail");
   box.hidden = false;
@@ -658,41 +703,110 @@ async function openDevice(id){
       jget("/api/devices/"+encodeURIComponent(id)+"/sync-preview"),
     ]);
     const d = (devs||[]).find(x=>x.id===id) || {id, name:id};
-    _devOnDev = (prev.on_device||[]).slice().sort((a,b)=>
-      ((a.artist||"")+" "+(a.title||"")).localeCompare((b.artist||"")+" "+(b.title||""),"ru"));
-    const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
-    const gb = d.music_bytes ? (d.music_bytes/1073741824).toFixed(1)+" ГБ" : "—";
-    box.innerHTML =
-      `<div class="bar">`+
-        `<button class="btn" onclick="loadDevices()">‹ Устройства</button>`+
-        `<h2 style="margin:0;flex:1">${esc(d.name||id)}</h2>`+
-        `${_devTag(d.transport)}</div>`+
-      `<div class="sum"><b>${nfmt(_devOnDev.length)}</b> песен на телефоне · ${gb} · `+
-        `в каталоге ещё <b>${nfmt((prev.add||[]).length)}</b> · последняя связь ${last}</div>`+
-      `<div class="bar">`+
-        `<input class="search" id="devSearch" placeholder="поиск по песням на телефоне…">`+
-        `<button class="btn primary" onclick="openSync('${esc(id)}','${esc(d.name||id)}')">Изменить состав</button>`+
-        `<button class="btn" onclick="openDevice('${esc(id)}')">Обновить</button>`+
-      `</div>`+
-      `<div class="tree" id="devSongs" style="min-height:200px"></div>`;
-    $("#devSearch").addEventListener("input", e=> _devRenderSongs(e.target.value.trim().toLowerCase()));
-    _devRenderSongs("");
+    _devMeta = {
+      id, name: d.name||id, transport: d.transport,
+      add: (prev.add||[]).length,
+      last: d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—",
+      gb: d.music_bytes ? (d.music_bytes/1073741824).toFixed(1)+" ГБ" : "—",
+    };
+    _devOnDev = (prev.on_device||[]).slice();
+    const by = new Map();
+    for (const t of _devOnDev){
+      const k = _artistKey(t.artist||"") || "—";
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(t);
+    }
+    _devArtists = [...by.entries()].map(([key, tracks]) => {
+      // имя папки — самый частый вариант «главного исполнителя», при равенстве
+      // лучший регистр и покороче.
+      const freq = new Map();
+      for (const t of tracks){ const p = _primaryArtist(t.artist||"")||"—"; freq.set(p,(freq.get(p)||0)+1); }
+      const name = [...freq.entries()].sort((a,b)=>
+        b[1]-a[1] || _casing(a[0])-_casing(b[0]) || a[0].length-b[0].length)[0][0];
+      return { key, name, tracks, bytes: tracks.reduce((s,t)=>s+(t.size_bytes||0),0) };
+    }).sort((a,b)=> a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "ru"));
+    _devRender();
   }catch(e){ box.innerHTML = '<div class="muted">не открыть: '+esc(""+e)+'<br><button class="btn" onclick="loadDevices()">назад</button></div>'; }
 }
 
-function _devRenderSongs(q){
-  const box = $("#devSongs"); if(!box) return;
-  let arr = _devOnDev;
-  if(q) arr = arr.filter(t => ((t.artist||"")+" "+(t.title||"")).toLowerCase().includes(q));
-  const shown = arr.slice(0, 800);
-  box.innerHTML = shown.length
-    ? shown.map(t =>
-        `<div class="row track"><span class="ti">${esc(t.title||t.id)}</span>`+
-        `<span class="sp"></span><span class="meta">${esc(t.artist||"")}</span>`+
-        `<span class="meta" style="margin-left:12px">${t.size_bytes?gb(t.size_bytes):""}</span></div>`
-      ).join("") + (arr.length>shown.length ? `<div class="muted">…и ещё ${nfmt(arr.length-shown.length)}. Уточни поиском.</div>` : "")
-    : (q ? '<div class="muted">ничего не найдено</div>' : '<div class="muted">на телефоне пока пусто</div>');
+function _devRender(){
+  const box = $("#devDetail"); if(!box) return;
+  const m = _devMeta;
+  box.innerHTML =
+    `<div class="bar">`+
+      `<button class="btn" onclick="loadDevices()">‹ Устройства</button>`+
+      `<h2 style="margin:0;flex:1">${esc(m.name)}</h2>`+
+      `${_devTag(m.transport)}</div>`+
+    `<div class="sum"><b>${nfmt(_devOnDev.length)}</b> песен на телефоне · ${m.gb} · `+
+      `в каталоге ещё <b>${nfmt(m.add)}</b> · последняя связь ${m.last}</div>`+
+    `<div class="bar">`+
+      `<input class="search" id="devSearch" placeholder="поиск по песням на телефоне…" value="${esc(_devQ||'')}">`+
+      `<button class="btn primary" onclick="openSync('${esc(m.id)}','${esc(m.name)}')">Изменить состав</button>`+
+      `<button class="btn" onclick="openDevice('${esc(m.id)}')">Обновить</button>`+
+    `</div>`+
+    `<div id="devBody"></div>`;
+  const inp = $("#devSearch");
+  inp.addEventListener("input", e=>{ _devQ = e.target.value.trim(); _devBody(); });
+  _devBody();
+  // курсор в конец, чтобы можно было продолжать печатать после перерисовки
+  if (_devQ){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
+
+let _devQ = "";
+
+function _devBody(){
+  const box = $("#devBody"); if(!box) return;
+  const q = _devQ.toLowerCase();
+
+  // поиск — плоский список песен
+  if (q){
+    const hit = _devOnDev.filter(t =>
+      ((t.artist||"")+" "+(t.title||"")).toLowerCase().includes(q));
+    box.innerHTML = hit.length
+      ? `<div class="dsongs">`+ hit.slice(0,600).map(_devSongRow).join("") +`</div>`+
+        (hit.length>600 ? `<div class="muted">…и ещё ${nfmt(hit.length-600)}. Уточни поиском.</div>` : "")
+      : '<div class="muted">ничего не найдено</div>';
+    return;
+  }
+
+  // открыт исполнитель — его песни
+  if (_devOpenArtist){
+    const a = _devArtists.find(x=>x.key===_devOpenArtist);
+    if (!a){ _devOpenArtist = null; _devBody(); return; }
+    box.innerHTML =
+      `<div class="bar"><button class="btn" onclick="_devBackToTiles()">‹ все исполнители</button>`+
+        `<b style="flex:1">${esc(a.name)}</b>`+
+        `<span class="sum" style="margin:0">${a.tracks.length} песен · ${gb(a.bytes)}</span></div>`+
+      `<div class="dsongs">`+ a.tracks.slice()
+        .sort((x,y)=>(x.title||"").toLowerCase().localeCompare((y.title||"").toLowerCase(),"ru"))
+        .map(_devSongRow).join("") +`</div>`;
+    return;
+  }
+
+  // сетка плиток по исполнителям
+  box.innerHTML = `<div class="dtiles">`+ _devArtists.map((a,i)=>{
+    const first = a.tracks[0] || {};
+    return `<button class="dtile" onclick="_devOpenA(${i})">`+
+      `<span class="dart" style="background:${_devColor(a.name)}">`+
+        `<span class="dini">${esc(_devInitials(a.name))}</span>`+
+        (first.id ? `<img src="/api/cover/${encodeURIComponent(first.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
+      `</span>`+
+      `<span class="dcap"><span class="dnm">${esc(a.name)}</span>`+
+      `<span class="dsub">${a.tracks.length} песен · ${gb(a.bytes)}</span></span>`+
+      `</button>`;
+  }).join("") +`</div>`;
+}
+
+function _devSongRow(t){
+  return `<div class="drow"><span class="dcv" style="background:${_devColor(t.artist||'')}">`+
+    `<span>${esc(_devInitials(t.artist||''))}</span>`+
+    (t.id ? `<img src="/api/cover/${encodeURIComponent(t.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
+    `</span><span class="dm"><span class="dn">${esc(t.title||t.id)}</span>`+
+    `<span class="da">${esc(t.artist||"")}</span></span>`+
+    `<span class="ds">${t.size_bytes?gb(t.size_bytes):""}</span></div>`;
+}
+function _devOpenA(i){ _devOpenArtist = _devArtists[i] && _devArtists[i].key; _devBody(); }
+function _devBackToTiles(){ _devOpenArtist = null; _devBody(); }
 
 /* --- ручная синхронизация: окно выбора --- */
 let _syncDev = "";
