@@ -9,7 +9,6 @@ import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../player/player_controller.dart';
-import '../search/search_screen.dart';
 import 'artist_grouping.dart';
 
 /// «Моя музыка» — вариант «Полка» (Alex 06.09.2026): сначала список
@@ -229,13 +228,6 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     return 'песен';
   }
 
-  Future<void> _openSearch() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
-    );
-    if (mounted) await _refresh();
-  }
-
   @override
   Widget build(BuildContext context) {
     final key = _openKey;
@@ -255,7 +247,6 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       appBar: AppBar(
         title: const Text('Моя музыка'),
         actions: [
-          IconButton(onPressed: _openSearch, icon: const Icon(Icons.add)),
           IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -531,20 +522,14 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   }
 
   Widget _empty() => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-                _onlyFav
-                    ? 'В избранном пока пусто'
-                    : 'Пока ничего не скачано',
-                style: const TextStyle(color: Afisha.inkDim)),
-            const SizedBox(height: 12),
-            if (!_onlyFav)
-              FilledButton(
-                  onPressed: _openSearch,
-                  child: const Text('Найти музыку')),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+              _onlyFav
+                  ? 'В избранном пока пусто'
+                  : 'Пока ничего не скачано.\nОткрой «Библиотеку» и нажми «Докачать ещё».',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Afisha.inkDim, height: 1.5)),
         ),
       );
 }
