@@ -22,7 +22,9 @@ import (
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/diskspace"
 	"soundflow/server/internal/inference"
+	"soundflow/server/internal/litestore"
 	"soundflow/server/internal/localdb"
+	"soundflow/server/internal/pathmap"
 )
 
 // Service — состояние приложения: база, модель, фоновые задачи.
@@ -37,6 +39,11 @@ type Service struct {
 	phoneAddr string
 	phoneSrv  *http.Server
 	phoneAPI  *api.Server // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
+	dl        *downloaderProc  // дочерний Python «качалка» (Найти трек / торренты)
+	store     *litestore.Store // та же БД для acquire из окна
+	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
+	acqOnce   sync.Once
+	acqT      *acqTracker // последние попытки «Найти трек»
 	startedAt time.Time
 	frontend  embed.FS
 	mu        sync.Mutex
@@ -90,6 +97,9 @@ func NewService() (*Service, error) {
 	s.jobs = NewJobRunner(s)
 	_ = s.db.AddServerLog("info", "", "", "SoundFlow запущен ("+dbPath+"), модель: "+yn(eng != nil), 0)
 	fmt.Printf("SoundFlow: база %s, модель %v, телефонный API %s\n", dbPath, eng != nil, s.phoneAddr)
+	if s.dl = newDownloaderProc(); s.dl != nil {
+		go s.dl.run()
+	}
 	go s.startPhoneServer()
 	return s, nil
 }
@@ -110,6 +120,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	if s.phoneSrv != nil {
 		_ = s.phoneSrv.Close()
 	}
+	s.dl.shutdown()
 	s.jobs.CancelAll()
 	if s.eng != nil {
 		_ = s.eng.Close()
@@ -141,6 +152,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Post("/api/scan", s.hScan)
 	r.Post("/api/reindex", s.hReindex)
 	r.Post("/api/stop", s.hStop)
+	r.Post("/api/acquire", s.hAcquire)
+	r.Get("/api/acquire/log", s.hAcquireLog)
 	r.Get("/audio/{id}", s.hAudio)
 	r.Get("/api/cover/{id}", s.hCover)
 }

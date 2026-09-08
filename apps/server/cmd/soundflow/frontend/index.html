@@ -108,6 +108,11 @@
   .set .f{display:flex; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px}
   .set .f b{color:var(--mut); font-weight:600}
   .set .f span{text-align:right; word-break:break-all}
+  .findbox{display:flex; gap:10px; flex-wrap:wrap; max-width:640px}
+  .findbox input{flex:1; min-width:180px; height:38px; padding:0 12px; border:1px solid var(--line);
+    border-radius:9px; font-size:13px; background:#fff}
+  .findbox .btn{height:38px}
+  #v-find .hint{margin:10px 0 18px; max-width:640px}
   .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
   .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
   .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
@@ -157,6 +162,7 @@
   <div class="body">
     <nav class="nav">
       <a data-v="catalog" class="on">Каталог</a>
+      <a data-v="find">Найти и скачать</a>
       <a data-v="devices">Устройства</a>
       <a data-v="jobs">Задачи</a>
       <a data-v="log">Журнал</a>
@@ -176,6 +182,18 @@
         </div>
         <div class="sum" id="sum">загрузка…</div>
         <div class="tree" id="tree"><div class="muted">загрузка каталога…</div></div>
+      </section>
+
+      <!-- Найти и скачать -->
+      <section class="view" id="v-find">
+        <h2>Найти и скачать трек</h2>
+        <div class="findbox">
+          <input id="fArtist" placeholder="Исполнитель" autocomplete="off">
+          <input id="fTitle" placeholder="Название песни" autocomplete="off">
+          <button class="btn primary" id="fGo">Найти и скачать</button>
+        </div>
+        <div class="hint" id="fHint">Ищем по Яндекс&nbsp;Музыке, затем musify и mp3party. Найденное сразу попадает в каталог и на телефон при синхронизации.</div>
+        <div class="list" id="fLog"></div>
       </section>
 
       <!-- Устройства -->
@@ -235,12 +253,13 @@ async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(awai
 async function jpost(u){ const r = await fetch(u,{method:"POST"}); return r.ok ? r.json().catch(()=>({})) : Promise.reject(await r.text()); }
 
 /* ---------- навигация по разделам ---------- */
-const VIEWS = ["catalog","devices","jobs","log","settings"];
+const VIEWS = ["catalog","find","devices","jobs","log","settings"];
 function showView(name){
   if(!VIEWS.includes(name)) name = "catalog";
   document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.dataset.v===name));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id==="v-"+name));
   if(location.hash.slice(1) !== name) location.hash = name;
+  if(name==="find") loadAcqLog();
   if(name==="devices") loadDevices();
   if(name==="jobs") loadJobs();
   if(name==="log") loadLog();
@@ -400,6 +419,38 @@ au.addEventListener("timeupdate", () => {
 });
 $("#pRng").addEventListener("input", () => { if(au.duration) au.currentTime = $("#pRng").value/1000*au.duration; });
 
+/* ---------- Найти и скачать ---------- */
+async function loadAcqLog(){
+  try{
+    const d = await jget("/api/acquire/log");
+    $("#fGo").disabled = !d.ready;
+    $("#fHint").style.opacity = d.ready ? "1" : ".6";
+    const items = d.items || [];
+    $("#fLog").innerHTML = items.length ? items.map(it => {
+      const cls = it.state==="done" ? "wire" : (it.state==="fail" ? "" : "wifi");
+      const tag = it.state==="running" ? '<span class="tag wifi">качаю…</span>'
+                : it.state==="done" ? '<span class="tag wire">готово</span>'
+                : it.state==="fail" ? '<span class="tag" style="color:var(--err)">не вышло</span>'
+                : '<span class="tag">'+esc(it.state)+'</span>';
+      return `<div class="item"><div class="ic">🎵</div>`+
+        `<div class="grow"><div class="tt">${esc(it.artist)} — ${esc(it.title)}</div>`+
+        `<div class="mm">${esc(it.note||"")}</div></div>${tag}</div>`;
+    }).join("") : '<div class="muted">пока ничего не искали</div>';
+  }catch(e){ $("#fLog").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
+}
+async function runAcquire(){
+  const a = $("#fArtist").value.trim(), t = $("#fTitle").value.trim();
+  if(!a || !t){ $("#fArtist").focus(); return; }
+  $("#fGo").disabled = true;
+  try{
+    const r = await fetch("/api/acquire?artist="+encodeURIComponent(a)+"&title="+encodeURIComponent(t),{method:"POST"});
+    if(!r.ok){ alert(await r.text()); return; }
+    $("#fTitle").value = "";
+    await loadAcqLog();
+  }catch(e){ alert("Не запустить: "+e); }
+  finally{ $("#fGo").disabled = false; }
+}
+
 /* ---------- Устройства ---------- */
 async function loadDevices(){
   try{
@@ -530,12 +581,15 @@ async function pickAndScan(){
 $("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
 $("#btnPick").onclick = pickAndScan;
 $("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Переиндексация: "+e));
+$("#fGo").onclick = runAcquire;
+$("#fTitle").addEventListener("keydown", e => { if(e.key==="Enter") runAcquire(); });
 $("#btnStop").onclick = () => jpost("/api/stop");
 
 /* ---------- обновление ---------- */
 function tick(){
   loadInfo();
   const on = id => $("#v-"+id).classList.contains("on");
+  if(on("find")) loadAcqLog();
   if(on("devices")) loadDevices();
   if(on("jobs")) loadJobs();
   if(on("log")) loadLog();

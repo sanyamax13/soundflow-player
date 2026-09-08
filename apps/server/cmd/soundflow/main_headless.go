@@ -42,6 +42,7 @@ func main() {
 	if svc.phoneSrv != nil {
 		_ = svc.phoneSrv.Close()
 	}
+	svc.dl.shutdown()
 	svc.jobs.CancelAll()
 	if svc.eng != nil {
 		_ = svc.eng.Close()

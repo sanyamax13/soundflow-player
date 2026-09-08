@@ -48,6 +48,8 @@ func (s *Service) startPhoneServer() {
 		GeneratedCoversDir: cfg.GeneratedCoversDir,
 	}
 	s.phoneAPI = apiSrv // окну нужен для строки «качает прямо сейчас»
+	s.store = store     // окну нужен для acquire («Найти трек»)
+	s.pm = pm
 
 	// «Добавить музыку»: скачивание — тонкий Python-сайдкар (Яндекс/musify/
 	// торренты), отпечаток скачанного — локально ONNX (localFinder).

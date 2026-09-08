@@ -103,8 +103,13 @@ def _find_sync(artist: str, title: str, expected_duration_sec: int | None):
         if is_alternate_version(full_title, title)[0]:
             continue
         t_artist = ", ".join(a.name for a in (t.artists or []) if a and a.name)
-        sa = max(_similarity(t_artist, artist), _similarity(_lead(t_artist), _lead(artist)))
-        st = _similarity(t.title or "", title)
+        # _sim2 — с учётом транслита: Яндекс часто пишет русских артистов
+        # латиницей («Molchat Doma» ↔ «Молчат Дама»), побуквенное даёт 0.
+        sa = max(_sim2(t_artist, artist), _sim2(_lead(t_artist), _lead(artist)))
+        # Название: сравниваем и как есть, и без хвоста в скобках — у Яндекса
+        # это часто подзаголовок («Судно (Борис Рыжий)» ↔ «Судно»).
+        yt = t.title or ""
+        st = max(_sim2(yt, title), _sim2(re.sub(r"\s*\([^)]*\)\s*$", "", yt), title))
         if sa < 0.5 or st < 0.55:
             continue
         score = sa * 0.4 + st * 0.6
