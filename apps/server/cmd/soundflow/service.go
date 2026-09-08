@@ -103,6 +103,10 @@ func NewService() (*Service, error) {
 		go s.dl.run()
 	}
 	go s.startPhoneServer()
+	// USB-туннель (Alex: «только USB») — держим adb reverse живым, пока
+	// телефон в кабеле. adb.exe нет рядом → тихо выключено, только Wi-Fi.
+	writeServerLogSafe = func(m string) error { return s.db.AddServerLog("info", "", "", m, 0) }
+	startUSBTunnel(s.phoneAddr)
 	return s, nil
 }
 
@@ -188,6 +192,7 @@ func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 		"disk_free":   free,
 		"db_path":     s.dbPath,
 		"uptime_sec":  int(time.Since(s.startedAt).Seconds()),
+		"usb":         usb.Status(),
 	})
 }
 

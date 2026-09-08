@@ -223,6 +223,7 @@
     <div class="brand">SoundFlow</div>
     <div class="sp"></div>
     <div class="pill" id="status"><span class="dot"></span>Сервер работает</div>
+    <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -401,6 +402,14 @@ async function loadInfo(){
     else { st.className="pill off"; st.innerHTML='<span class="dot"></span>без модели отпечатков'; }
     $("#sum").innerHTML = `<b>${nfmt(d.tracks)}</b> треков · <b>${nfmt(d.albums)}</b> папок · отпечаток у <b>${nfmt(d.with_vector)}</b>`;
     $("#btnReindex").disabled = !d.has_model || d.with_vector >= d.tracks;
+    // USB-туннель: показываем чип, только если adb рядом с программой есть
+    const u = d.usb || {};
+    const usb = $("#usb");
+    if(u.enabled){
+      usb.hidden = false;
+      usb.className = u.up ? "pill" : "pill off";
+      $("#usbTxt").textContent = u.up ? "телефон по кабелю" : ("USB: " + (u.text || "нет телефона"));
+    } else { usb.hidden = true; }
     window._info = d;
   }catch(e){ $("#status").className="pill off"; }
 }
