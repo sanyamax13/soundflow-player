@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
+import '../../data/api.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import 'cover_backdrop.dart';
@@ -411,7 +412,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     _Wave(
                         controller: _p,
                         tint: colors.isFallback ? Afisha.lime : colors.glow,
-                        seedText: now.id),
+                        seedText: now.id,
+                        api: ref.read(apiProvider)),
                     const SizedBox(height: 4),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 26),
@@ -987,31 +989,83 @@ class _LivingBackdrop extends StatelessWidget {
 }
 
 // ── волновой ползунок перемотки ─────────────────────────────────────────
-class _Wave extends StatelessWidget {
+// Столбики = реальная форма песни (сервер /v1/waveform), не случайные.
+// Пока форма не пришла — прежний вид (детерминированный шум от id).
+class _Wave extends StatefulWidget {
   const _Wave({
     required this.controller,
     required this.tint,
     required this.seedText,
+    required this.api,
   });
 
   final PlayerController controller;
   final Color tint;
   final String seedText;
+  final Api api;
+
+  @override
+  State<_Wave> createState() => _WaveState();
+}
+
+class _WaveState extends State<_Wave> with SingleTickerProviderStateMixin {
+  List<double>? _amps;
+  late final AnimationController _bounce =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
+        ..repeat();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    widget.controller.playing.addListener(_syncBounce);
+    _syncBounce();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Wave old) {
+    super.didUpdateWidget(old);
+    if (old.seedText != widget.seedText) {
+      setState(() => _amps = null);
+      _load();
+    }
+  }
+
+  void _syncBounce() {
+    if (widget.controller.playing.value) {
+      if (!_bounce.isAnimating) _bounce.repeat();
+    } else {
+      _bounce.stop();
+    }
+  }
+
+  Future<void> _load() async {
+    final id = widget.seedText;
+    final w = await widget.api.waveform(id);
+    if (mounted && id == widget.seedText) setState(() => _amps = w);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.playing.removeListener(_syncBounce);
+    _bounce.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<Duration>(
-      valueListenable: controller.duration,
+      valueListenable: widget.controller.duration,
       builder: (_, dur, _) => ValueListenableBuilder<Duration>(
-        valueListenable: controller.position,
+        valueListenable: widget.controller.position,
         builder: (_, pos, _) {
           final total = dur.inMilliseconds;
           final frac =
               total <= 0 ? 0.0 : (pos.inMilliseconds / total).clamp(0.0, 1.0);
           void seekAt(double dx, double w) {
             if (total <= 0 || w <= 0) return;
-            controller
-                .seek(Duration(milliseconds: (total * (dx / w).clamp(0, 1)).round()));
+            widget.controller.seek(
+                Duration(milliseconds: (total * (dx / w).clamp(0, 1)).round()));
           }
 
           return LayoutBuilder(
@@ -1023,12 +1077,18 @@ class _Wave extends StatelessWidget {
               child: SizedBox(
                 height: 52,
                 width: double.infinity,
-                child: CustomPaint(
-                  painter: _WavePainter(
-                    frac,
-                    _seed(seedText),
-                    played: tint,
-                    rest: Colors.white.withValues(alpha: 0.16),
+                child: AnimatedBuilder(
+                  animation: _bounce,
+                  builder: (_, _) => CustomPaint(
+                    painter: _WavePainter(
+                      progress: frac,
+                      seed: _seed(widget.seedText),
+                      amps: _amps,
+                      phase: _bounce.value * 2 * math.pi,
+                      moving: widget.controller.playing.value,
+                      played: widget.tint,
+                      rest: Colors.white.withValues(alpha: 0.16),
+                    ),
                   ),
                 ),
               ),
@@ -1043,32 +1103,68 @@ class _Wave extends StatelessWidget {
 }
 
 class _WavePainter extends CustomPainter {
-  _WavePainter(this.progress, this.seed, {required this.played, required this.rest});
+  _WavePainter({
+    required this.progress,
+    required this.seed,
+    required this.amps,
+    required this.phase,
+    required this.moving,
+    required this.played,
+    required this.rest,
+  });
+
   final double progress;
   final int seed;
+  final List<double>? amps;
+  final double phase;
+  final bool moving;
   final Color played;
   final Color rest;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rnd = math.Random(seed);
-    const n = 58;
+    final n = amps?.length ?? 58;
     final gap = size.width / n;
     final mid = size.height / 2;
+    final headX = progress * size.width;
+    final rnd = amps == null ? math.Random(seed) : null;
+
     for (var i = 0; i < n; i++) {
-      final h = size.height * (0.16 + rnd.nextDouble() * 0.8);
+      var base = amps != null ? amps![i] : (0.16 + rnd!.nextDouble() * 0.8);
       final x = i * gap + gap / 2;
+
+      // лёгкое «дыхание» у бегунка, пока играет музыка
+      if (moving) {
+        final near = (1.0 - (x - headX).abs() / (gap * 3)).clamp(0.0, 1.0);
+        base *= 1.0 + 0.16 * near * (0.5 + 0.5 * math.sin(phase + i * 0.6));
+      }
+      final h = (size.height * base).clamp(3.0, size.height);
+
       final p = Paint()
         ..color = (i / n) <= progress ? played : rest
-        ..strokeWidth = gap * 0.5
+        ..strokeWidth = gap * 0.55
         ..strokeCap = StrokeCap.round;
       canvas.drawLine(Offset(x, mid - h / 2), Offset(x, mid + h / 2), p);
     }
+
+    // тонкий бегунок
+    canvas.drawLine(
+      Offset(headX.clamp(1.0, size.width - 1), mid - size.height / 2),
+      Offset(headX.clamp(1.0, size.width - 1), mid + size.height / 2),
+      Paint()
+        ..color = played.withValues(alpha: 0.9)
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _WavePainter old) =>
-      old.progress != progress || old.played != played;
+      old.progress != progress ||
+      old.played != played ||
+      old.amps != amps ||
+      old.phase != phase ||
+      old.moving != moving;
 }
 
 // ── инструкция «как пользоваться» внутри приложения ─────────────────────

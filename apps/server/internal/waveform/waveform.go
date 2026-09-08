@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"os/exec"
+	"sort"
 )
 
 // DefaultBars — сколько столбиков в полоске плеера.
@@ -52,12 +53,15 @@ func FromFile(path string, bars int) ([]byte, error) {
 
 // Bars — N байт 0..255. pcm — моно-семплы (любая частота). Пустой/тихий
 // вход → nil (полоска в плеере откатится на прежний вид).
+//
+// Растягиваем по перцентилям (5%..95%), а не просто /пик: у зажатых
+// современных записей RMS почти ровный, и без растяжки полоска выглядит
+// забором. Так у каждой песни виден свой рельеф (как в SoundCloud).
 func Bars(pcm []float32, n int) []byte {
 	if n <= 0 || len(pcm) < n {
 		return nil
 	}
 	raw := make([]float64, n)
-	peak := 0.0
 	for i := 0; i < n; i++ {
 		lo := i * len(pcm) / n
 		hi := (i + 1) * len(pcm) / n
@@ -65,24 +69,31 @@ func Bars(pcm []float32, n int) []byte {
 		for _, s := range pcm[lo:hi] {
 			sum += float64(s) * float64(s)
 		}
-		r := math.Sqrt(sum / float64(hi-lo))
-		raw[i] = r
-		if r > peak {
-			peak = r
+		raw[i] = math.Sqrt(sum / float64(hi-lo))
+	}
+
+	sorted := append([]float64(nil), raw...)
+	sort.Float64s(sorted)
+	lo := sorted[len(sorted)*5/100]
+	hi := sorted[len(sorted)*95/100]
+	if hi-lo <= 1e-7 {
+		if hi <= 1e-6 {
+			return nil // тишина
 		}
+		lo, hi = 0, hi // почти ровный трек — растягиваем от нуля
 	}
-	if peak <= 1e-6 {
-		return nil
-	}
+
 	out := make([]byte, n)
 	for i, r := range raw {
-		// гамма 0.6 приподнимает тихие места, /peak — нормировка.
-		v := math.Pow(r/peak, 0.6)
-		// низ подрезаем на 0.08, чтобы совсем тихие места не были в ноль.
-		v = 0.08 + 0.92*v
+		v := (r - lo) / (hi - lo)
+		if v < 0 {
+			v = 0
+		}
 		if v > 1 {
 			v = 1
 		}
+		v = math.Pow(v, 0.75)  // лёгкий подъём тихих мест
+		v = 0.10 + 0.90*v      // низ не в ноль, чтобы столбик был виден
 		out[i] = byte(math.Round(v * 255))
 	}
 	return out

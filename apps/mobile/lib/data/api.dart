@@ -120,6 +120,19 @@ class Api {
     return res.data ?? {};
   }
 
+  /// Рельеф громкости трека (0..1 по каждому столбику) для полоски плеера.
+  /// Нет данных / ошибка — null (полоска рисуется как раньше).
+  Future<List<double>?> waveform(String id) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/v1/waveform/$id');
+      final bars = (res.data?['bars'] as List?)?.cast<num>();
+      if (bars == null || bars.isEmpty) return null;
+      return [for (final b in bars) (b.toDouble() / 255.0).clamp(0.0, 1.0)];
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Отправить батч событий с телефона. Возвращает uuid принятых как новые
   /// (дубли сервер молча пропускает).
   Future<List<String>> postSyncEvents({
