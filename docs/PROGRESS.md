@@ -1487,6 +1487,26 @@
     Профиле с причиной / `POST /v1/client-crash` в ленте сервера → точечный
     фикс.
 
+- [ ] **Этап 59 — обучение вкусу, этап 2 (сигналы + оценка).** 08.09.2026
+  (Alex TG 19014). Коммит `e37e7ac`. План — `docs/TASTE-PLAN.md` §9 этап 2.
+  Только сервер, без телефона и без APK; проверяется `curl /api/taste`,
+  когда окно поднято.
+  - `feedback_event` (schema.sql + миграция) — храним СОБЫТИЯ, не оценки;
+    `event_uuid` = `sync_events.event_uuid`, дедуп.
+  - `deriveFeedback`: like +5, finish +1.5, skip_early −0.7, skip_normal
+    −0.3, dislike / delete «не нравится» −5, delete «не та версия» / дубль
+    0 (сигнал качеству). `recordFeedback` в транзакции `SaveSync`.
+  - `TasteArtists` / `TasteTracks` (топ + антитоп по сумме весов),
+    `TasteTotals`; `RebuildFeedback` (разовая пересборка из истории,
+    идемпотентна). `GET /api/taste`, `POST /api/taste/rebuild`.
+  - `skip_early`/`finish` в данных появятся после правки телефона (этап 1
+    плана: skip с позицией + событие complete) — сейчас работает на
+    текущем телефоне через skip_normal/like/delete.
+  - `go build` CGo + headless, `go vet`, `go test ./internal/...` — зелёные.
+    Тесты `TestDeriveFeedback`, `TestTasteRoundTrip`.
+  - **ОСТАЛОСЬ:** вкладка «Вкус» в окне (этап 6 — макет до вёрстки);
+    телефонные сигналы (этап 1); кластеры/автоподбор/радио (этапы 3-5).
+
 - [ ] **Этап 47 — программа для тестировщика (Windows).** 07.09.2026
   (Alex TG 18721–18726). Тестировщик получает приложение без доступа к серверу
   Alex и без его музыки — у него своя папка с песнями. Программа
