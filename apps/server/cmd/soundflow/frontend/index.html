@@ -123,6 +123,21 @@
   .crow .cm{color:var(--mut); white-space:nowrap; font-size:11.5px}
   .crow .cf{font-weight:700}
   .cf.flac{color:#1b6fb0} .cf.mp3{color:var(--ok)}
+  /* окно ручной синхронизации */
+  .modal{position:fixed; inset:0; background:rgba(20,16,26,.45); display:flex; align-items:center; justify-content:center; z-index:50}
+  .modal[hidden]{display:none}
+  .modal-card{background:#fff; border-radius:14px; width:min(620px,92vw); max-height:86vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); font-size:15px}
+  .modal-head .x{border:0; background:none; font-size:16px; cursor:pointer; color:var(--mut)}
+  .modal-body{padding:14px 18px; overflow-y:auto}
+  .modal-foot{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-top:1px solid var(--line)}
+  .sgrp{margin-bottom:14px}
+  .sgrp .sh{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
+  .slist{max-height:34vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
+  #syncBody .srow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
+  #syncBody .srow:last-child{border-bottom:0}
+  #syncBody .srow .st{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #syncBody .srow .sm{color:var(--mut); white-space:nowrap; font-size:11px}
   .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
   .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
   .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
@@ -231,6 +246,21 @@
         <h2>Устройства</h2>
         <div class="list" id="devices"><div class="muted">нет подключённых</div></div>
       </section>
+
+      <!-- Окно ручной синхронизации -->
+      <div id="syncModal" class="modal" hidden>
+        <div class="modal-card">
+          <div class="modal-head">
+            <b>Синхронизация телефона</b>
+            <button class="x" id="syncClose">✕</button>
+          </div>
+          <div id="syncBody" class="modal-body"><div class="muted">считаю разницу…</div></div>
+          <div class="modal-foot">
+            <span id="syncSummary" class="muted"></span>
+            <button class="btn primary" id="syncNext" disabled>Далее</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Задачи -->
       <section class="view" id="v-jobs">
@@ -565,11 +595,51 @@ async function loadDevices(){
       }
       return `<div class="item"><div class="ic">📱</div>`+
         `<div class="grow"><div class="tt">${esc(d.name||d.id)}</div>`+
-        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}</div>`+
+        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}`+
+        `<button class="btn" style="margin-top:8px;height:32px" onclick="openSync('${esc(d.id)}','${esc(d.name||d.id)}')">Синхронизировать</button></div>`+
         `${tag}</div>`;
     }).join("") : '<div class="muted">нет подключённых</div>';
   }catch(e){ $("#devices").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
 }
+
+/* --- ручная синхронизация: окно выбора --- */
+let _syncDev = "";
+async function openSync(devId, devName){
+  _syncDev = devId;
+  $("#syncModal").hidden = false;
+  $("#syncBody").innerHTML = '<div class="muted">считаю разницу…</div>';
+  $("#syncSummary").textContent = "";
+  $("#syncNext").disabled = true;
+  try{
+    const d = await jget("/api/devices/"+encodeURIComponent(devId)+"/sync-preview");
+    const add = d.add||[], rem = d.remove||[];
+    const rows = (arr, cls) => arr.map((t,i) =>
+      `<label class="srow"><input type="checkbox" class="${cls}" data-id="${esc(t.id)}" checked>`+
+      `<span class="st">${esc(t.artist||"")}${t.artist?" — ":""}${esc(t.title||t.id)}</span>`+
+      `<span class="sm">${t.size_bytes?gb(t.size_bytes):""}</span></label>`).join("");
+    $("#syncBody").innerHTML =
+      `<div class="sgrp"><div class="sh">Добавить на телефон — ${add.length} (${gb(d.add_bytes||0)})</div>`+
+      (add.length? `<div class="slist">${rows(add,"a")}</div>` : '<div class="muted">нечего добавлять</div>')+`</div>`+
+      `<div class="sgrp"><div class="sh">Удалить с телефона — ${rem.length}</div>`+
+      (rem.length? `<div class="slist">${rows(rem,"r")}</div>` : '<div class="muted">нечего удалять</div>')+`</div>`+
+      `<div class="muted" style="margin-top:6px">На телефоне сейчас ${nfmt(d.have_count)} из ${nfmt(d.catalog_count)}. Телефон применит план при следующем подключении.</div>`;
+    $("#syncNext").disabled = (add.length+rem.length)===0;
+  }catch(e){ $("#syncBody").innerHTML = '<div class="muted">ошибка: '+esc(""+e)+'</div>'; }
+}
+$("#syncClose").onclick = () => $("#syncModal").hidden = true;
+$("#syncNext").onclick = async () => {
+  const pick = cls => [...document.querySelectorAll("#syncBody input."+cls+":checked")].map(x=>x.dataset.id);
+  const body = { add: pick("a"), remove: pick("r") };
+  $("#syncNext").disabled = true;
+  try{
+    const r = await fetch("/api/devices/"+encodeURIComponent(_syncDev)+"/sync-plan",
+      {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok){ alert(await r.text()); $("#syncNext").disabled=false; return; }
+    $("#syncBody").innerHTML = '<div style="padding:20px 0;text-align:center">План сохранён.<br>Телефон применит его при следующем подключении.</div>';
+    $("#syncSummary").textContent = `+${body.add.length}  −${body.remove.length}`;
+    setTimeout(()=>{ $("#syncModal").hidden = true; }, 1600);
+  }catch(e){ alert("Не сохранить: "+e); $("#syncNext").disabled=false; }
+};
 
 /* ---------- Задачи ---------- */
 async function loadJobs(){
