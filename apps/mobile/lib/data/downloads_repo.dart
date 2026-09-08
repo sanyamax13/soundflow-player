@@ -254,11 +254,20 @@ class DownloadsRepo {
   }) async {
     final excludeIds = (await _db.allDownloaded()).map((t) => t.id).toList();
     final batch = await _api.nextLibraryBatch(excludeIds: excludeIds, budgetBytes: budgetBytes);
+    final total = batch.tracks.length;
+    // id телефона — чтобы слать прогресс на сервер (окно «Устройства» на
+    // компьютере). Нет SyncRepo — просто не шлём, скачивание идёт как раньше.
+    final devId = await _sync?.deviceId();
     var done = 0;
     var bytes = 0;
     var failed = 0;
     for (final track in batch.tracks) {
-      onProgress?.call(done, batch.tracks.length, '${track['artist'] ?? ''} — ${track['title'] ?? ''}');
+      final label = '${track['artist'] ?? ''} — ${track['title'] ?? ''}';
+      onProgress?.call(done, total, label);
+      if (devId != null) {
+        await _api.syncProgress(
+            deviceId: devId, done: done, total: total, current: label, active: true);
+      }
       try {
         bytes += await download(track);
       } catch (_) {
@@ -269,7 +278,11 @@ class DownloadsRepo {
       }
       done++;
     }
-    onProgress?.call(done, batch.tracks.length, '');
+    onProgress?.call(done, total, '');
+    if (devId != null) {
+      await _api.syncProgress(
+          deviceId: devId, done: done, total: total, current: '', active: false);
+    }
     return (downloaded: done - failed, bytes: bytes, failed: failed);
   }
 

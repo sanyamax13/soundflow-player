@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Тип связи (Wi-Fi / провод / моб. интернет) для окна «Устройства» на
+         компьютере (Alex TG 18917). Обычное разрешение, без запроса. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- Для медиа-сессии audio_service (Bluetooth-магнитола, наушники,
          экран блокировки) — см. lib/features/player/audio_handler.dart,
          05.09.2026. -->

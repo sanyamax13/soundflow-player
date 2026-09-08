@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../core/device_info.dart';
 import 'api.dart';
 import 'db.dart';
 
@@ -94,9 +95,12 @@ class SyncRepo {
         }
     ];
 
+    final dev = await DeviceInfo.read();
     final accepted = await _api.postSyncEvents(
       deviceId: await deviceId(),
       musicBytes: musicBytes,
+      deviceName: dev.model,
+      transport: dev.transport,
       events: events,
     );
 

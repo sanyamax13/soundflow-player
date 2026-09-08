@@ -126,18 +126,44 @@ class Api {
     required String deviceId,
     required List<Map<String, Object?>> events,
     int musicBytes = 0,
+    String deviceName = 'Android',
+    String transport = '',
   }) async {
     final res = await _dio.post<Map<String, dynamic>>('/v1/sync/events', data: {
       'device': {
         'id': deviceId,
-        'name': 'Android',
+        'name': deviceName,
         'app_version': 'dev',
         'music_bytes': musicBytes,
+        'transport': transport,
       },
       'events': events,
     });
     final acc = (res.data?['accepted'] as List?) ?? const [];
     return acc.map((e) => '$e').toList();
+  }
+
+  /// Сообщить серверу, сколько песен из пачки «Докачать ещё» уже скачано —
+  /// чтобы в окне «Устройства» на компьютере было видно «качает: <песня>,
+  /// N из M» (Alex TG 18928). Не критично: сервер не ответил — молча дальше.
+  Future<void> syncProgress({
+    required String deviceId,
+    required int done,
+    required int total,
+    required String current,
+    required bool active,
+  }) async {
+    try {
+      await _dio.post<Map<String, dynamic>>('/v1/sync/progress', data: {
+        'device_id': deviceId,
+        'done': done,
+        'total': total,
+        'current': current,
+        'active': active,
+      });
+    } catch (_) {
+      // прогресс — необязательная мелочь, не мешаем скачиванию
+    }
   }
 
   /// «Докачать ещё»: отдаём id уже скачанного, получаем следующую порцию

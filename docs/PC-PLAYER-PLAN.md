@@ -32,17 +32,20 @@
      `file_path` уже строит; проверить на боевой БД, что `music\Альбом\...`
      даёт под-узлы, а не плоско. `cache\` плоский по факту (yandex-*.mp3 в
      одной папке) — это нормально.
-5. **«Устройства»: модель телефона + тип связи.** Сейчас телефон шлёт
-   `device.name = "Android"` (заглушка в `apps/mobile/lib/data/api.dart`
-   `postSyncEvents`). Надо:
-   - Flutter: пакет `device_info_plus` → `manufacturer + model`
-     («Samsung SM-S911B»); `connectivity_plus` → wifi / ethernet / mobile /
-     vpn. Слать в `device` как `name` + новое поле `transport`.
-   - Сервер: `SaveSync`/таблица `devices` — принять и хранить `name`
-     (уже) + `transport`; миграция `localdb` на колонку; `ListDevices`
-     вернуть; показать в `/api/devices` и в списке окна + в приложении
-     (`admin_screen.dart`).
-   - Требует пересборку APK (v29) + установку Alex.
+5. **«Устройства»: модель телефона + тип связи.** СДЕЛАНО в коде (фаза 3):
+   - Flutter: свой `MethodChannel("soundflow/device")` в `MainActivity.kt`
+     (`Build.MANUFACTURER + MODEL`, `ConnectivityManager` → wifi/ethernet/
+     mobile/vpn) — без сторонних пакетов; `lib/core/device_info.dart`;
+     `sync_repo` шлёт `device.name` = модель, `device.transport`. Манифест:
+     `ACCESS_NETWORK_STATE` (обычное разрешение, без запроса).
+   - Сервер: `devices.transport` (миграция `ALTER TABLE`), `SaveSync`/
+     `ListDevices` возвращают; окно `/api/devices` рисует «Wi-Fi/Провод/
+     Моб. интернет».
+   - Осталось: пересборка APK (v29) + установка Alex → живая проверка.
+6b. **«Телефон качает: <песня> N из M» в окне.** СДЕЛАНО в коде (фаза 3):
+   телефон в `downloadMore` шлёт `POST /v1/sync/progress`, сервер держит в
+   памяти (`downloadTracker`, протухает за 2 мин), окно «Устройства» рисует
+   строку с полоской. Тоже требует APK v29.
 6. **«Скачивание реально на телефон».** Телефон УЖЕ пишет файлы на диск
    (`downloads_repo.dart` → `getApplicationDocumentsDirectory()/music/<id>`),
    37 ГБ у Alex = они. Проверить, не всплыл ли баг; если жалоба останется —
@@ -65,7 +68,9 @@
     надёжнее с отчётом прогресса от телефона.
 - **Фаза 2 (окно + БД):** вложенность папок (4б) — проверка/фикс билдера на
   боевой БД.
-- **Фаза 3 (Flutter + Go + APK v29):** модель телефона + тип связи (5).
+- **Фаза 3 (Flutter + Go): КОД ГОТОВ 08.09** — модель телефона + тип связи
+  (5), прогресс докачки в окне (6b). Коммит сервера `8cc8915`. Осталось:
+  APK v29 (по просьбе Alex) + пересборка окна + живая проверка.
 - **Фаза 4:** явные счётчики «на диске» если жалоба по (6) не снимется.
 
 ## Заметки
