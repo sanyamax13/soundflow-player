@@ -111,6 +111,9 @@ func (d *DB) SaveSync(dev Device, events []SyncEvent) ([]string, error) {
 					FROM tracks t WHERE t.id = ?
 					ON CONFLICT(normalized_key) DO UPDATE SET kind='blocked'`, now, e.TrackID)
 			}
+			// «Обучение вкусу», этап 2 (docs/TASTE-PLAN.md): like/skip/delete/…
+			// → строка сигнала в feedback_event.
+			recordFeedback(tx, e.UUID, dev.ID, e.TrackID, e.Kind, e.Payload, now, e.ClientTS)
 		}
 	}
 	if err := tx.Commit(); err != nil {

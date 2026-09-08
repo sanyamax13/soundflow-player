@@ -45,6 +45,14 @@ func Open(path string) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS sync_plans (
 			device_id TEXT PRIMARY KEY, add_ids TEXT NOT NULL DEFAULT '[]',
 			remove_ids TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')`,
+		`CREATE TABLE IF NOT EXISTS feedback_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, event_uuid TEXT NOT NULL UNIQUE,
+			device_id TEXT NOT NULL DEFAULT '', track_id TEXT NOT NULL DEFAULT '',
+			artist TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL DEFAULT '',
+			value REAL NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '',
+			client_ts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')`,
+		`CREATE INDEX IF NOT EXISTS feedback_event_track_idx ON feedback_event (track_id)`,
+		`CREATE INDEX IF NOT EXISTS feedback_event_artist_idx ON feedback_event (artist)`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

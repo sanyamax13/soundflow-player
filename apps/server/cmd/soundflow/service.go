@@ -38,7 +38,7 @@ type Service struct {
 	jobs      *JobRunner
 	phoneAddr string
 	phoneSrv  *http.Server
-	phoneAPI  *api.Server // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
+	phoneAPI  *api.Server      // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
 	dl        *downloaderProc  // дочерний Python «качалка» (Найти трек / торренты)
 	store     *litestore.Store // та же БД для acquire из окна
 	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
@@ -152,6 +152,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/devices/{id}/sync-preview", s.hSyncPreview)
 	r.Post("/api/devices/{id}/sync-plan", s.hSyncPlanCommit)
 	r.Get("/api/log", s.hLog)
+	r.Get("/api/taste", s.hTaste)
+	r.Post("/api/taste/rebuild", s.hTasteRebuild)
 	r.Get("/api/jobs", s.hJobs)
 	r.Post("/api/scan", s.hScan)
 	r.Post("/api/reindex", s.hReindex)

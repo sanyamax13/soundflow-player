@@ -91,6 +91,25 @@ CREATE TABLE IF NOT EXISTS sync_plans (
     created_at TEXT NOT NULL DEFAULT ''
 );
 
+-- «Обучение вкусу» (docs/TASTE-PLAN.md, этап 2). Производится из sync_events
+-- при каждом SaveSync: like/skip/delete/… → строка с типом и весом-концептом.
+-- Храним СОБЫТИЯ, не итоговые оценки (оценки пересчитываются). event_uuid =
+-- sync_events.event_uuid — дедуп.
+CREATE TABLE IF NOT EXISTS feedback_event (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_uuid TEXT NOT NULL UNIQUE,
+    device_id  TEXT NOT NULL DEFAULT '',
+    track_id   TEXT NOT NULL DEFAULT '',
+    artist     TEXT NOT NULL DEFAULT '',
+    event_type TEXT NOT NULL DEFAULT '',   -- like/unlike/dislike/finish/skip_early/skip_normal/delete_not_my_taste/delete_bad_version/delete_dup
+    value      REAL NOT NULL DEFAULT 0,    -- вес-концепт из TASTE-PLAN §1
+    reason     TEXT NOT NULL DEFAULT '',
+    client_ts  INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS feedback_event_track_idx ON feedback_event (track_id);
+CREATE INDEX IF NOT EXISTS feedback_event_artist_idx ON feedback_event (artist);
+
 CREATE TABLE IF NOT EXISTS server_log (
     id     INTEGER PRIMARY KEY,
     at     TEXT NOT NULL DEFAULT '',
