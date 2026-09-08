@@ -96,18 +96,28 @@ class PlayerController {
     }
     _lastErrorAt = now;
     _consecutiveErrors++;
-    final p = _player;
-    if (p == null) return;
-    if (_consecutiveErrors > 5) {
-      // Похоже, беда не в одном файле — не долбим дальше, просто встаём.
-      p.pause();
-      return;
-    }
-    if (_queue.length > 1) {
-      p.seekToNext().catchError((_) {});
-    } else {
-      p.pause();
-    }
+
+    // Реакцию (pause/seekToNext) НЕЛЬЗЯ звать прямо здесь: этот колбэк —
+    // синхронная рассылка ошибки из потока just_audio, а pause()/seekToNext()
+    // пишут в те же rxdart-Subject внутри плеера → «Bad state: Cannot fire
+    // new event. Controller is already firing an event» и падение ВСЕГО
+    // приложения (Alex 08.09.2026, поймано чёрным ящиком, стек упирался в
+    // AudioPlayer.pause ← _onPlaybackError). Откладываем на микротаск —
+    // отработает, когда поток закончил слать событие.
+    scheduleMicrotask(() {
+      final p = _player;
+      if (p == null) return;
+      if (_consecutiveErrors > 5) {
+        // Похоже, беда не в одном файле — не долбим дальше, просто встаём.
+        p.pause().catchError((_) {});
+        return;
+      }
+      if (_queue.length > 1) {
+        p.seekToNext().catchError((_) {});
+      } else {
+        p.pause().catchError((_) {});
+      }
+    });
   }
 
   AudioPlayer _ensure() {
