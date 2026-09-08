@@ -1595,7 +1595,19 @@
       со списком последствий, затем пересбор карточки.
   - **Адрес сервера по умолчанию `127.0.0.1:8090`** (`fd04dbd`,
     `apps/mobile/lib/core/config.dart`) — при USB-only чистая установка апк
-    без ввода адреса. **Ждёт APK v35** (вместе с `7f60445` `_syncNow`).
+    без ввода адреса.
+  - **APK v35** (Alex TG 19169 «и на пк и на телефон новые версии»):
+    `flutter build apk --target-platform android-arm64` → `app-release.apk`
+    (libapp.so только arm64, 20.5 МБ, sha256
+    `76c2210e58ca9fa554f89b054139b55ca4e74d856a12a75e2ebbd1d8b7ce8668`).
+    Вошло сверх v34: `7f60445` (`_syncNow` тянет план) + `fd04dbd` (адрес
+    по умолчанию). В `SoundFlow-portable\` + рабочий стол, v34 → `_backup-
+    20260908\`. Отправлен в Telegram. **На устройстве не проверено.**
+  - **`Проверка-с-нуля.cmd`** в `SoundFlow-portable\` (Alex TG 19148, 19170):
+    запускает `SoundFlow.exe` с `SOUNDFLOW_DB=%~dp0_test-fresh\soundflow.db`
+    (пустая отдельная база, порт 8090, `type nul` создаёт файл заранее —
+    иначе сработал бы фолбэк `NewService` на `E:\soundflow-lab`). Инструкция
+    «с нуля» (ПК + телефон) — в записке ЧИТАЙ, раздел «ПРОВЕРКА С НУЛЯ».
   - **USB-только (`c357296`, Alex «только USB и делай»):** SoundFlow сам
     держит `adb reverse tcp:8090` живым, пока телефон в кабеле
     (`usbtunnel.go`, горутина раз в 5 c). `adb.exe` + 3 dll бандлятся в
