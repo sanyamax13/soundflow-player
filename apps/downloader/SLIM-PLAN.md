@@ -14,9 +14,21 @@
   порт случайный свободный (не фикс 8001).
 - Упаковка позже: сначала работает из `uv`-венва, потом PyInstaller
   **onedir** (не one-file: медленный старт + ложные срабатывания антивируса).
-- Источники v1 (Alex 18955, голос: «торренты нужны, сразу после Яндекса»):
-  **Яндекс → nnmclub → rutor → tapochek → musify → mp3party**.
-  Soulseek, SoundCloud, YouTube — потом.
+- **Два режима в окне (Alex 18958, голос — торренты должны быть видимыми,
+  не «скрытно качается»):**
+  1. **«Найти трек»** — быстрый автомат для ОДНОГО трека: артист+название →
+     цепочка Яндекс → musify → mp3party, берёт лучшую версию, качает.
+     Тут выбора нет — это `/find-audio` как есть (Яндекс = точная студийная
+     320). Торренты из этой цепочки УБРАТЬ.
+  2. **«Торренты — обзор»** — руками: артист/альбом → опрос nnmclub/rutor/
+     tapochek → СПИСОК кандидатов (альбом, год, формат/битрейт, размер,
+     сиды/личи, трекер) БЕЗ скачивания → Alex ставит галочку → скачиваем
+     выбранный альбом, треки в каталог.
+     Нужны НОВЫЕ ручки: `POST /torrent/search` (только поиск, вернуть
+     кандидатов) и `POST /torrent/download` (по выбранному forum_url/magnet).
+     `*_album.py` на фг уже разделены на search + download внутри —
+     расщепить наружу.
+- Soulseek, SoundCloud, YouTube — потом.
 - Торренты: qBittorrent на brain УЖЕ установлен (`C:\Program Files\
   qBittorrent\qbittorrent.exe`), выключен. SoundFlow поднимает и его.
 - Токены есть (сняты с фг вместе с качалкой): `YANDEX_MUSIC_TOKEN`,
@@ -41,13 +53,21 @@
 - оставить `/health`, `/find-audio`, `/id3-info`, `/yandex/search-artist`,
   `/yandex/track-cover`, `/musify-find`, `/musify-download`.
 
-`src/providers/audio_chain.py`:
+`src/providers/audio_chain.py` (режим 1 «Найти трек»):
 - убрать импорты `soundcloud_download`, `youtube_music_download`,
   `soulseek_download`; убрать весь `fast_tasks`/`_await_fast_results`/
   `_cancel_and_cleanup_fast` блок;
-- порядок цепочки: yandex → nnmclub → rutor → tapochek → musify → mp3party;
+- убрать торренты из этой цепочки (они теперь режим 2, руками);
+- порядок: yandex → musify → mp3party;
 - mp3party сейчас отключён (комментарий «в РФ 29-байтовые stubs») —
   вернуть как последний, но не падать если пусто.
+
+Режим 2 «Торренты — обзор» — новый модуль `src/providers/torrent_browse.py`
+(или расширить `main.py`): `search(query)` опрашивает nnmclub/rutor/
+tapochek, объединяет кандидатов `{tracker, forum_url, album, year, format,
+bitrate_kbps, size_bytes, seeders, leechers}`; `download(forum_url|magnet)`
+= существующая download-половина `*_album.py`. Ручки `/torrent/search`,
+`/torrent/download`.
 
 `pyproject.toml` — выкинуть зависимости:
 `yt-dlp`, `bgutil-ytdlp-pot-provider`, `slskd-api`, `torch`, `torchaudio`,
