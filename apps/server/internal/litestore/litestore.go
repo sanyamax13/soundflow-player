@@ -405,6 +405,28 @@ func (s *Store) SyncReport(ctx context.Context, deviceID string) (*time.Time, in
 	return s.d.SyncReport(deviceID)
 }
 
+// DevicePlan — план ручной синхронизации: id из sync_plans + полные карточки
+// треков к закачке (localdb.TracksByIDs). Плана нет → ok=false.
+func (s *Store) DevicePlan(ctx context.Context, deviceID string) ([]db.CatalogTrack, []string, string, bool, error) {
+	addIDs, remove, at, ok, err := s.d.Plan(deviceID)
+	if err != nil || !ok {
+		return nil, nil, "", ok, err
+	}
+	var add []db.CatalogTrack
+	if len(addIDs) > 0 {
+		list, e := s.d.TracksByIDs(addIDs)
+		if e != nil {
+			return nil, nil, "", false, e
+		}
+		add = toDBCatalog(list)
+	}
+	return add, remove, at, true, nil
+}
+
+func (s *Store) ClearDevicePlan(ctx context.Context, deviceID string) error {
+	return s.d.ClearPlan(deviceID)
+}
+
 // ---------- журнал сервера / отчёты ----------
 
 func (s *Store) AddServerLog(ctx context.Context, kind, artist, title, detail string, bytes int64) error {

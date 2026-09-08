@@ -179,6 +179,41 @@ class Api {
     }
   }
 
+  /// План ручной синхронизации, который Alex собрал в окне на компе (кнопка
+  /// «Синхронизировать» → список с галочками → «Далее»). `add` — карточки
+  /// треков к скачиванию, `remove` — id к удалению на телефоне. Плана нет
+  /// (сервер ответил 204) — null.
+  Future<
+      ({
+        List<Map<String, dynamic>> add,
+        List<String> remove,
+        String createdAt,
+      })?> deviceSyncPlan(String deviceId) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/v1/device/plan',
+      queryParameters: {'device': deviceId},
+    );
+    if (res.statusCode == 204 || res.data == null) return null;
+    final add =
+        ((res.data?['add'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final remove =
+        ((res.data?['remove'] as List?) ?? const []).map((e) => '$e').toList();
+    if (add.isEmpty && remove.isEmpty) return null;
+    return (
+      add: add,
+      remove: remove,
+      createdAt: '${res.data?['created_at'] ?? ''}',
+    );
+  }
+
+  /// Отчитаться серверу, что план синхронизации выполнен — сервер его удалит.
+  Future<void> ackSyncPlan(String deviceId) async {
+    await _dio.post<Map<String, dynamic>>(
+      '/v1/device/plan/ack',
+      data: {'device': deviceId},
+    );
+  }
+
   /// «Докачать ещё»: отдаём id уже скачанного, получаем следующую порцию
   /// каталога (избранное — вперёд), пока не наберётся budgetBytes.
   Future<({List<Map<String, dynamic>> tracks, int totalBytes})> nextLibraryBatch({

@@ -107,6 +107,20 @@ class DownloadsRepo {
         trackId: id, payload: reason == null ? null : {'reason': reason});
   }
 
+  /// Стереть скачанный трек ТОЛЬКО на телефоне — без события на сервер и без
+  /// журнала «Убранные». Для плана ручной синхронизации: убрать трек решил
+  /// сам сервер (окно на компе), эхо-событие «delete» не нужно и опасно —
+  /// обычное удаление на сервере метит трек «больше не качать» и стирает
+  /// файл на компе.
+  Future<void> _deleteLocalOnly(String id) async {
+    final row = await _db.downloadedById(id);
+    if (row != null) {
+      final f = File(row.path);
+      if (f.existsSync()) f.deleteSync();
+    }
+    await _db.deleteDownloaded(id);
+  }
+
   /// Поправить нечитаемые теги скачанной песни (кнопка «Исправить имя»,
   /// Alex TG 18693). Заодно кладём событие — сервер тоже узнает.
   Future<void> rename(String id,
@@ -284,6 +298,70 @@ class DownloadsRepo {
           deviceId: devId, done: done, total: total, current: '', active: false);
     }
     return (downloaded: done - failed, bytes: bytes, failed: failed);
+  }
+
+  /// Выполнить план ручной синхронизации, собранный Alex в окне на компе
+  /// (кнопка «Синхронизировать» → галочки → «Далее», Alex TG 19000, 19002).
+  /// Телефон только исполняет: качает отмеченное к добавлению, стирает
+  /// отмеченное к удалению (локально, без события), потом отчитывается —
+  /// сервер удаляет план. Плана нет — тихо выходим (0/0/0). Нет связи —
+  /// бросит исключение вызывающему (AutoSync его глотает, подхватим позже).
+  /// onProgress зовётся как в [downloadMore]: (сделано, всего, что сейчас).
+  Future<({int added, int removed, int failed})> applyPendingPlan({
+    void Function(int done, int total, String title)? onProgress,
+  }) async {
+    final devId = await _sync?.deviceId();
+    if (devId == null) return (added: 0, removed: 0, failed: 0);
+    final plan = await _api.deviceSyncPlan(devId);
+    if (plan == null) return (added: 0, removed: 0, failed: 0);
+
+    final total = plan.add.length + plan.remove.length;
+    var done = 0;
+    var added = 0;
+    var removed = 0;
+    var failed = 0;
+
+    for (final track in plan.add) {
+      final label = '${track['artist'] ?? ''} — ${track['title'] ?? ''}';
+      onProgress?.call(done, total, label);
+      await _api.syncProgress(
+          deviceId: devId, done: done, total: total, current: label, active: true);
+      try {
+        final id = '${track['id']}';
+        if (!await isDownloaded(id)) {
+          await download(track);
+          added++;
+        }
+      } catch (_) {
+        // Один плохой трек не рвёт весь план — недокачанное останется в
+        // плане до ack и подберётся в следующий заход.
+        failed++;
+      }
+      done++;
+    }
+
+    for (final id in plan.remove) {
+      onProgress?.call(done, total, '');
+      try {
+        await _deleteLocalOnly(id);
+        removed++;
+      } catch (_) {
+        failed++;
+      }
+      done++;
+    }
+
+    onProgress?.call(done, total, '');
+    await _api.syncProgress(
+        deviceId: devId, done: done, total: total, current: '', active: false);
+
+    // Отчитались — сервер уберёт план. Не вышло (сеть моргнула) — план
+    // останется, подхватим позже; уже скачанное пропускается (isDownloaded).
+    try {
+      await _api.ackSyncPlan(devId);
+    } catch (_) {}
+
+    return (added: added, removed: removed, failed: failed);
   }
 
   /// Заказать трек на сервере. Возвращает ответ каталога:

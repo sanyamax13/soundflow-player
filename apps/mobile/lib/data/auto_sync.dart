@@ -29,6 +29,7 @@ class AutoSync with WidgetsBindingObserver {
   Timer? _periodic;
   Timer? _debounced;
   bool _started = false;
+  bool _applyingPlan = false;
 
   void start() {
     if (_started) return;
@@ -59,11 +60,26 @@ class AutoSync with WidgetsBindingObserver {
 
   Future<void> _trySync() async {
     try {
-      if (await _sync.pendingCount() == 0) return;
-      final bytes = (await _downloads.summary()).bytes;
-      await _sync.sync(musicBytes: bytes);
+      if (await _sync.pendingCount() > 0) {
+        final bytes = (await _downloads.summary()).bytes;
+        await _sync.sync(musicBytes: bytes);
+      }
     } catch (_) {
       // Нет связи с сервером — не страшно, события в очереди, попробуем позже.
+    }
+    // План ручной синхронизации (Alex собрал в окне на компе — кнопка,
+    // галочки, «Далее»). Проверяем каждый заход, даже когда событий в
+    // очереди нет: телефон «только принимает инфу» (Alex TG 19002).
+    // Закачка плана может быть долгой — не пускаем два прохода разом.
+    if (!_applyingPlan) {
+      _applyingPlan = true;
+      try {
+        await _downloads.applyPendingPlan();
+      } catch (_) {
+        // Нет связи / план не забрали — подхватим в следующий раз.
+      } finally {
+        _applyingPlan = false;
+      }
     }
   }
 }

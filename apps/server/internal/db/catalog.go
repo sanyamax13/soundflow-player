@@ -550,6 +550,14 @@ func (d *Pool) TrackWaveform(ctx context.Context, id string) (bars []byte, found
 	return nil, false, nil
 }
 
+// DevicePlan / ClearDevicePlan — план ручной синхронизации живёт только в
+// SQLite-сервере «одно приложение». В Postgres-варианте плана нет.
+func (d *Pool) DevicePlan(ctx context.Context, deviceID string) (add []CatalogTrack, remove []string, at string, ok bool, err error) {
+	return nil, nil, "", false, nil
+}
+
+func (d *Pool) ClearDevicePlan(ctx context.Context, deviceID string) error { return nil }
+
 func nullInt(v int) any {
 	if v <= 0 {
 		return nil

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -198,6 +199,42 @@ func (d *DB) Plan(deviceID string) (add, remove []string, at string, ok bool, er
 func (d *DB) ClearPlan(deviceID string) error {
 	_, err := d.sql.Exec(`DELETE FROM sync_plans WHERE device_id=?`, deviceID)
 	return err
+}
+
+// TracksByIDs — карточки каталога по списку id (новые сверху). Нужно для
+// плана ручной синхронизации: окно на компе сохранило только id, телефон
+// просит по ним полные данные, чтобы скачать (название, обложка, размер).
+// Треки, помеченные blocked или удалённые между сохранением плана и
+// запросом, просто выпадут из выборки (catalogSelect их не отдаёт) — это
+// правильно: телефон их не скачает. Разбиваем на пачки — не упереться в
+// лимит переменных SQLite на очень длинном плане.
+func (d *DB) TracksByIDs(ids []string) ([]CatalogTrack, error) {
+	out := make([]CatalogTrack, 0, len(ids))
+	const chunk = 900
+	for i := 0; i < len(ids); i += chunk {
+		end := i + chunk
+		if end > len(ids) {
+			end = len(ids)
+		}
+		part := ids[i:end]
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
+		args := make([]any, len(part))
+		for j, id := range part {
+			args[j] = id
+		}
+		rows, err := d.sql.Query(catalogSelect+`
+			AND t.id IN (`+ph+`)
+			ORDER BY t.created_at DESC, t.id DESC`, args...)
+		if err != nil {
+			return nil, err
+		}
+		list, err := d.scanCatalog(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, list...)
+	}
+	return out, nil
 }
 
 // TrackCoverURL — cover_url трека (может быть меткой embedded/none).

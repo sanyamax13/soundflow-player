@@ -40,6 +40,12 @@ type Store interface {
 	SaveSync(ctx context.Context, dev db.Device, events []db.SyncEvent) ([]string, error)
 	SyncReport(ctx context.Context, deviceID string) (lastSync *time.Time, total int64, err error)
 
+	// План ручной синхронизации: Alex собрал его в окне на компе (кнопка
+	// «Синхронизировать» → галочки → «Далее»), телефон забирает и исполняет.
+	// add — полные карточки треков к закачке, remove — id к удалению.
+	DevicePlan(ctx context.Context, deviceID string) (add []db.CatalogTrack, remove []string, at string, ok bool, err error)
+	ClearDevicePlan(ctx context.Context, deviceID string) error
+
 	AddServerLog(ctx context.Context, kind, artist, title, detail string, bytes int64) error
 	RecentServerLog(ctx context.Context, limit int) ([]db.ServerLogRow, error)
 	RecentEvents(ctx context.Context, limit int) ([]db.EventInfo, error)
