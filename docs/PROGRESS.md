@@ -1277,6 +1277,25 @@
   2002 < 2027 у Alex, Android отказал «Приложение не установлено». Правило из
   «Где что» (arm64 vC = 2000+номер) не свернул. pubspec вернул на `1.0.0+1`.
 
+- [ ] **Этап 50 — окно на ПК: устройства (модель + связь) + прогресс докачки.**
+  08.09.2026 (Alex TG 18917, 18928; план `docs/PC-PLAYER-PLAN.md` фаза 3).
+  Коммиты: сервер `8cc8915`, mobile `f28b16b`. Код готов, собирается
+  (`go build -tags desktop,production` ok, `flutter analyze` чисто,
+  `compileDebugKotlin` ok). Осталось: APK v29 (по просьбе Alex) + пересборка
+  окна + живая проверка.
+  - Телефон: свой `MethodChannel("soundflow/device")` в `MainActivity.kt`
+    (`Build.MANUFACTURER+MODEL`, `ConnectivityManager` → wifi/ethernet/mobile/
+    vpn) — БЕЗ сторонних пакетов (device_info_plus/connectivity_plus не
+    ставили). `lib/core/device_info.dart`. Манифест: `ACCESS_NETWORK_STATE`.
+    `sync_repo` → `device.name` = модель, `device.transport`.
+  - `downloads_repo.downloadMore` → `POST /v1/sync/progress`
+    `{device_id,done,total,current,active}` на каждый трек.
+  - Сервер: `devices.transport` (миграция `ALTER TABLE`, «duplicate column»
+    гасится). Прогресс докачки — в памяти `api.Server` (`downloadTracker`,
+    файл `internal/api/dlprog.go`), протухает за 2 мин тишины, в БД не пишем.
+    Окно `/api/devices` (`deviceRow` = `localdb.DeviceInfo` + `download`) —
+    строка «качает: <песня> — N из M» с полоской, обновляется раз в 2 с.
+
 - [ ] **Этап 47 — программа для тестировщика (Windows).** 07.09.2026
   (Alex TG 18721–18726). Тестировщик получает приложение без доступа к серверу
   Alex и без его музыки — у него своя папка с песнями. Программа
