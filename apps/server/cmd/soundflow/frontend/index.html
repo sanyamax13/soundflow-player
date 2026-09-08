@@ -153,13 +153,18 @@
   .dtile .dnm{display:block; font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .dtile .dsub{display:block; color:var(--mut); font-size:11px; margin-top:1px}
   .dsongs{border:1px solid var(--line); border-radius:10px; overflow:hidden}
-  .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line)}
+  .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); cursor:pointer}
   .dsongs .drow:last-child{border-bottom:0}
   .drow:hover{background:var(--limebox)}
+  .drow.playing{background:var(--limebox)}
   .drow .dcv{position:relative; width:40px; height:40px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:13px; overflow:hidden}
   .drow .dcv img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+  .drow .dcv .pl{position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.45); color:#fff; font-size:15px}
+  .drow:hover .dcv .pl{display:flex}
+  .drow.playing .dcv .pl{display:flex; background:rgba(0,0,0,.3)}
   .drow .dm{flex:1; min-width:0}
   .drow .dn{display:block; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .drow.playing .dn{color:var(--ok)}
   .drow .da{display:block; color:var(--mut); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .drow .ds{color:var(--faint); font-size:11.5px; white-space:nowrap}
   .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
@@ -518,6 +523,7 @@ let cur = -1;   // индекс в list
 function playAt(i){
   if(i<0 || i>=list.length) return;
   cur = i;
+  _devPlayId = "";           // ушли в список каталога — снять подсветку в «Устройствах»
   const t = list[i];
   au.src = "/audio/" + encodeURIComponent(t.id);
   au.play().catch(()=>{});
@@ -811,15 +817,52 @@ function _devBody(){
 }
 
 function _devSongRow(t){
-  return `<div class="drow"><span class="dcv" style="background:${_devColor(t.artist||'')}">`+
+  const id = esc(t.id||"");
+  const on = _devPlayId && _devPlayId === (t.id||"");
+  return `<div class="drow${on?" playing":""}" data-id="${id}" onclick="_devPlay('${id}')" title="нажми — заиграет здесь, в окне">`+
+    `<span class="dcv" style="background:${_devColor(t.artist||'')}">`+
     `<span>${esc(_devInitials(t.artist||''))}</span>`+
     (t.id ? `<img src="/api/cover/${encodeURIComponent(t.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
+    `<span class="pl">${on?"⏸":"▶"}</span>`+
     `</span><span class="dm"><span class="dn">${esc(t.title||t.id)}</span>`+
     `<span class="da">${esc(t.artist||"")}</span></span>`+
     `<span class="ds">${t.size_bytes?gb(t.size_bytes):""}</span></div>`;
 }
 function _devOpenA(i){ _devOpenArtist = _devArtists[i] && _devArtists[i].key; _devBody(); }
 function _devBackToTiles(){ _devOpenArtist = null; _devBody(); }
+
+// Клик по песне телефона — играет тут же, в окне (Alex TG 19144, 19158).
+let _devPlayId = "";
+function _devTrackById(id){ return _devOnDev.find(t => (t.id||"") === id); }
+function _devPlay(id){
+  const t = _devTrackById(id);
+  if(!t || !t.id){ return; }
+  if(_devPlayId === t.id && au.src){ au.paused ? au.play() : au.pause(); _devMarkPlaying(); return; }
+  _devPlayId = t.id;
+  cur = -1;                                   // выйти из «списка каталога», чтобы ▶▶ не прыгал по нему
+  au.src = "/audio/" + encodeURIComponent(t.id);
+  au.play().catch(()=>{});
+  $("#player").classList.remove("empty");
+  $("#pt1").textContent = t.title || "—";
+  $("#pt2").textContent = t.artist || "";
+  const cov = $("#pcov");
+  cov.textContent = "♪"; cov.style.backgroundImage = "";
+  const img = new Image();
+  img.onload  = () => { cov.textContent=""; cov.style.backgroundImage = `url(/api/cover/${encodeURIComponent(t.id)})`; cov.style.backgroundSize="cover"; };
+  img.onerror = () => { cov.style.backgroundImage=""; cov.textContent="♪"; };
+  img.src = "/api/cover/" + encodeURIComponent(t.id);
+  _devMarkPlaying();
+}
+function _devMarkPlaying(){
+  document.querySelectorAll("#devBody .drow").forEach(r => {
+    const on = !!_devPlayId && r.dataset.id === _devPlayId;
+    r.classList.toggle("playing", on);
+    const pl = r.querySelector(".dcv .pl");
+    if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";
+  });
+}
+au.addEventListener("play",  _devMarkPlaying);
+au.addEventListener("pause", _devMarkPlaying);
 
 /* --- ручная синхронизация: окно выбора --- */
 let _syncDev = "";
