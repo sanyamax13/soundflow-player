@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,6 +69,20 @@ async def find_audio_chain(
             log.info("audio_chain: %s — %s эталон длины %ss (Яндекс)",
                      artist, title, expected_duration_sec)
 
+    # Правило (Alex 08.09.2026): не отдавать обрезок. Годен, если:
+    #  - длина в допуске от эталона Яндекса (если эталон есть), И
+    #  - не короче 40 с (кроме интро/аутро/скитов — там короткое законно).
+    _short_ok = re.search(
+        r"\b(intro|outro|interlude|skit|prelude|reprise|coda|overture|snippet)\b",
+        f"{title}", re.I) is not None
+
+    def _acceptable(dur: int | None) -> bool:
+        if expected_duration_sec and duration_off(dur, expected_duration_sec):
+            return False
+        if dur and dur < 40 and not _short_ok:
+            return False
+        return True
+
     # 1. Yandex Music — 320, точная студийная версия. Нет токена → None.
     if "yandex" not in skip:
         ym_res = await _safe(ym.download_track(
@@ -75,16 +90,22 @@ async def find_audio_chain(
             expected_duration_sec=expected_duration_sec), "yandex")
         if ym_res is not None:
             ym_path, m = ym_res
-            log.info("audio_chain: %s — Yandex успех (%skbps)", artist, m.bitrate_kbps)
-            return AudioChainResult(
-                file_path=ym_path,
-                bitrate_kbps=m.bitrate_kbps,
-                duration_sec=m.duration_sec,
-                size_bytes=os.path.getsize(ym_path),
-                source="yandex",
-                provider_user="yandex",
-                provider_url=f"yandexmusic://{m.track_id}",
-            )
+            if not _acceptable(m.duration_sec):
+                log.info("audio_chain: Yandex отдал обрезок (%ss vs %ss), пропускаю",
+                         m.duration_sec, expected_duration_sec)
+                try: os.remove(ym_path)
+                except OSError: pass
+            else:
+                log.info("audio_chain: %s — Yandex успех (%skbps)", artist, m.bitrate_kbps)
+                return AudioChainResult(
+                    file_path=ym_path,
+                    bitrate_kbps=m.bitrate_kbps,
+                    duration_sec=m.duration_sec,
+                    size_bytes=os.path.getsize(ym_path),
+                    source="yandex",
+                    provider_user="yandex",
+                    provider_url=f"yandexmusic://{m.track_id}",
+                )
 
     # 2. musify.club — свободный 320 mp3.
     if "musify" not in skip:
@@ -92,22 +113,26 @@ async def find_audio_chain(
             artist, title, rejected_source_urls=rejected,
             expected_duration_sec=expected_duration_sec), "musify")
         if mr is not None:
-            log.info("audio_chain: %s — musify успех (%skbps)", artist, mr.bitrate_kbps)
-            return AudioChainResult(
-                file_path=mr.file_path,
-                bitrate_kbps=mr.bitrate_kbps,
-                duration_sec=mr.duration_sec,
-                size_bytes=mr.size_bytes,
-                source="musify",
-                provider_user="musify",
-                provider_url=mr.source_url,
-            )
+            if not _acceptable(mr.duration_sec):
+                log.info("audio_chain: musify отдал обрезок (%ss vs %ss), пропускаю",
+                         mr.duration_sec, expected_duration_sec)
+            else:
+                log.info("audio_chain: %s — musify успех (%skbps)", artist, mr.bitrate_kbps)
+                return AudioChainResult(
+                    file_path=mr.file_path,
+                    bitrate_kbps=mr.bitrate_kbps,
+                    duration_sec=mr.duration_sec,
+                    size_bytes=mr.size_bytes,
+                    source="musify",
+                    provider_user="musify",
+                    provider_url=mr.source_url,
+                )
 
     # 3. mp3party.net — последний. В РФ бывает отдаёт заглушки — не падаем.
     if "mp3party" not in skip:
         pr = await _safe(m3p.find_and_download(artist, title), "mp3party")
         if pr is not None:
-            if duration_off(pr.duration_sec, expected_duration_sec):
+            if not _acceptable(pr.duration_sec):
                 log.info("audio_chain: mp3party wrong duration (%ss vs %ss), пропускаю",
                          pr.duration_sec, expected_duration_sec)
             elif pr.track_url in rejected:
