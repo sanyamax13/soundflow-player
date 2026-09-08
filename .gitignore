@@ -48,3 +48,10 @@ apps/server/build/dist/
 apps/server/build/_lastbuild.log
 apps/server/soundflow-apidiff
 apps/server/soundflow-apidiff.exe
+
+# apps/downloader — Python-качалка: окружение и сборка
+apps/downloader/.venv/
+apps/downloader/dist/
+apps/downloader/build/
+apps/downloader/*.spec
+apps/downloader/**/__pycache__/
