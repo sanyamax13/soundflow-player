@@ -53,6 +53,10 @@ func Open(path string) (*DB, error) {
 			client_ts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')`,
 		`CREATE INDEX IF NOT EXISTS feedback_event_track_idx ON feedback_event (track_id)`,
 		`CREATE INDEX IF NOT EXISTS feedback_event_artist_idx ON feedback_event (artist)`,
+		`CREATE TABLE IF NOT EXISTS taste_cluster (
+			layer TEXT NOT NULL DEFAULT 'all', idx INTEGER NOT NULL,
+			vec BLOB NOT NULL, n INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (layer, idx))`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

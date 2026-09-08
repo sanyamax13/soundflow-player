@@ -110,6 +110,20 @@ CREATE TABLE IF NOT EXISTS feedback_event (
 CREATE INDEX IF NOT EXISTS feedback_event_track_idx ON feedback_event (track_id);
 CREATE INDEX IF NOT EXISTS feedback_event_artist_idx ON feedback_event (artist);
 
+-- «Центры вкуса» по звуку (TASTE-PLAN §3, этап 3): k-means по отпечаткам
+-- положительно оценённых треков. Не один «средний вкус», а 3–5 центров —
+-- у человека параллельно несколько жанров. layer — задел под слои
+-- long/recent/session (пока один 'all'). Производная таблица, пересчёт по
+-- запросу /api/taste/rebuild или /api/taste/cluster.
+CREATE TABLE IF NOT EXISTS taste_cluster (
+    layer      TEXT NOT NULL DEFAULT 'all',
+    idx        INTEGER NOT NULL,
+    vec        BLOB NOT NULL,               -- центроид, 2048 float32 LE, L2-нормирован
+    n          INTEGER NOT NULL DEFAULT 0,  -- сколько треков в кластере
+    updated_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (layer, idx)
+);
+
 CREATE TABLE IF NOT EXISTS server_log (
     id     INTEGER PRIMARY KEY,
     at     TEXT NOT NULL DEFAULT '',

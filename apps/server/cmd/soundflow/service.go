@@ -154,6 +154,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/log", s.hLog)
 	r.Get("/api/taste", s.hTaste)
 	r.Post("/api/taste/rebuild", s.hTasteRebuild)
+	r.Post("/api/taste/cluster", s.hTasteCluster)
 	r.Get("/api/jobs", s.hJobs)
 	r.Post("/api/scan", s.hScan)
 	r.Post("/api/reindex", s.hReindex)
