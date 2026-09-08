@@ -32,6 +32,13 @@ func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
 	if dbState == "ok" {
 		if st, err := s.DB.AdminStatus(r.Context()); err == nil {
 			musicBytes = st.MusicBytes
+			// Есть каталог — источник это он (файлы отдаём с диска по канон.
+			// пути). "тестовые тоны" из Music.SourceLabel() — только пока
+			// каталог пуст; иначе это пугающий и неверный ярлык на экране
+			// «Сервер» телефона (Alex 08.09.2026).
+			if st.Tracks > 0 {
+				out["music_source"] = "каталог"
+			}
 			out["catalog"] = map[string]int64{
 				"tracks":            st.Tracks,
 				"track_files":       st.TrackFiles,
