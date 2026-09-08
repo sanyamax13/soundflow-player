@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS sync_events (
 );
 CREATE INDEX IF NOT EXISTS sync_events_device_idx ON sync_events (device_id, applied_at);
 
+-- «Ручная синхронизация» (Alex TG 19000): комп сохраняет выбранный план,
+-- телефон забирает и выполняет. Один активный план на устройство.
+CREATE TABLE IF NOT EXISTS sync_plans (
+    device_id  TEXT PRIMARY KEY,
+    add_ids    TEXT NOT NULL DEFAULT '[]',
+    remove_ids TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS server_log (
     id     INTEGER PRIMARY KEY,
     at     TEXT NOT NULL DEFAULT '',

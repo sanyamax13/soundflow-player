@@ -165,6 +165,41 @@ func (d *DB) DeviceTrackIDs(deviceID string) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
+// SavePlan — сохранить/заменить план ручной синхронизации для устройства.
+func (d *DB) SavePlan(deviceID string, addIDs, removeIDs []string) error {
+	a, _ := json.Marshal(addIDs)
+	r, _ := json.Marshal(removeIDs)
+	_, err := d.sql.Exec(`
+		INSERT INTO sync_plans (device_id, add_ids, remove_ids, created_at)
+		VALUES (?,?,?,?)
+		ON CONFLICT(device_id) DO UPDATE SET add_ids=excluded.add_ids,
+			remove_ids=excluded.remove_ids, created_at=excluded.created_at`,
+		deviceID, string(a), string(r), time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// Plan — активный план устройства. ok=false — плана нет.
+func (d *DB) Plan(deviceID string) (add, remove []string, at string, ok bool, err error) {
+	var a, r string
+	err = d.sql.QueryRow(`SELECT add_ids, remove_ids, created_at FROM sync_plans WHERE device_id=?`,
+		deviceID).Scan(&a, &r, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, "", false, nil
+	}
+	if err != nil {
+		return nil, nil, "", false, err
+	}
+	_ = json.Unmarshal([]byte(a), &add)
+	_ = json.Unmarshal([]byte(r), &remove)
+	return add, remove, at, true, nil
+}
+
+// ClearPlan — телефон отчитался о выполнении.
+func (d *DB) ClearPlan(deviceID string) error {
+	_, err := d.sql.Exec(`DELETE FROM sync_plans WHERE device_id=?`, deviceID)
+	return err
+}
+
 // TrackCoverURL — cover_url трека (может быть меткой embedded/none).
 func (d *DB) TrackCoverURL(id string) (url string, found bool, err error) {
 	e := d.sql.QueryRow(`SELECT cover_url FROM tracks WHERE id=?`, id).Scan(&url)

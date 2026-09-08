@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -66,3 +68,24 @@ type localdbCat struct {
 	title  string
 	size   int64
 }
+
+// POST /api/devices/{id}/sync-plan  body {"add":[ids],"remove":[ids]}
+// Окно сохраняет выбор Alex; телефон заберёт при подключении.
+func (s *Service) hSyncPlanCommit(w http.ResponseWriter, r *http.Request) {
+	dev := chi.URLParam(r, "id")
+	var body struct {
+		Add    []string `json:"add"`
+		Remove []string `json:"remove"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || dev == "" {
+		http.Error(w, "нужен id и тело {add,remove}", 400)
+		return
+	}
+	if err := s.db.SavePlan(dev, body.Add, body.Remove); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	_ = s.db.AddServerLog("info", "", "", "план синхронизации сохранён: +"+strconv.Itoa(len(body.Add))+" −"+strconv.Itoa(len(body.Remove)), 0)
+	writeJSON(w, map[string]any{"saved": true, "add": len(body.Add), "remove": len(body.Remove)})
+}
+

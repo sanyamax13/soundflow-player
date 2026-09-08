@@ -150,6 +150,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/search", s.hSearch)
 	r.Get("/api/devices", s.hDevices)
 	r.Get("/api/devices/{id}/sync-preview", s.hSyncPreview)
+	r.Post("/api/devices/{id}/sync-plan", s.hSyncPlanCommit)
 	r.Get("/api/log", s.hLog)
 	r.Get("/api/jobs", s.hJobs)
 	r.Post("/api/scan", s.hScan)

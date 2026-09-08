@@ -42,6 +42,9 @@ func Open(path string) (*DB, error) {
 	for _, mig := range []string{
 		`ALTER TABLE devices ADD COLUMN transport TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tracks ADD COLUMN waveform BLOB`,
+		`CREATE TABLE IF NOT EXISTS sync_plans (
+			device_id TEXT PRIMARY KEY, add_ids TEXT NOT NULL DEFAULT '[]',
+			remove_ids TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()
