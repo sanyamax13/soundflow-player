@@ -249,12 +249,14 @@ async function loadInfo(){
 let collapsed = new Set();   // свёрнутые корни
 let expanded = new Set();    // раскрытые вложенные папки
 let list = [];               // плоский список видимых треков — очередь плеера
+let rootsInit = false;       // при первой загрузке корни свёрнуты
 
 async function loadCatalog(){
   try{
     const roots = await jget("/api/catalog");
     const box = $("#tree");
     if(!roots.length){ box.innerHTML = '<div class="muted">каталог пуст — нажми «Выбрать папку»</div>'; list=[]; return; }
+    if(!rootsInit){ roots.forEach(r => collapsed.add(r.path)); rootsInit = true; }
     box.innerHTML = "";
     list = [];
     roots.forEach(r => renderNode(box, r, 0));
