@@ -674,20 +674,21 @@ async function openSync(devId, devName){
     const list = (arr, cls, opts) =>
       `<div class="slist">${arr.map(t=>_srow(t,cls,opts)).join("")}</div>`;
 
-    let html = "";
+    // Галочки НИГДЕ не стоят по умолчанию — выбирает Alex (docs/RULES.md §8).
+    let html = `<div class="muted" style="padding:0 0 8px">Отметь, что отправить на телефон. Ничего не отмечено — ничего не уйдёт.</div>`;
 
     if(sg.length){
       html += `<div class="sgrp"><div class="sh">Предлагаю по вкусу — ${sg.length}</div>`+
         `<div class="slist">`+
-        sg.map(x=>_srow(x,"a",{checked:true,tag:x.reason||"по вкусу"})).join("")+
+        sg.map(x=>_srow(x,"a",{tag:x.reason||"по вкусу"})).join("")+
         `</div></div>`;
     }
 
-    html += `<div class="sgrp"><div class="sh">Добавить вручную — ${addOnly.length}${addOnly.length?` (${gb(d.add_bytes||0)})`:""}</div>`+
-      (addOnly.length? list(addOnly,"a",{checked:true}) : '<div class="muted">весь каталог уже на телефоне</div>')+`</div>`;
+    html += `<div class="sgrp"><div class="sh">Добавить вручную — ${addOnly.length}${addOnly.length?` (весь каталог — ${gb(d.add_bytes||0)})`:""}</div>`+
+      (addOnly.length? list(addOnly,"a",{}) : '<div class="muted">весь каталог уже на телефоне</div>')+`</div>`;
 
     html += `<div class="sgrp"><div class="sh">Удалить с телефона — ${rem.length}</div>`+
-      (rem.length? list(rem,"r",{checked:true}) : '<div class="muted">нечего удалять</div>')+`</div>`;
+      (rem.length? list(rem,"r",{}) : '<div class="muted">нечего удалять</div>')+`</div>`;
 
     html += `<details class="sgrp" id="onDevGrp"><summary>Уже на телефоне — ${_syncOnDev.length} (серым, повторно не качается)</summary>`+
       `<input class="sfilter" id="onDevFilter" placeholder="поиск по названию…">`+
@@ -696,7 +697,6 @@ async function openSync(devId, devName){
     html += `<div class="muted" style="margin-top:6px">На телефоне ${nfmt(d.have_count)} из ${nfmt(d.catalog_count)}. Телефон применит план при подключении.</div>`;
 
     $("#syncBody").innerHTML = html;
-    $("#syncNext").disabled = (sg.length+addOnly.length+rem.length)===0;
     _syncSummaryUpdate();
     $("#syncBody").onchange = e=>{
       if(e.target.matches('input.a, input.r')) _syncSummaryUpdate();
@@ -725,7 +725,9 @@ function _syncPick(cls){
     .map(x=>x.dataset.id).filter(id => id && !seen.has(id) && seen.add(id));
 }
 function _syncSummaryUpdate(){
-  $("#syncSummary").textContent = `+${_syncPick("a").length}  −${_syncPick("r").length}`;
+  const a = _syncPick("a").length, r = _syncPick("r").length;
+  $("#syncSummary").textContent = a+r ? `+${a}  −${r}` : "ничего не отмечено";
+  $("#syncNext").disabled = (a+r) === 0;
 }
 
 $("#syncClose").onclick = () => $("#syncModal").hidden = true;
