@@ -1628,8 +1628,12 @@
     компилируется из-за удалённого `features/search/search_screen.dart` —
     не трогал). Две устаревшие точные проверки текста пустого списка
     поправлены на `find.textContaining` (widget_test, stream_test).
-  - APK **не собирал** — жду «ок» от Alex по картинке. **На устройстве не
-    проверено.**
+  - **APK v33** (`--split-per-abi --build-number=33 --target-platform
+    android-arm64`, vC **2033**, arm64, 19.3 МБ, sha256
+    `848055e5d99f53ca9b9ab1ecff64f25fd6515e8de8bdcce7b54f2be30b28aafb`,
+    тот же debug keystore). = v32 + эта правка. Заменил v32 на рабочем
+    столе Alex и в `SoundFlow-portable\` (`SoundFlow-телефон-v33.apk`),
+    записка обновлена. **На устройстве не проверено.**
 
 - [ ] **Этап 47 — программа для тестировщика (Windows).** 07.09.2026
   (Alex TG 18721–18726). Тестировщик получает приложение без доступа к серверу
