@@ -133,6 +133,7 @@ func (s *Service) APIRouter() http.Handler {
 func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/info", s.hInfo)
 	r.Get("/api/catalog", s.hCatalog)
+	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
 	r.Get("/api/devices", s.hDevices)
 	r.Get("/api/log", s.hLog)
@@ -173,6 +174,26 @@ func (s *Service) hCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, tree)
+}
+
+// hRoots — корневые папки каталога для «Настроек»: путь + сколько песен и
+// сколько из них с отпечатком. Считается из того же дерева, что и «Каталог».
+func (s *Service) hRoots(w http.ResponseWriter, r *http.Request) {
+	tree, err := s.buildCatalogTree()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	type root struct {
+		Path   string `json:"path"`
+		Tracks int    `json:"tracks"`
+		WithFP int    `json:"with_fp"`
+	}
+	out := make([]root, 0, len(tree))
+	for _, n := range tree {
+		out = append(out, root{Path: n.Path, Tracks: n.Tracks, WithFP: n.WithFP})
+	}
+	writeJSON(w, out)
 }
 
 func (s *Service) hSearch(w http.ResponseWriter, r *http.Request) {

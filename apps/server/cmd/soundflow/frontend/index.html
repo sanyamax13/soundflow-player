@@ -104,10 +104,26 @@
   .logrows .k{display:inline-block; min-width:64px; font-weight:700}
   .k.info{color:#2563eb} .k.error{color:var(--err)} .k.added{color:var(--ok)} .k.removed{color:var(--warn)}
 
-  .set{max-width:520px}
+  .set{max-width:640px}
   .set .f{display:flex; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px}
   .set .f b{color:var(--mut); font-weight:600}
   .set .f span{text-align:right; word-break:break-all}
+  .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
+  .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
+  .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
+  .empty .btn{margin-top:6px}
+  .set h3{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:26px 0 10px}
+  .set h3:first-child{margin-top:4px}
+  .set .addrbig{font-family:ui-monospace,Consolas,monospace; font-size:19px; font-weight:700; color:var(--ink);
+    background:var(--field); border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:12px}
+  .set .addrbig .sp{flex:1}
+  .set .hint{font-size:11.5px; color:var(--mut); margin-top:6px}
+  .set .rootrow{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line)}
+  .set .rootrow .p{flex:1; min-width:0; word-break:break-all; font-size:12.5px; font-weight:600}
+  .set .rootrow .c{font-size:11.5px; color:var(--mut); white-space:nowrap}
+  .set .srow{display:flex; align-items:center; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px}
+  .set .srow .sp{flex:1}
+  .set .srow b{color:var(--mut); font-weight:600}
 
   /* Плеер */
   .player{height:66px; border-top:1px solid var(--line); background:var(--head);
@@ -258,7 +274,14 @@ async function loadCatalog(){
   try{
     const roots = await jget("/api/catalog");
     const box = $("#tree");
-    if(!roots.length){ box.innerHTML = '<div class="muted">каталог пуст — нажми «Выбрать папку»</div>'; list=[]; return; }
+    if(!roots.length){
+      box.innerHTML =
+        '<div class="empty"><div class="big">Каталог пуст</div>'+
+        '<div class="sub">Укажи папку, где лежит твоя музыка — программа прочитает теги и составит каталог.</div>'+
+        '<button class="btn primary" id="emptyPick">Выбрать папку с музыкой</button></div>';
+      const b = $("#emptyPick"); if(b) b.onclick = pickAndScan;
+      list=[]; return;
+    }
     if(!rootsInit){ roots.forEach(r => collapsed.add(r.path)); rootsInit = true; }
     box.innerHTML = "";
     list = [];
@@ -435,20 +458,63 @@ async function loadSettings(){
   if(!window._info){ try{ await loadInfo(); }catch(e){} }
   const d = window._info;
   if(!d){ $("#set").innerHTML = '<div class="muted">нет данных</div>'; return; }
+  let roots = [];
+  try{ roots = await jget("/api/roots"); }catch(e){}
+  const noFP = Math.max(0, (d.tracks||0) - (d.with_vector||0));
+
+  const rootsHtml = roots.length
+    ? roots.map(r =>
+        `<div class="rootrow"><div class="p">${esc(r.path)}</div>`+
+        `<div class="c">${nfmt(r.tracks)} песен · ${nfmt(r.with_fp)} с отпечатком</div>`+
+        `<button class="btn" data-rescan="${esc(r.path)}">Пересканировать</button></div>`
+      ).join("")
+    : '<div class="hint">Пока ни одной папки. Нажми «Добавить папку».</div>';
+
   $("#set").innerHTML =
-    `<div class="f"><b>Адрес для телефона</b><span>${esc(d.addr)}</span></div>`+
-    `<div class="f"><b>База каталога</b><span>${esc(d.db_path||"—")}</span></div>`+
-    `<div class="f"><b>Модель отпечатков</b><span>${d.has_model?"загружена":"нет (onnxruntime.dll / cnn14.onnx рядом с exe)"}</span></div>`+
-    `<div class="f"><b>Треков в каталоге</b><span>${nfmt(d.tracks)}</span></div>`+
-    `<div class="f"><b>Со звуковым отпечатком</b><span>${nfmt(d.with_vector)}</span></div>`+
+    `<h3>Адрес для телефона</h3>`+
+    `<div class="addrbig"><span id="setAddr">${esc(d.addr)}</span><span class="sp"></span>`+
+    `<button class="btn" id="setCopy">Скопировать</button></div>`+
+    `<div class="hint">Впиши этот адрес в приложении на телефоне: Профиль → Адрес сервера.</div>`+
+
+    `<h3>Папки с музыкой</h3>`+
+    rootsHtml+
+    `<div style="margin-top:12px"><button class="btn primary" id="setAdd">Добавить папку</button></div>`+
+
+    `<h3>Звуковой отпечаток</h3>`+
+    `<div class="srow"><b>Модель</b><span class="sp"></span><span>${d.has_model?"загружена":"нет — положи onnxruntime.dll и cnn14.onnx рядом с программой"}</span></div>`+
+    `<div class="srow"><b>Посчитан</b><span class="sp"></span><span>${nfmt(d.with_vector)} из ${nfmt(d.tracks)}${noFP?` · без отпечатка ${nfmt(noFP)}`:""}</span></div>`+
+    (d.has_model && noFP
+      ? `<div style="margin-top:12px"><button class="btn" id="setReindex">Переиндексировать (${nfmt(noFP)})</button></div>` : "")+
+
+    `<h3>База каталога</h3>`+
+    `<div class="srow"><div class="p" style="flex:1;word-break:break-all">${esc(d.db_path||"—")}</div>`+
+    `<button class="btn" id="setReveal">Открыть папку</button></div>`+
+
+    `<h3>Ещё</h3>`+
     `<div class="f"><b>Файлов музыки</b><span>${nfmt(d.files)}</span></div>`+
     `<div class="f"><b>Свободно на диске</b><span>${fmtGB(d.disk_free)}</span></div>`+
     `<div class="f"><b>Работает</b><span>${Math.round((d.uptime_sec||0)/60)} мин</span></div>`;
+
+  const addr = $("#setAddr")?.textContent || "";
+  $("#setCopy") && ($("#setCopy").onclick = () => {
+    navigator.clipboard && navigator.clipboard.writeText(addr);
+    $("#setCopy").textContent = "Скопировано"; setTimeout(()=>{ if($("#setCopy")) $("#setCopy").textContent="Скопировать"; }, 1500);
+  });
+  $("#setAdd") && ($("#setAdd").onclick = pickAndScan);
+  $("#setReindex") && ($("#setReindex").onclick = () =>
+    jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Переиндексация: "+e)));
+  $("#setReveal") && ($("#setReveal").onclick = () => {
+    try{ window.go.main.Service.RevealPath(d.db_path||""); }catch(e){}
+  });
+  document.querySelectorAll("[data-rescan]").forEach(b => b.onclick = () => {
+    fetch("/api/scan?dir="+encodeURIComponent(b.dataset.rescan),{method:"POST"})
+      .then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); showView("jobs"); })
+      .catch(e => alert("Не запустить скан: "+e));
+  });
 }
 
-/* ---------- кнопки каталога ---------- */
-$("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
-$("#btnPick").onclick = async () => {
+// Выбрать папку нативным диалогом и запустить скан (общее для «Каталога» и «Настроек»).
+async function pickAndScan(){
   let dir = "";
   try{ if(window.go && window.go.main && window.go.main.Service) dir = await window.go.main.Service.PickFolder(); }
   catch(e){}
@@ -458,7 +524,11 @@ $("#btnPick").onclick = async () => {
     await fetch("/api/scan?dir="+encodeURIComponent(dir),{method:"POST"}).then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); });
     showView("jobs");
   }catch(e){ alert("Не запустить скан: "+e); }
-};
+}
+
+/* ---------- кнопки каталога ---------- */
+$("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
+$("#btnPick").onclick = pickAndScan;
 $("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Переиндексация: "+e));
 $("#btnStop").onclick = () => jpost("/api/stop");
 
