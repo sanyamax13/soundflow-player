@@ -1123,7 +1123,8 @@ class _WavePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final n = amps?.length ?? 58;
+    if (size.width <= 0 || size.height <= 0) return;
+    final n = (amps == null || amps!.isEmpty) ? 58 : amps!.length;
     final gap = size.width / n;
     final mid = size.height / 2;
     final headX = progress * size.width;
