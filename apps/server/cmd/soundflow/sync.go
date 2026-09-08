@@ -9,9 +9,10 @@ import (
 )
 
 // «Ручная синхронизация телефона» (Alex TG 19000, 19002): комп считает
-// разницу каталог ↔ телефон и показывает список ПЕРЕД закачкой. Здесь —
-// только подсчёт разницы (preview). Окно выбора с галочками и отправка
-// плана на телефон — следующим шагом.
+// разницу каталог ↔ телефон и показывает список ПЕРЕД закачкой. Окно
+// (frontend) рисует: «добавить», «удалить», «уже на телефоне» (серым,
+// Alex 08.09.2026 — чтобы видел, что дубликатов не будет) и «предлагаю по
+// вкусу» (из /api/devices/{id}/suggest). «Далее» → hSyncPlanCommit.
 
 type syncItem struct {
 	ID        string `json:"id"`
@@ -22,8 +23,9 @@ type syncItem struct {
 
 type syncPreview struct {
 	DeviceID   string     `json:"device_id"`
-	Add        []syncItem `json:"add"`    // есть в каталоге, нет на телефоне
-	Remove     []syncItem `json:"remove"` // есть на телефоне, нет в каталоге
+	Add        []syncItem `json:"add"`       // есть в каталоге, нет на телефоне
+	Remove     []syncItem `json:"remove"`    // есть на телефоне, нет в каталоге
+	OnDevice   []syncItem `json:"on_device"` // уже на телефоне — окно рисует серым
 	AddBytes   int64      `json:"add_bytes"`
 	HaveCount  int        `json:"have_count"`
 	CatalogCnt int        `json:"catalog_count"`
@@ -50,7 +52,9 @@ func (s *Service) hSyncPreview(w http.ResponseWriter, r *http.Request) {
 	out := syncPreview{DeviceID: dev, HaveCount: len(have), CatalogCnt: len(cat)}
 	for _, t := range cat {
 		inCatalog[t.ID] = localdbCat{t.Artist, t.Title, t.SizeBytes}
-		if !have[t.ID] {
+		if have[t.ID] {
+			out.OnDevice = append(out.OnDevice, syncItem{t.ID, t.Artist, t.Title, t.SizeBytes})
+		} else {
 			out.Add = append(out.Add, syncItem{t.ID, t.Artist, t.Title, t.SizeBytes})
 			out.AddBytes += t.SizeBytes
 		}

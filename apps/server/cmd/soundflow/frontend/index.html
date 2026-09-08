@@ -138,6 +138,10 @@
   #syncBody .srow:last-child{border-bottom:0}
   #syncBody .srow .st{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   #syncBody .srow .sm{color:var(--mut); white-space:nowrap; font-size:11px}
+  #syncBody .srow.dim{opacity:.5}
+  #syncBody .srow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--limebox); color:var(--ok); white-space:nowrap}
+  #syncBody details.sgrp>summary{cursor:pointer; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
+  #syncBody .sfilter{width:100%; height:30px; margin-bottom:6px; border:1px solid var(--line); border-radius:7px; padding:0 9px; font:inherit; font-size:12px; background:var(--field)}
   .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
   .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
   .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
@@ -634,40 +638,115 @@ async function loadDevices(){
 
 /* --- ручная синхронизация: окно выбора --- */
 let _syncDev = "";
+let _syncOnDev = [];   // весь список «уже на телефоне» — для ленивого показа/фильтра
+
+function _srow(t, cls, opts){
+  opts = opts || {};
+  const dis = opts.disabled ? " disabled" : "";
+  const chk = opts.checked ? " checked" : "";
+  const tag = opts.tag ? `<span class="rtag">${esc(opts.tag)}</span>` : "";
+  return `<label class="srow${opts.dim?" dim":""}">`+
+    `<input type="checkbox" class="${cls}" data-id="${esc(t.id)}"${chk}${dis}>`+
+    `<span class="st">${esc(t.artist||"")}${t.artist?" — ":""}${esc(t.title||t.id)}</span>`+
+    tag+
+    `<span class="sm">${t.size_bytes?gb(t.size_bytes):""}</span></label>`;
+}
+
 async function openSync(devId, devName){
-  _syncDev = devId;
+  _syncDev = devId; _syncOnDev = [];
   $("#syncModal").hidden = false;
   $("#syncBody").innerHTML = '<div class="muted">считаю разницу…</div>';
   $("#syncSummary").textContent = "";
   $("#syncNext").disabled = true;
   try{
-    const d = await jget("/api/devices/"+encodeURIComponent(devId)+"/sync-preview");
-    const add = d.add||[], rem = d.remove||[];
-    const rows = (arr, cls) => arr.map((t,i) =>
-      `<label class="srow"><input type="checkbox" class="${cls}" data-id="${esc(t.id)}" checked>`+
-      `<span class="st">${esc(t.artist||"")}${t.artist?" — ":""}${esc(t.title||t.id)}</span>`+
-      `<span class="sm">${t.size_bytes?gb(t.size_bytes):""}</span></label>`).join("");
-    $("#syncBody").innerHTML =
-      `<div class="sgrp"><div class="sh">Добавить на телефон — ${add.length} (${gb(d.add_bytes||0)})</div>`+
-      (add.length? `<div class="slist">${rows(add,"a")}</div>` : '<div class="muted">нечего добавлять</div>')+`</div>`+
-      `<div class="sgrp"><div class="sh">Удалить с телефона — ${rem.length}</div>`+
-      (rem.length? `<div class="slist">${rows(rem,"r")}</div>` : '<div class="muted">нечего удалять</div>')+`</div>`+
-      `<div class="muted" style="margin-top:6px">На телефоне сейчас ${nfmt(d.have_count)} из ${nfmt(d.catalog_count)}. Телефон применит план при следующем подключении.</div>`;
-    $("#syncNext").disabled = (add.length+rem.length)===0;
+    const [d, sug] = await Promise.all([
+      jget("/api/devices/"+encodeURIComponent(devId)+"/sync-preview"),
+      jget("/api/devices/"+encodeURIComponent(devId)+"/suggest?n=40").catch(()=>[]),
+    ]);
+    const add = d.add||[], rem = d.remove||[], sg = sug||[];
+    _syncOnDev = d.on_device||[];
+
+    // «Предлагаю по вкусу» и ручной «добавить» не дублируем: подсказка —
+    // это тот же трек из каталога, показываем её только в разделе вкуса.
+    const sgIds = new Set(sg.map(x=>x.id));
+    const addOnly = add.filter(t=>!sgIds.has(t.id));
+
+    const list = (arr, cls, opts) =>
+      `<div class="slist">${arr.map(t=>_srow(t,cls,opts)).join("")}</div>`;
+
+    let html = "";
+
+    if(sg.length){
+      html += `<div class="sgrp"><div class="sh">Предлагаю по вкусу — ${sg.length}</div>`+
+        `<div class="slist">`+
+        sg.map(x=>_srow(x,"a",{checked:true,tag:x.reason||"по вкусу"})).join("")+
+        `</div></div>`;
+    }
+
+    html += `<div class="sgrp"><div class="sh">Добавить вручную — ${addOnly.length}${addOnly.length?` (${gb(d.add_bytes||0)})`:""}</div>`+
+      (addOnly.length? list(addOnly,"a",{checked:true}) : '<div class="muted">весь каталог уже на телефоне</div>')+`</div>`;
+
+    html += `<div class="sgrp"><div class="sh">Удалить с телефона — ${rem.length}</div>`+
+      (rem.length? list(rem,"r",{checked:true}) : '<div class="muted">нечего удалять</div>')+`</div>`;
+
+    html += `<details class="sgrp" id="onDevGrp"><summary>Уже на телефоне — ${_syncOnDev.length} (серым, повторно не качается)</summary>`+
+      `<input class="sfilter" id="onDevFilter" placeholder="поиск по названию…">`+
+      `<div class="slist" id="onDevList"></div></details>`;
+
+    html += `<div class="muted" style="margin-top:6px">На телефоне ${nfmt(d.have_count)} из ${nfmt(d.catalog_count)}. Телефон применит план при подключении.</div>`;
+
+    $("#syncBody").innerHTML = html;
+    $("#syncNext").disabled = (sg.length+addOnly.length+rem.length)===0;
+    _syncSummaryUpdate();
+    $("#syncBody").onchange = e=>{
+      if(e.target.matches('input.a, input.r')) _syncSummaryUpdate();
+    };
+    const grp = $("#onDevGrp");
+    if(grp) grp.addEventListener("toggle", ()=>{ if(grp.open) _renderOnDev(""); }, {once:false});
+    const flt = $("#onDevFilter");
+    if(flt) flt.addEventListener("input", ()=> _renderOnDev(flt.value.trim().toLowerCase()));
   }catch(e){ $("#syncBody").innerHTML = '<div class="muted">ошибка: '+esc(""+e)+'</div>'; }
 }
+
+function _renderOnDev(q){
+  const box = $("#onDevList"); if(!box) return;
+  let arr = _syncOnDev;
+  if(q) arr = arr.filter(t => ((t.artist||"")+" "+(t.title||"")).toLowerCase().includes(q));
+  arr = arr.slice(0, 400);
+  box.innerHTML = arr.length
+    ? arr.map(t=>_srow(t,"x",{disabled:true,dim:true})).join("")
+      + (_syncOnDev.length>arr.length && !q ? `<div class="muted">…и ещё ${_syncOnDev.length-arr.length}. Уточни поиском.</div>` : "")
+    : '<div class="muted">ничего не найдено</div>';
+}
+
+function _syncPick(cls){
+  const seen = new Set();
+  return [...document.querySelectorAll("#syncBody input."+cls+":checked")]
+    .map(x=>x.dataset.id).filter(id => id && !seen.has(id) && seen.add(id));
+}
+function _syncSummaryUpdate(){
+  $("#syncSummary").textContent = `+${_syncPick("a").length}  −${_syncPick("r").length}`;
+}
+
 $("#syncClose").onclick = () => $("#syncModal").hidden = true;
 $("#syncNext").onclick = async () => {
-  const pick = cls => [...document.querySelectorAll("#syncBody input."+cls+":checked")].map(x=>x.dataset.id);
-  const body = { add: pick("a"), remove: pick("r") };
+  const body = { add: _syncPick("a"), remove: _syncPick("r") };
+  if(body.add.length+body.remove.length===0){ return; }
   $("#syncNext").disabled = true;
   try{
     const r = await fetch("/api/devices/"+encodeURIComponent(_syncDev)+"/sync-plan",
       {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     if(!r.ok){ alert(await r.text()); $("#syncNext").disabled=false; return; }
-    $("#syncBody").innerHTML = '<div style="padding:20px 0;text-align:center">План сохранён.<br>Телефон применит его при следующем подключении.</div>';
+    const names = [...document.querySelectorAll("#syncBody input.a:checked")]
+      .slice(0,10).map(x=>x.closest(".srow").querySelector(".st").textContent);
+    $("#syncBody").innerHTML =
+      `<div style="padding:6px 0">План сохранён. Телефон выполнит при подключении.</div>`+
+      `<div class="sh" style="margin:8px 0 4px">Закачает — ${body.add.length}${body.remove.length?`, удалит — ${body.remove.length}`:""}</div>`+
+      (names.length? `<div class="slist">`+names.map(n=>`<div class="srow"><span class="st">${esc(n)}</span></div>`).join("")+
+        (body.add.length>names.length?`<div class="muted">…и ещё ${body.add.length-names.length}</div>`:"")+`</div>` : "");
     $("#syncSummary").textContent = `+${body.add.length}  −${body.remove.length}`;
-    setTimeout(()=>{ $("#syncModal").hidden = true; }, 1600);
+    $("#syncNext").disabled = true;
+    setTimeout(()=>{ $("#syncModal").hidden = true; }, 3200);
   }catch(e){ alert("Не сохранить: "+e); $("#syncNext").disabled=false; }
 };
 
