@@ -1279,10 +1279,17 @@
 
 - [ ] **Этап 50 — окно на ПК: устройства (модель + связь) + прогресс докачки.**
   08.09.2026 (Alex TG 18917, 18928; план `docs/PC-PLAYER-PLAN.md` фаза 3).
-  Коммиты: сервер `8cc8915`, mobile `f28b16b`. Код готов, собирается
-  (`go build -tags desktop,production` ok, `flutter analyze` чисто,
-  `compileDebugKotlin` ok). Осталось: APK v29 (по просьбе Alex) + пересборка
-  окна + живая проверка.
+  Коммиты: сервер `8cc8915`, mobile `f28b16b`. Собрано 08.09 (Alex TG 18937
+  «собирай»):
+  - **APK v29** (`--split-per-abi --build-number=29`, vC **2029**, arm64,
+    19.3 МБ, sha256 `5efb372f…ee9c`, подпись = debug keystore
+    `8ea0aa2c…50df`). Отправлен Alex в Telegram, не проверен на устройстве.
+  - **Окно ПК** `SoundFlow.exe` (`go build -tags desktop,production
+    -H windowsgui`, 18 МБ, sha256 `967ab14e…2fbc`) + установщик
+    `dist/SoundFlow-Setup-0.1.0.exe` (391 МБ, в TG не влезает). Меняется
+    только exe в `C:\Users\brain\Desktop\SoundFlow-portable\` — onnx/ffmpeg/
+    dll не тронуты. Ждём, пока Alex закроет запущенное окно (PID держит файл),
+    тогда подмена + живая проверка.
   - Телефон: свой `MethodChannel("soundflow/device")` в `MainActivity.kt`
     (`Build.MANUFACTURER+MODEL`, `ConnectivityManager` → wifi/ethernet/mobile/
     vpn) — БЕЗ сторонних пакетов (device_info_plus/connectivity_plus не
