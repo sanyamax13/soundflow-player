@@ -45,5 +45,6 @@ apps/server/soundflow-folder.exe
 apps/server/cmd/soundflow-folder/soundflow-folder
 apps/server/cmd/soundflow-folder/*.exe
 apps/server/build/dist/
+apps/server/build/_lastbuild.log
 apps/server/soundflow-apidiff
 apps/server/soundflow-apidiff.exe
