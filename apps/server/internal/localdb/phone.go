@@ -62,6 +62,7 @@ type Device struct {
 	Name       string
 	AppVersion string
 	MusicBytes int64
+	Transport  string // wifi | ethernet | mobile | vpn | ""
 }
 
 // SaveSync — обновить устройство + вставить новые события (дедуп по uuid).
@@ -75,12 +76,13 @@ func (d *DB) SaveSync(dev Device, events []SyncEvent) ([]string, error) {
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := tx.Exec(`
-		INSERT INTO devices (id,name,app_version,music_bytes,last_sync_at,created_at)
-		VALUES (?,?,?,?,?,?)
+		INSERT INTO devices (id,name,app_version,music_bytes,last_sync_at,created_at,transport)
+		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, app_version=excluded.app_version,
-			music_bytes=excluded.music_bytes, last_sync_at=excluded.last_sync_at`,
-		dev.ID, dev.Name, dev.AppVersion, dev.MusicBytes, now, now); err != nil {
+			music_bytes=excluded.music_bytes, last_sync_at=excluded.last_sync_at,
+			transport=CASE WHEN excluded.transport <> '' THEN excluded.transport ELSE devices.transport END`,
+		dev.ID, dev.Name, dev.AppVersion, dev.MusicBytes, now, now, dev.Transport); err != nil {
 		return nil, err
 	}
 	accepted := make([]string, 0, len(events))

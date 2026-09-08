@@ -385,7 +385,10 @@ func (s *Store) SaveSync(ctx context.Context, dev db.Device, events []db.SyncEve
 		le[i] = localdb.SyncEvent{UUID: e.UUID, Kind: e.Kind, TrackID: e.TrackID, Payload: e.Payload, ClientTS: e.ClientTS}
 	}
 	return s.d.SaveSync(
-		localdb.Device{ID: dev.ID, Name: dev.Name, AppVersion: dev.AppVersion, MusicBytes: dev.MusicBytes},
+		localdb.Device{
+			ID: dev.ID, Name: dev.Name, AppVersion: dev.AppVersion,
+			MusicBytes: dev.MusicBytes, Transport: dev.Transport,
+		},
 		le,
 	)
 }
@@ -441,9 +444,12 @@ func (s *Store) RecentEvents(ctx context.Context, limit int) ([]db.EventInfo, er
 
 func (s *Store) ListDevices(ctx context.Context) ([]db.DeviceInfo, error) {
 	rows, err := s.raw.QueryContext(ctx, `
-		SELECT id, name, app_version, music_bytes, COALESCE(last_sync_at,''), COALESCE(created_at,'')
-		FROM devices
-		ORDER BY (last_sync_at IS NULL OR last_sync_at = ''), last_sync_at DESC`)
+		SELECT d.id, d.name, d.app_version, d.music_bytes,
+		       COALESCE(d.last_sync_at,''), COALESCE(d.created_at,''),
+		       COALESCE(d.transport,''),
+		       (SELECT count(*) FROM sync_events e WHERE e.device_id = d.id)
+		FROM devices d
+		ORDER BY (d.last_sync_at IS NULL OR d.last_sync_at = ''), d.last_sync_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +458,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]db.DeviceInfo, error) {
 	for rows.Next() {
 		var di db.DeviceInfo
 		var last, created string
-		if err := rows.Scan(&di.ID, &di.Name, &di.AppVersion, &di.MusicBytes, &last, &created); err != nil {
+		if err := rows.Scan(&di.ID, &di.Name, &di.AppVersion, &di.MusicBytes, &last, &created, &di.Transport, &di.Events); err != nil {
 			return nil, err
 		}
 		di.LastSyncAt = parseTime(last)

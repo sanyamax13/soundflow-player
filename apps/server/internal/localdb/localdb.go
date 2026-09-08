@@ -38,6 +38,15 @@ func Open(path string) (*DB, error) {
 		h.Close()
 		return nil, fmt.Errorf("schema: %w", err)
 	}
+	// Мелкие идемпотентные миграции для баз, созданных раньше.
+	for _, mig := range []string{
+		`ALTER TABLE devices ADD COLUMN transport TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			h.Close()
+			return nil, fmt.Errorf("migrate: %w", err)
+		}
+	}
 	return &DB{sql: h}, nil
 }
 

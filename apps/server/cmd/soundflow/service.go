@@ -18,6 +18,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"soundflow/server/internal/api"
+	"soundflow/server/internal/db"
 	"soundflow/server/internal/diskspace"
 	"soundflow/server/internal/inference"
 	"soundflow/server/internal/localdb"
@@ -34,6 +36,7 @@ type Service struct {
 	jobs      *JobRunner
 	phoneAddr string
 	phoneSrv  *http.Server
+	phoneAPI  *api.Server // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
 	startedAt time.Time
 	frontend  embed.FS
 	mu        sync.Mutex
@@ -187,13 +190,27 @@ func (s *Service) hSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, rows)
 }
 
+// deviceRow — строка списка «Устройства» для окна: всё из БД + «качает
+// прямо сейчас» (это в памяти /v1-сервера, не в БД).
+type deviceRow struct {
+	localdb.DeviceInfo
+	Download *db.DownloadProgress `json:"download,omitempty"`
+}
+
 func (s *Service) hDevices(w http.ResponseWriter, r *http.Request) {
 	list, err := s.db.ListDevices()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, list)
+	out := make([]deviceRow, len(list))
+	for i, d := range list {
+		out[i].DeviceInfo = d
+		if s.phoneAPI != nil {
+			out[i].Download = s.phoneAPI.DownloadProgress(d.ID)
+		}
+	}
+	writeJSON(w, out)
 }
 
 func (s *Service) hLog(w http.ResponseWriter, r *http.Request) {

@@ -136,6 +136,7 @@ type Device struct {
 	Name       string
 	AppVersion string
 	MusicBytes int64
+	Transport  string // wifi | ethernet | mobile | vpn | ""
 }
 
 // SyncEvent — одно событие из очереди телефона. Дедуп по UUID.

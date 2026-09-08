@@ -85,6 +85,20 @@ type DeviceInfo struct {
 	MusicBytes int64      `json:"music_bytes"`
 	LastSyncAt *time.Time `json:"last_sync_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
+	Transport  string     `json:"transport,omitempty"`
+	Events     int64      `json:"events,omitempty"`
+	// Download — прогресс докачки на этот телефон прямо сейчас (в памяти
+	// сервера, не из БД). nil, если телефон сейчас ничего не качает.
+	Download *DownloadProgress `json:"download,omitempty"`
+}
+
+// DownloadProgress — сколько песен из пачки телефон уже забрал.
+type DownloadProgress struct {
+	Done      int       `json:"done"`
+	Total     int       `json:"total"`
+	Current   string    `json:"current"`
+	Active    bool      `json:"active"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (d *Pool) ListDevices(ctx context.Context) ([]DeviceInfo, error) {

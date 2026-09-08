@@ -86,6 +86,9 @@
   .list .tt{font-size:13px; font-weight:600}
   .list .mm{font-size:11.5px; color:var(--mut)}
   .list .sp{flex:1}
+  .list .grow{min-width:0; flex:1}
+  .dlrow{margin-top:7px; max-width:520px}
+  .dlline{font-size:11.5px; color:var(--ok); font-weight:600; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .tag{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; background:var(--field); color:var(--mut)}
   .tag.wifi{background:#eaf6ff; color:#1b6fb0}
   .tag.wire{background:#eef7e9; color:var(--ok)}
@@ -386,10 +389,18 @@ async function loadDevices(){
       else if(tr==="mobile") tag = '<span class="tag">Моб. интернет</span>';
       else if(tr) tag = `<span class="tag">${esc(d.transport)}</span>`;
       const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
+      const gb = d.music_bytes ? " · на телефоне "+ (d.music_bytes/1073741824).toFixed(1) +" ГБ" : "";
+      let dl = "";
+      const p = d.download;
+      if(p && p.active){
+        const pct = p.total ? Math.min(100, Math.round(p.done*100/p.total)) : 8;
+        dl = `<div class="dlrow"><div class="dlline">качает: ${esc(p.current||"…")} — ${nfmt(p.done)} из ${nfmt(p.total)}</div>`+
+             `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
+      }
       return `<div class="item"><div class="ic">📱</div>`+
-        `<div><div class="tt">${esc(d.name||d.id)}</div>`+
-        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}</div></div>`+
-        `<div class="sp"></div>${tag}</div>`;
+        `<div class="grow"><div class="tt">${esc(d.name||d.id)}</div>`+
+        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}</div>`+
+        `${tag}</div>`;
     }).join("") : '<div class="muted">нет подключённых</div>';
   }catch(e){ $("#devices").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
 }

@@ -168,12 +168,14 @@ type DeviceInfo struct {
 	MusicBytes int64      `json:"music_bytes"`
 	LastSyncAt *time.Time `json:"last_sync_at"`
 	Events     int64      `json:"events"`
+	Transport  string     `json:"transport"`
 }
 
 func (d *DB) ListDevices() ([]DeviceInfo, error) {
 	rows, err := d.sql.Query(`
 		SELECT d.id, d.name, d.app_version, d.music_bytes, d.last_sync_at,
-		       (SELECT count(*) FROM sync_events e WHERE e.device_id = d.id)
+		       (SELECT count(*) FROM sync_events e WHERE e.device_id = d.id),
+		       COALESCE(d.transport, '')
 		FROM devices d ORDER BY d.last_sync_at DESC`)
 	if err != nil {
 		return nil, err
@@ -183,7 +185,7 @@ func (d *DB) ListDevices() ([]DeviceInfo, error) {
 	for rows.Next() {
 		var x DeviceInfo
 		var last sql.NullString
-		if err := rows.Scan(&x.ID, &x.Name, &x.AppVersion, &x.MusicBytes, &last, &x.Events); err != nil {
+		if err := rows.Scan(&x.ID, &x.Name, &x.AppVersion, &x.MusicBytes, &last, &x.Events, &x.Transport); err != nil {
 			return nil, err
 		}
 		if last.Valid {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +30,11 @@ type Server struct {
 	// GeneratedCoversDir — папка со сгенерированными обложками (этап 28,
 	// 05.09.2026), отдаётся статикой. Пусто — ручка выключена (404 всем).
 	GeneratedCoversDir string
+
+	// dlTracker — прогресс докачки музыки на телефоны прямо сейчас (в памяти,
+	// не в БД). Ленивая инициализация через dl().
+	dlOnce    sync.Once
+	dlTracker *downloadTracker
 }
 
 func (s *Server) Router() http.Handler {
@@ -53,6 +59,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/generated-covers/{file}", s.generatedCover)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
+			r.Post("/sync/progress", s.syncProgress)
 			r.Get("/sync/report", s.syncReport)
 			r.Route("/admin", func(r chi.Router) {
 				r.Get("/status", s.adminStatus)
@@ -128,6 +135,9 @@ type syncReq struct {
 		Name       string `json:"name"`
 		AppVersion string `json:"app_version"`
 		MusicBytes int64  `json:"music_bytes"`
+		// Transport — как телефон сейчас в сети: wifi | ethernet | mobile |
+		// vpn | "". Телефон постарше поле не шлёт — останется прежнее.
+		Transport string `json:"transport"`
 	} `json:"device"`
 	Events []db.SyncEvent `json:"events"`
 }
@@ -151,6 +161,7 @@ func (s *Server) syncEvents(w http.ResponseWriter, r *http.Request) {
 		Name:       req.Device.Name,
 		AppVersion: req.Device.AppVersion,
 		MusicBytes: req.Device.MusicBytes,
+		Transport:  req.Device.Transport,
 	}, req.Events)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

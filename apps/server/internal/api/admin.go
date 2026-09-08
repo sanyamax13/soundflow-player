@@ -72,6 +72,10 @@ func (s *Server) adminDevices(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	// Дорисуем «качает прямо сейчас» — это в памяти сервера, не в БД.
+	for i := range list {
+		list[i].Download = s.DownloadProgress(list[i].ID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": list})
 }
 
