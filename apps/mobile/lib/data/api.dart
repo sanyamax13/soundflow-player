@@ -120,6 +120,16 @@ class Api {
     return res.data ?? {};
   }
 
+  /// Отправить текст последнего падения приложения на сервер (чёрный ящик,
+  /// Alex TG 19028). Попадёт в ленту «что делал сервер». Не критично —
+  /// вызывающий глотает ошибку.
+  Future<void> reportCrash(String deviceId, String text) async {
+    await _dio.post<Map<String, dynamic>>('/v1/client-crash', data: {
+      'device': deviceId,
+      'text': text,
+    });
+  }
+
   /// Рельеф громкости трека (0..1 по каждому столбику) для полоски плеера.
   /// Нет данных / ошибка — null (полоска рисуется как раньше).
   Future<List<double>?> waveform(String id) async {

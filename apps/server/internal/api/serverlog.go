@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"soundflow/server/internal/db"
@@ -48,6 +50,36 @@ func busyNow() []string {
 		out = append(out, "считаю звуковые отпечатки")
 	}
 	return out
+}
+
+// POST /v1/client-crash  {"device":"…","text":"…"} — «чёрный ящик» телефона
+// (Alex TG 19028: приложение вылетает, следа нет). Телефон при следующем
+// запуске присылает текст последнего падения — кладём его в ленту «что делал
+// сервер», чтобы причину было видно в окне на компе. Тело большое —
+// подрезаем.
+func (s *Server) clientCrash(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Device string `json:"device"`
+		Text   string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "битый json"})
+		return
+	}
+	text := strings.TrimSpace(body.Text)
+	if text == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "пустой текст"})
+		return
+	}
+	if len(text) > 4000 {
+		text = text[:4000] + " …(обрезано)"
+	}
+	dev := body.Device
+	if len(dev) > 12 {
+		dev = dev[:12]
+	}
+	s.logServer(r.Context(), db.LogError, "телефон "+dev, "вылет приложения", text, 0)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // GET /v1/admin/log?limit= — лента «что делал сервер», новые сверху.

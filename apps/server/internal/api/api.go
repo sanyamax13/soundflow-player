@@ -64,6 +64,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/sync/report", s.syncReport)
 			r.Get("/device/plan", s.devicePlan)
 			r.Post("/device/plan/ack", s.devicePlanAck)
+			r.Post("/client-crash", s.clientCrash)
 			r.Route("/admin", func(r chi.Router) {
 				r.Get("/status", s.adminStatus)
 				r.Get("/devices", s.adminDevices)

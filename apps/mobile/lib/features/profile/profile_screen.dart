@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/providers.dart';
 import '../../core/config.dart';
+import '../../core/crash_log.dart';
 import '../../core/theme.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
@@ -18,6 +21,7 @@ class ProfileScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Профиль')),
       body: ListView(
         children: [
+          const _CrashCard(),
           _Row(
             icon: Icons.download_outlined,
             title: 'Библиотека',
@@ -52,6 +56,87 @@ class ProfileScreen extends StatelessWidget {
           ),
           const _Row(icon: Icons.settings_outlined, title: 'Настройки', subtitle: 'скоро'),
         ],
+      ),
+    );
+  }
+}
+
+/// Показывается только если в прошлый раз приложение упало (Alex TG 19028).
+/// Тап — весь текст сбоя: можно прочитать, отправить на компьютер, убрать.
+class _CrashCard extends ConsumerStatefulWidget {
+  const _CrashCard();
+
+  @override
+  ConsumerState<_CrashCard> createState() => _CrashCardState();
+}
+
+class _CrashCardState extends ConsumerState<_CrashCard> {
+  String? _text;
+
+  @override
+  void initState() {
+    super.initState();
+    CrashLog.read().then((t) {
+      if (mounted) setState(() => _text = t);
+    });
+  }
+
+  Future<void> _open() async {
+    final text = _text;
+    if (text == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Последний сбой'),
+        content: SingleChildScrollView(child: SelectableText(text)),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              try {
+                await ref
+                    .read(apiProvider)
+                    .reportCrash(await ref.read(syncProvider).deviceId(), text);
+                messenger.showSnackBar(
+                    const SnackBar(content: Text('Отправлено на компьютер')));
+              } catch (_) {
+                messenger.showSnackBar(
+                    const SnackBar(content: Text('Компьютер сейчас недоступен')));
+              }
+            },
+            child: const Text('Отправить на компьютер'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await CrashLog.clear();
+              if (mounted) setState(() => _text = null);
+            },
+            child: const Text('Убрать'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = _text;
+    if (text == null) return const SizedBox.shrink();
+    final firstLines = text.split('\n').take(3).join('\n');
+    return Container(
+      color: const Color(0x33FF5252),
+      child: ListTile(
+        leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF5252)),
+        title: const Text('Приложение падало'),
+        subtitle: Text(firstLines, style: const TextStyle(color: Afisha.inkDim)),
+        trailing: const Icon(Icons.chevron_right, color: Afisha.line),
+        onTap: _open,
       ),
     );
   }

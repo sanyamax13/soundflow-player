@@ -4,6 +4,8 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/crash_log.dart';
+
 /// Обёртка над проигрывателем. Держит очередь локальных файлов (офлайн),
 /// отдаёт наружу простые ValueNotifier'ы для UI. Фон/локскрин — через
 /// `audio_service` (см. audio_handler.dart). Гэплесс, нормализация —
@@ -68,10 +70,41 @@ class PlayerController {
 
   final _subs = <StreamSubscription<dynamic>>[];
 
+  // Битый/недоступный файл в очереди раньше выбрасывал необработанную ошибку
+  // из потока событий just_audio — и на некоторых телефонах падало всё
+  // приложение (Alex TG 19028: «слушаю через колонку, разные песни, плеер
+  // просто закрывается»). Теперь ошибку ловим: перескок на следующий трек,
+  // приложение живо. Счётчик подряд — чтобы не крутиться вечно по битым.
+  int _consecutiveErrors = 0;
+  DateTime _lastErrorAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _onPlaybackError(Object e, StackTrace st) {
+    CrashLog.write(e, st, where: 'player');
+    final now = DateTime.now();
+    if (now.difference(_lastErrorAt) > const Duration(seconds: 10)) {
+      _consecutiveErrors = 0;
+    }
+    _lastErrorAt = now;
+    _consecutiveErrors++;
+    final p = _player;
+    if (p == null) return;
+    if (_consecutiveErrors > 5) {
+      // Похоже, беда не в одном файле — не долбим дальше, просто встаём.
+      p.pause();
+      return;
+    }
+    if (_queue.length > 1) {
+      p.seekToNext().catchError((_) {});
+    } else {
+      p.pause();
+    }
+  }
+
   AudioPlayer _ensure() {
     final p = _player;
     if (p != null) return p;
     final np = AudioPlayer();
+    _subs.add(np.playbackEventStream.listen((_) {}, onError: _onPlaybackError));
     _subs.add(np.playingStream.listen((v) => playing.value = v));
     _subs.add(np.positionStream.listen((v) => position.value = v));
     _subs.add(np.durationStream.listen((v) {
@@ -108,19 +141,26 @@ class PlayerController {
     _queue = List.of(tracks);
     _index = startIndex.clamp(0, tracks.length - 1);
     _lastPlayId = null;
+    _consecutiveErrors = 0;
     radio.value = false;
     final p = _ensure();
     final src = ConcatenatingAudioSource(
       children: [for (final t in _queue) AudioSource.uri(Uri.file(t.path))],
     );
     _source = src;
-    await p.setLoopMode(loop ? LoopMode.all : LoopMode.off);
-    await p.setShuffleModeEnabled(shuffle);
-    this.shuffle.value = shuffle;
-    await p.setAudioSource(src, initialIndex: _index, initialPosition: Duration.zero);
-    now.value = _queue[_index];
-    // currentIndexStream отдаст этот же индекс и запишет play — второй раз тут не зовём.
-    await p.play();
+    try {
+      await p.setLoopMode(loop ? LoopMode.all : LoopMode.off);
+      await p.setShuffleModeEnabled(shuffle);
+      this.shuffle.value = shuffle;
+      await p.setAudioSource(src, initialIndex: _index, initialPosition: Duration.zero);
+      now.value = _queue[_index];
+      // currentIndexStream отдаст этот же индекс и запишет play — второй раз тут не зовём.
+      await p.play();
+    } catch (e, st) {
+      // Не роняем экран, с которого запустили: пишем в чёрный ящик, дальше
+      // авто-перескок по битым разрулит _onPlaybackError.
+      CrashLog.write(e, st, where: 'playQueue');
+    }
   }
 
   /// Один трек, без зацикливания (тап «играть» в «Моей музыке»).
