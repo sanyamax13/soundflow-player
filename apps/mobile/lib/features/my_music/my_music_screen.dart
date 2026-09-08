@@ -239,7 +239,8 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     return _artistDetail(folder);
   }
 
-  // ─── список исполнителей ────────────────────────────────────────────────
+  // ─── список: исполнители с 2+ песнями — папкой, с одной — прямо строкой
+  //     песни (Alex 08.09.2026: «зачем по папкам по одной песне?»). ─────────
   Widget _artistList() {
     final hasBroken = _broken.isNotEmpty;
     final rowCount = _folders.length + (hasBroken ? 1 : 0);
@@ -261,8 +262,11 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${_folders.length} ${_artistWord(_folders.length)} · '
-                  '$_count ${_songWord(_count)} · ${_mb(_bytes)}',
+                  _onlyFav
+                      ? '${_folders.length} ${_artistWord(_folders.length)} · '
+                          '${_items?.length ?? 0} ${_songWord(_items?.length ?? 0)}'
+                      : '${_folders.length} ${_artistWord(_folders.length)} · '
+                          '$_count ${_songWord(_count)} · ${_mb(_bytes)}',
                   style: const TextStyle(color: Afisha.inkDim, fontSize: 12.5),
                 ),
                 const SizedBox(height: 8),
@@ -298,7 +302,11 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                         itemBuilder: (_, i) {
                           if (hasBroken && i == 0) return _brokenSection();
                           final f = _folders[i - (hasBroken ? 1 : 0)];
-                          return _artistRow(f);
+                          // Один трек у исполнителя — показываем сам трек, без
+                          // «папки» на одну песню.
+                          return f.tracks.length == 1
+                              ? _soloTrackRow(f.tracks.first)
+                              : _artistRow(f);
                         },
                       ),
           ),
@@ -306,6 +314,60 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       ),
     );
   }
+
+  /// Строка одиночной песни в списке исполнителей: обложка, «Название —
+  /// Исполнитель», сердечко и меню. Тап — играть её.
+  Widget _soloTrackRow(DownloadedTrack t) => ListTile(
+        contentPadding: const EdgeInsets.only(left: 16, right: 4),
+        leading: CoverThumb(
+          path: t.coverPath,
+          url: coverUrlFor(t.id),
+          size: 46,
+          radius: 23,
+        ),
+        title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(t.artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Afisha.inkDim, fontSize: 12)),
+        onTap: () => _playList([t], 0),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _toggleFav(t),
+              icon: Icon(
+                t.favorite ? Icons.favorite : Icons.favorite_border,
+                color: t.favorite ? Afisha.lime : Afisha.inkDim,
+                size: 22,
+              ),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Afisha.inkDim),
+              onSelected: (v) {
+                switch (v) {
+                  case 'fav':
+                    _toggleFav(t);
+                  case 'wrong':
+                    _wrongVersion(t);
+                  case 'delete':
+                    _deleteTrack(t);
+                }
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'fav',
+                  child: Text(
+                      t.favorite ? 'Убрать из избранного' : 'В избранное'),
+                ),
+                const PopupMenuItem(value: 'wrong', child: Text('Не та версия')),
+                const PopupMenuItem(value: 'delete', child: Text('Удалить песню')),
+              ],
+            ),
+          ],
+        ),
+      );
 
   Widget _brokenSection() => Container(
         color: Afisha.surfaceHi,

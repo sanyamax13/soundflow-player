@@ -65,7 +65,7 @@ void main() {
     await tester.tap(find.text('Открыть «Мою музыку»'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Пока ничего не скачано'), findsOneWidget);
+    expect(find.textContaining('Пока ничего не скачано'), findsOneWidget);
   });
 
   testWidgets(

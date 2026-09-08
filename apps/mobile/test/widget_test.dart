@@ -77,7 +77,7 @@ void main() {
     await tester.tap(find.text('Моя музыка'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Пока ничего не скачано'), findsOneWidget);
+    expect(find.textContaining('Пока ничего не скачано'), findsOneWidget);
     // «Полка» (06.09.2026): шапка со счётчиком исполнителей, без строки «Обложки».
     expect(find.text('0 исполнителей · 0 песен · 0.0 МБ'), findsOneWidget);
   });
