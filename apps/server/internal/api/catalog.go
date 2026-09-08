@@ -211,6 +211,24 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// GET /v1/waveform/{id} — рельеф громкости трека для полоски перемотки в
+// плеере: JSON {"bars":[0..255, …]}. Не посчитан / нет трека → 204 (плеер
+// рисует полоску как раньше). Данные не меняются — кэш на неделю.
+func (s *Server) waveform(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	bars, found, err := s.DB.TrackWaveform(r.Context(), id)
+	if err != nil || !found || len(bars) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	ints := make([]int, len(bars))
+	for i, b := range bars {
+		ints[i] = int(b)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=604800")
+	writeJSON(w, http.StatusOK, map[string]any{"bars": ints})
+}
+
 // GET /v1/generated-covers/{file} — отдаёт ИИ-нарисованную обложку (этап 28,
 // 05.09.2026: у 499 треков не нашлось обложки нигде — ни своей в файле, ни
 // у Яндекса/iTunes/Deezer, нарисовали локально на brain, ComfyUI/SDXL,

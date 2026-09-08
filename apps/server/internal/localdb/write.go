@@ -77,6 +77,59 @@ func (d *DB) SetFeatureVector(trackID string, v []float32) error {
 	return err
 }
 
+// SetWaveform — «рельеф громкости» трека (N байт 0..255) для полоски плеера.
+func (d *DB) SetWaveform(trackID string, b []byte) error {
+	_, err := d.sql.Exec(`UPDATE tracks SET waveform = ? WHERE id = ?`, b, trackID)
+	return err
+}
+
+// Waveform — рельеф громкости трека. found=false — ещё не посчитан.
+func (d *DB) Waveform(trackID string) (b []byte, found bool, err error) {
+	err = d.sql.QueryRow(`SELECT waveform FROM tracks WHERE id = ?`, trackID).Scan(&b)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return b, len(b) > 0, nil
+}
+
+// FeatureVector — отпечаток трека ([]float32) и есть ли он.
+func (d *DB) FeatureVector(trackID string) ([]float32, bool, error) {
+	v, err := d.featureVector(trackID)
+	return v, len(v) > 0, err
+}
+
+// TrackIDsNeedingAnalysis — треки без отпечатка ИЛИ без рельефа громкости
+// (для «Переиндексировать»: считает недостающее из двух).
+func (d *DB) TrackIDsNeedingAnalysis(limit int) ([]string, error) {
+	q := `SELECT id FROM tracks WHERE feature_vector IS NULL OR waveform IS NULL ORDER BY created_at`
+	if limit > 0 {
+		q += " LIMIT ?"
+	}
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		rows, err = d.sql.Query(q, limit)
+	} else {
+		rows, err = d.sql.Query(q)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // TrackIDsWithoutFeatures — id треков без отпечатка (для «Переиндексировать»).
 func (d *DB) TrackIDsWithoutFeatures(limit int) ([]string, error) {
 	q := `SELECT id FROM tracks WHERE feature_vector IS NULL ORDER BY created_at`

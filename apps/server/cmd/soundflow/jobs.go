@@ -14,6 +14,7 @@ import (
 
 	"soundflow/server/internal/localdb"
 	"soundflow/server/internal/quality"
+	"soundflow/server/internal/waveform"
 )
 
 // JobRunner — одна фоновая задача одновременно (скан папки или пересчёт
@@ -184,13 +185,13 @@ func (jr *JobRunner) StartReindex() string {
 	}
 	go func() {
 		s := jr.svc
-		ids, err := s.db.TrackIDsWithoutFeatures(0)
+		ids, err := s.db.TrackIDsNeedingAnalysis(0)
 		if err != nil {
 			jr.finish("ошибка выборки: " + err.Error())
 			return
 		}
 		j.Total = len(ids)
-		_ = s.db.AddServerLog("info", "", "", fmt.Sprintf("пересчёт отпечатков: %d треков", len(ids)), 0)
+		_ = s.db.AddServerLog("info", "", "", fmt.Sprintf("пересчёт отпечатков/волн: %d треков", len(ids)), 0)
 		var done, failed int
 		for _, id := range ids {
 			if ctx.Err() != nil {
@@ -203,18 +204,25 @@ func (jr *JobRunner) StartReindex() string {
 				j.Done++
 				continue
 			}
-			emb, err := s.eng.EmbedFile(s.localPath(path))
-			if err != nil {
-				failed++
-				j.Failed++
-				j.Done++
-				continue
+			lp := s.localPath(path)
+			okAny := false
+			if _, hasVec, _ := s.db.FeatureVector(id); !hasVec {
+				if emb, e := s.eng.EmbedFile(lp); e == nil && s.db.SetFeatureVector(id, emb) == nil {
+					okAny = true
+				}
 			}
-			if err := s.db.SetFeatureVector(id, emb); err != nil {
+			if _, hasWf, _ := s.db.Waveform(id); !hasWf {
+				// дешёвый декод (8 кГц) под полоску плеера — Alex TG 18994.
+				if wf, e := waveform.FromFile(lp, waveform.DefaultBars); e == nil && len(wf) > 0 {
+					_ = s.db.SetWaveform(id, wf)
+					okAny = true
+				}
+			}
+			if okAny {
+				done++
+			} else {
 				failed++
 				j.Failed++
-			} else {
-				done++
 			}
 			j.Done++
 		}

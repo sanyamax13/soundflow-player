@@ -117,6 +117,14 @@ func (s *Store) TrackCoverURL(ctx context.Context, id string) (string, bool, err
 	return s.d.TrackCoverURL(id)
 }
 
+func (s *Store) TrackWaveform(ctx context.Context, id string) ([]byte, bool, error) {
+	return s.d.Waveform(id)
+}
+
+func (s *Store) SetWaveform(ctx context.Context, id string, bars []byte) error {
+	return s.d.SetWaveform(id, bars)
+}
+
 func (s *Store) TrackIDsWithoutFeatures(ctx context.Context, limit int) ([]string, error) {
 	return s.d.TrackIDsWithoutFeatures(limit)
 }

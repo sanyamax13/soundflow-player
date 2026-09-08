@@ -10,6 +10,7 @@ import (
 
 	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/sidecar"
+	"soundflow/server/internal/waveform"
 )
 
 // «Найти трек» из окна: артист+название → качалка (Python-дочерний процесс) →
@@ -113,6 +114,12 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 				defer c()
 				if e := svc.AnalyzeAndStore(bg, id); e != nil {
 					s.db.AddServerLog("info", artist, title, "отпечаток не посчитан: "+e.Error(), 0) //nolint:errcheck
+				}
+				// рельеф громкости для полоски плеера (дешёвый декод, отдельно)
+				if p, ok, _ := s.store.TrackFilePath(bg, id); ok {
+					if wf, e := waveform.FromFile(s.pm.ToLocal(p), waveform.DefaultBars); e == nil && len(wf) > 0 {
+						_ = s.store.SetWaveform(bg, id, wf)
+					}
 				}
 			}(res.TrackID)
 		case err == nil && !res.Created:

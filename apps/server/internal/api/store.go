@@ -25,6 +25,7 @@ type Store interface {
 
 	TrackFilePath(ctx context.Context, trackID string) (string, bool, error)
 	TrackCoverURL(ctx context.Context, id string) (url string, found bool, err error)
+	TrackWaveform(ctx context.Context, id string) (bars []byte, found bool, err error)
 	TrackArtistTitle(ctx context.Context, trackID string) (artist, title string, ok bool, err error)
 	TrackForDeletion(ctx context.Context, trackID string) (normKey, filePath string, ok bool, err error)
 	DeleteTrack(ctx context.Context, trackID string) error

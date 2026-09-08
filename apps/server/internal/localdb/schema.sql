@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     energy         REAL,
     valence        REAL,
     feature_vector BLOB,
+    waveform       BLOB,          -- N байт 0..255: рельеф громкости для полоски плеера
     cover_url      TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL DEFAULT '',
     -- lower(artist||' '||title||' '||album), Unicode-aware (считает импортёр на

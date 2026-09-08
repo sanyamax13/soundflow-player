@@ -543,6 +543,13 @@ func (d *Pool) TrackCoverURL(ctx context.Context, id string) (url string, found 
 	return url, url != "", nil
 }
 
+// TrackWaveform — Postgres-каталог рельеф громкости не хранит (это фича
+// SQLite-сервера «одно приложение»). Всегда «не посчитан» → плеер рисует
+// полоску как раньше.
+func (d *Pool) TrackWaveform(ctx context.Context, id string) (bars []byte, found bool, err error) {
+	return nil, false, nil
+}
+
 func nullInt(v int) any {
 	if v <= 0 {
 		return nil

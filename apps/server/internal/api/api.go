@@ -57,6 +57,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/trash/purge", s.trashPurge)
 			r.Get("/cover/{id}", s.cover)
 			r.Get("/generated-covers/{file}", s.generatedCover)
+			r.Get("/waveform/{id}", s.waveform)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Post("/sync/progress", s.syncProgress)
