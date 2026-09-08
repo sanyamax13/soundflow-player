@@ -202,14 +202,15 @@ func (d *DB) TasteTracks(limit int) (top, bottom []TasteRow, err error) {
 // TasteTotals — сводные счётчики.
 func (d *DB) TasteTotals() (TasteTotals, error) {
 	var t TasteTotals
+	// COALESCE — на пустой таблице SUM(...) даёт NULL, скан в int падает.
 	err := d.sql.QueryRow(`
 		SELECT
 			COUNT(*),
-			SUM(CASE WHEN event_type = 'like' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN event_type IN ('dislike','delete_not_my_taste') THEN 1 ELSE 0 END),
-			SUM(CASE WHEN event_type IN ('skip_early','skip_normal') THEN 1 ELSE 0 END),
-			SUM(CASE WHEN event_type = 'finish' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN event_type LIKE 'delete_%' THEN 1 ELSE 0 END),
+			COALESCE(SUM(CASE WHEN event_type = 'like' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN event_type IN ('dislike','delete_not_my_taste') THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN event_type IN ('skip_early','skip_normal') THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN event_type = 'finish' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN event_type LIKE 'delete_%' THEN 1 ELSE 0 END), 0),
 			COUNT(DISTINCT NULLIF(artist,''))
 		FROM feedback_event`,
 	).Scan(&t.Events, &t.Likes, &t.Dislikes, &t.Skips, &t.Finishes, &t.Deletes, &t.Artists)

@@ -35,6 +35,21 @@ func TestDeriveFeedback(t *testing.T) {
 	}
 }
 
+func TestTasteTotalsEmpty(t *testing.T) {
+	d := open(t)
+	tot, err := d.TasteTotals()
+	if err != nil {
+		t.Fatalf("TasteTotals on empty table: %v", err)
+	}
+	if tot != (TasteTotals{}) {
+		t.Errorf("want zero totals, got %+v", tot)
+	}
+	top, bot, err := d.TasteArtists(5)
+	if err != nil || len(top) != 0 || len(bot) != 0 {
+		t.Errorf("empty TasteArtists: %v %v %v", top, bot, err)
+	}
+}
+
 func TestTasteRoundTrip(t *testing.T) {
 	d := open(t)
 
