@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // «Обучение вкусу», этап 2 (docs/TASTE-PLAN.md): окно показывает, что
@@ -59,6 +61,27 @@ func (s *Service) hTasteRebuild(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.AddServerLog("info", "", "",
 		"пересобран вкус: "+strconv.Itoa(n)+" сигналов, "+strconv.Itoa(nc)+" центров по "+strconv.Itoa(nt)+" трекам", 0)
 	writeJSON(w, map[string]any{"rows": n, "clusters": nc, "cluster_tracks": nt})
+}
+
+// GET /api/devices/{id}/suggest?n=30 — «Предлагаю по вкусу»: что скачать на
+// это устройство. Список идёт в окно ручной синхронизации отдельной секцией
+// с галочками (TASTE-PLAN §7 — не качаем молча).
+func (s *Service) hSuggest(w http.ResponseWriter, r *http.Request) {
+	dev := chi.URLParam(r, "id")
+	if dev == "" {
+		http.Error(w, "нужен id устройства", 400)
+		return
+	}
+	n := atoiDef(r.URL.Query().Get("n"), 30)
+	if n < 1 || n > 200 {
+		n = 30
+	}
+	list, err := s.db.SuggestDownloads(dev, n)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, list)
 }
 
 // POST /api/taste/cluster — пересчитать только центры вкуса (по звуку).
