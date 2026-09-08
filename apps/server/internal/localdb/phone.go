@@ -1,6 +1,7 @@
 package localdb
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
@@ -132,6 +133,36 @@ func (d *DB) SyncReport(deviceID string) (last *time.Time, total int64, err erro
 		}
 	}
 	return last, total, e
+}
+
+// DeviceTrackIDs — что сейчас лежит на телефоне (реконструкция из очереди
+// событий): трек с событием download и без более позднего delete для той же
+// пары device+track. Основа «ручной синхронизации» (Alex TG 19000): комп
+// считает разницу каталог↔телефон и показывает список перед закачкой.
+func (d *DB) DeviceTrackIDs(deviceID string) (map[string]bool, error) {
+	rows, err := d.sql.Query(`
+		SELECT track_id,
+		       MAX(CASE WHEN kind='download' THEN applied_at END) AS last_dl,
+		       MAX(CASE WHEN kind='delete'   THEN applied_at END) AS last_del
+		FROM sync_events
+		WHERE device_id=? AND track_id<>'' AND kind IN ('download','delete')
+		GROUP BY track_id`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		var dl, del sql.NullString
+		if err := rows.Scan(&id, &dl, &del); err != nil {
+			return nil, err
+		}
+		if dl.Valid && (!del.Valid || dl.String > del.String) {
+			out[id] = true
+		}
+	}
+	return out, rows.Err()
 }
 
 // TrackCoverURL — cover_url трека (может быть меткой embedded/none).
