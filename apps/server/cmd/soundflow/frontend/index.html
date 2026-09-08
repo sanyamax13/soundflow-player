@@ -167,6 +167,10 @@
   .drow.playing .dn{color:var(--ok)}
   .drow .da{display:block; color:var(--mut); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .drow .ds{color:var(--faint); font-size:11.5px; white-space:nowrap}
+  .drow .dx{border:0; background:none; color:var(--faint); font-size:15px; cursor:pointer; padding:4px 6px; border-radius:7px; opacity:0; flex-shrink:0}
+  .drow:hover .dx{opacity:1}
+  .drow .dx:hover{background:#fde8e6; color:var(--err)}
+  .drow.busy{opacity:.5; pointer-events:none}
   .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
   .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
   .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
@@ -826,7 +830,38 @@ function _devSongRow(t){
     `<span class="pl">${on?"⏸":"▶"}</span>`+
     `</span><span class="dm"><span class="dn">${esc(t.title||t.id)}</span>`+
     `<span class="da">${esc(t.artist||"")}</span></span>`+
-    `<span class="ds">${t.size_bytes?gb(t.size_bytes):""}</span></div>`;
+    `<span class="ds">${t.size_bytes?gb(t.size_bytes):""}</span>`+
+    `<button class="dx" title="удалить полностью — с телефона, из каталога и с диска" `+
+      `onclick="event.stopPropagation();_devDelete('${id}')">🗑</button></div>`;
+}
+
+// «Удалить полностью» (Alex TG 19160): одно действие стирает трек с телефона,
+// из каталога ПК и с диска (файл уезжает в папку _deleted рядом с базой) и
+// помечает «больше не качать». Отмена — только вручную из _deleted.
+async function _devDelete(id){
+  const t = _devTrackById(id) || {};
+  const nm = (t.artist? t.artist+" — ":"") + (t.title||id);
+  if(!confirm("Удалить полностью:\n\n"+nm+"\n\n"+
+    "— уедет с телефона при следующей синхронизации\n"+
+    "— пропадёт из каталога на ПК\n"+
+    "— файл уйдёт в папку _deleted (рядом с базой)\n"+
+    "— программа больше не будет его качать\n\n"+
+    "Вернуть можно только вручную из _deleted. Продолжить?")) return;
+  const row = document.querySelector('#devBody .drow[data-id="'+CSS.escape(id)+'"]');
+  if(row) row.classList.add("busy");
+  try{
+    const r = await fetch("/api/devices/"+encodeURIComponent(_devCur)+"/track/delete", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({track_id:id}),
+    });
+    if(!r.ok) throw new Error(await r.text());
+    if(_devPlayId === id && au.src){ au.pause(); }
+    _devOnDev = _devOnDev.filter(x => (x.id||"") !== id);
+    openDevice(_devCur);   // пересобрать плитки/счётчики из свежих данных
+  }catch(e){
+    if(row) row.classList.remove("busy");
+    alert("не вышло удалить: "+e);
+  }
 }
 function _devOpenA(i){ _devOpenArtist = _devArtists[i] && _devArtists[i].key; _devBody(); }
 function _devBackToTiles(){ _devOpenArtist = null; _devBody(); }

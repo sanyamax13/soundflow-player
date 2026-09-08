@@ -155,6 +155,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/devices", s.hDevices)
 	r.Get("/api/devices/{id}/sync-preview", s.hSyncPreview)
 	r.Post("/api/devices/{id}/sync-plan", s.hSyncPlanCommit)
+	r.Post("/api/devices/{id}/track/delete", s.hDevTrackDelete)
 	r.Get("/api/devices/{id}/suggest", s.hSuggest)
 	r.Get("/api/log", s.hLog)
 	r.Get("/api/taste", s.hTaste)
