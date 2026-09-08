@@ -43,7 +43,7 @@ from .rutracker_album import (
     _wait_torrent_complete,
     _wait_torrent_metadata,
 )
-from .soulseek_download import _file_matches, normalize_key
+from ._fsutil import _file_matches, normalize_key
 from ._validators import is_compilation_title
 
 log = logging.getLogger(__name__)

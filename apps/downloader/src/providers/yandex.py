@@ -21,7 +21,12 @@ from ._validators import duration_off, is_alternate_version
 
 log = logging.getLogger(__name__)
 
-MIN_BITRATE = 224  # планка Алекса: ниже 224 не берём
+# Планка битрейта. Раньше 224 — когда Яндекс отдавал 320 через
+# get_download_info. yandex-music 3.0 для многих треков отдаёт только mp3 192
+# (320/lossless — за отдельным sign-флоу, тут не реализовано). 192 CBR —
+# слушабельно и это ВЕРНАЯ студийная версия из каталога Яндекса; лучше она,
+# чем кавер/ремикс с бесплатных источников. Хочешь FLAC — торрент-режим.
+MIN_BITRATE = 192
 
 _client = None
 _client_failed = False

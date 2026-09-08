@@ -55,3 +55,4 @@ apps/downloader/dist/
 apps/downloader/build/
 apps/downloader/*.spec
 apps/downloader/**/__pycache__/
+apps/downloader/_smoke.py

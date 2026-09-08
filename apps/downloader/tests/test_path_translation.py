@@ -41,6 +41,10 @@ def _cfg(
         albums_dir=local_albums,
         tapochek_user="",
         tapochek_pass="",
+        rutracker_user="",
+        rutracker_pass="",
+        rutracker_cookie="",
+        nnmclub_cookie="",
         canonical_cache_dir=canon_cache,
         canonical_albums_dir=canon_albums,
     )

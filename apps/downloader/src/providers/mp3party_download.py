@@ -21,14 +21,15 @@ from pathlib import Path
 import httpx
 
 from ..config import config
-from ._validators import (, validate_quality_metadata
+from ._validators import (
+    validate_quality_metadata,
     validate_audio_file,
     validate_full_track,
     validate_min_bitrate,
     validate_id3_match,
 )
 from .rutracker_album import _simplify_artist
-from .soulseek_download import _FORBIDDEN_FS_CHARS, _file_matches, make_filename, normalize_key
+from ._fsutil import _FORBIDDEN_FS_CHARS, _file_matches, make_filename, normalize_key
 
 log = logging.getLogger(__name__)
 

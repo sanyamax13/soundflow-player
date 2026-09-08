@@ -33,7 +33,7 @@ from curl_cffi import requests as cffi_requests
 
 from ..config import config
 from ._validators import is_compilation_title, is_quality_title, validate_audio_file, validate_full_track
-from .soulseek_download import _file_matches, normalize_key
+from ._fsutil import _file_matches, normalize_key
 
 log = logging.getLogger(__name__)
 

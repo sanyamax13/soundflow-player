@@ -1,39 +1,27 @@
 [project]
-name = "soundflow-python-sidecar"
-version = "2.0.0a0"
-description = "SoundFlow Python sidecar — yt-dlp, slskd, streamripper"
+name = "soundflow-downloader"
+version = "3.0.0"
+description = "SoundFlow — качалка «найти и скачать»: Яндекс, musify, mp3party, торренты"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
-    "yt-dlp>=2026.3.0",
-    "bgutil-ytdlp-pot-provider>=1.0.0",
     "httpx>=0.28.0",
-    "slskd-api>=0.2.0",
     "python-dotenv>=1.0.0",
     "mutagen>=1.47.0",
+    # qBittorrent Web API — торрент-режим (nnmclub/rutor/tapochek/rustorka).
     "qbittorrent-api>=2026.5.0",
-    # PANNs для audio embeddings (Stage 5d / Stage 6 рекомендации).
-    # AcousticBrainz модели были закрыты MetaBrainz в 2022, переехали на PANNs
-    # CNN14 (натренирован на AudioSet, 2048-D embeddings, отдают семантическое
-    # сходство треков). torch+torchaudio для CPU inference, librosa для load.
-    "torch>=2.10.0",
-    "torchaudio>=2.10.0",
-    "panns-inference>=0.1.0",
-    "librosa>=0.10.0",
-    # yandex-music — unofficial Python library (MarshalX) для Yandex.Music API.
-    # Используется для парсинга Russian chart без OAuth (публичная метадата).
-    # https://github.com/MarshalX/yandex-music-api
+    # yandex-music — неофициальная библиотека (MarshalX) для Yandex.Music API.
     "yandex-music>=2.2,<4",
-    # BeautifulSoup для парсинга HTML (tophit.ru радио-чарта).
+    # BeautifulSoup — парсинг HTML (musify, чарт-парсеры).
     "beautifulsoup4>=4.12",
-    "playwright>=1.60.0",
-    # curl_cffi — TLS-impersonation (Chrome-отпечаток) для SoundCloud (yt-dlp) и
-    # Musify. ВЕРСИЯ КРИТИЧНА: 0.15.0 ставит битый wheel (OPENSSL invalid library
-    # на этой машине) И несовместима с имп-персонацией yt-dlp 2026.3.17 (тот тянет
-    # <0.15, max 0.14). 0.14.x — здоровая и для SoundCloud, и для curl_cffi.
-    # Не поднимать до 0.15+, пока yt-dlp не начнёт её поддерживать. (07.06.2026)
+    # curl_cffi — TLS-impersonation (Chrome-отпечаток) для musify и торрент-
+    # трекеров (обход базового Cloudflare). 0.14.x — здоровая; не поднимать до
+    # 0.15+ (битый wheel: OPENSSL invalid library).
     "curl-cffi>=0.14,<0.15",
+    # playwright — только parsers/vk_top200.py (чарт VK, для «автоподбора»).
+    # Браузер ставится отдельно: `playwright install chromium`.
+    "playwright>=1.60.0",
 ]
 
 [project.optional-dependencies]

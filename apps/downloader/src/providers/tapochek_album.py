@@ -41,7 +41,7 @@ from .rutracker_album import (
     _simplify_artist,
     _cp1251_search_url,
 )
-from .soulseek_download import normalize_key
+from ._fsutil import normalize_key
 
 log = logging.getLogger(__name__)
 
