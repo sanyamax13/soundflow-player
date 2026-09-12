@@ -55,6 +55,7 @@ apps/downloader/dist/
 apps/downloader/build/
 apps/downloader/*.spec
 apps/downloader/**/__pycache__/
+apps/downloader/.pytest_cache/
 apps/downloader/_smoke.py
 apps/downloader/downloader.log
 apps/downloader/.env
