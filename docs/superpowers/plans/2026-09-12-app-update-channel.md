@@ -54,7 +54,7 @@ Google Play/Obtainium/VPN.
   `MethodChannel('soundflow/device').invokeMethod('appVersionCode')`
   и новый `Dio()`).
 
-- [ ] **Step 1: Написать падающий тест сравнения версий**
+- [x] **Step 1: Написать падающий тест сравнения версий**
 
 Файл `apps/mobile/test/update_check_test.dart`:
 
@@ -121,14 +121,14 @@ class _ThrowingAdapter implements HttpClientAdapter {
 
 Добавить нужные импорты `dart:typed_data` для `Uint8List` в начало файла.
 
-- [ ] **Step 2: Прогнать тест, убедиться что падает**
+- [x] **Step 2: Прогнать тест, убедиться что падает**
 
 ```
 cd apps/mobile && flutter test test/update_check_test.dart
 ```
 Ожидается: FAIL — `update_check.dart` не существует (`Error: Not found: 'package:soundflow/core/update_check.dart'`).
 
-- [ ] **Step 3: Написать `update_check.dart`**
+- [x] **Step 3: Написать `update_check.dart`**
 
 ```dart
 import 'package:dio/dio.dart';
@@ -179,14 +179,14 @@ Future<UpdateInfo?> checkForUpdate({Dio? client, int? installedVersionCode}) asy
 }
 ```
 
-- [ ] **Step 4: Прогнать тест, убедиться что проходит**
+- [x] **Step 4: Прогнать тест, убедиться что проходит**
 
 ```
 cd apps/mobile && flutter test test/update_check_test.dart
 ```
 Ожидается: 3 теста PASS.
 
-- [ ] **Step 5: `dart analyze` и коммит**
+- [x] **Step 5: `dart analyze` и коммит**
 
 ```
 cd apps/mobile && dart analyze lib/ test/
@@ -212,7 +212,7 @@ git commit -m "feat(mobile): проверка версии SoundFlow на VDS-к
   если скачивание не удалось — вызывающий код в Task 3 ловит и показывает
   «не получилось скачать»).
 
-- [ ] **Step 1: AndroidManifest.xml — permission + provider**
+- [x] **Step 1: AndroidManifest.xml — permission + provider**
 
 В `apps/mobile/android/app/src/main/AndroidManifest.xml` добавить после
 существующего блока `<uses-permission>` (после `WAKE_LOCK`/
@@ -240,7 +240,7 @@ git commit -m "feat(mobile): проверка версии SoundFlow на VDS-к
         </provider>
 ```
 
-- [ ] **Step 2: `res/xml/file_paths.xml`**
+- [x] **Step 2: `res/xml/file_paths.xml`**
 
 Создать `apps/mobile/android/app/src/main/res/xml/file_paths.xml`:
 
@@ -254,7 +254,7 @@ git commit -m "feat(mobile): проверка версии SoundFlow на VDS-к
 (APK будет качаться в `<кэш приложения>/updates/`, см. Step 4 — только
 эта подпапка и открывается наружу через провайдер, не весь кэш.)
 
-- [ ] **Step 3: MainActivity.kt — метод `installApk`**
+- [x] **Step 3: MainActivity.kt — метод `installApk`**
 
 Добавить в существующий `MainActivity.kt` новый импорт и обработку
 метода `installApk` в уже существующем `MethodChannel` (канал
@@ -307,7 +307,7 @@ import java.io.File
     }
 ```
 
-- [ ] **Step 4: `update_download.dart`**
+- [x] **Step 4: `update_download.dart`**
 
 ```dart
 import 'dart:io';
@@ -332,7 +332,7 @@ Future<void> downloadAndInstallUpdate(String apkUrl, {Dio? client}) async {
 }
 ```
 
-- [ ] **Step 5: Собрать и проверить, что манифест/провайдер не сломали сборку**
+- [x] **Step 5: Собрать и проверить, что манифест/провайдер не сломали сборку**
 
 ```
 cd apps/mobile
@@ -345,7 +345,7 @@ flutter build apk --debug --target-platform android-arm64
 «APK собирать только по прямой просьбе Alex», это только проверка что
 манифест/XML валидны).
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```
 git add apps/mobile/android/app/src/main/AndroidManifest.xml \
@@ -367,7 +367,7 @@ git commit -m "feat(mobile): скачать и поставить обновле
 - Consumes: `checkForUpdate()` из Task 1, `downloadAndInstallUpdate()` из Task 2.
 - Produces: ничего наружу — конечный узел UI.
 
-- [ ] **Step 1: Написать тест на появление строки «Доступно обновление»**
+- [x] **Step 1: Написать тест на появление строки «Доступно обновление»**
 
 ```dart
 // apps/mobile/test/profile_update_test.dart
@@ -384,13 +384,13 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Прогнать, убедиться что падает** (строки «О программе» ещё нет)
+- [x] **Step 2: Прогнать, убедиться что падает** (строки «О программе» ещё нет)
 
 ```
 cd apps/mobile && flutter test test/profile_update_test.dart
 ```
 
-- [ ] **Step 3: Добавить секцию в `profile_screen.dart`**
+- [x] **Step 3: Добавить секцию в `profile_screen.dart`**
 
 Добавить импорты в начало файла:
 ```dart
@@ -481,13 +481,13 @@ class _UpdateRowState extends State<_UpdateRow> {
 }
 ```
 
-- [ ] **Step 4: Прогнать тест, убедиться что проходит**
+- [x] **Step 4: Прогнать тест, убедиться что проходит**
 
 ```
 cd apps/mobile && flutter test test/profile_update_test.dart
 ```
 
-- [ ] **Step 5: `dart analyze`, ручная проверка на реальном телефоне (см. Global Constraints — не заявлять «готово» без этого), коммит**
+- [x] **Step 5: `dart analyze`, ручная проверка на реальном телефоне (см. Global Constraints — не заявлять «готово» без этого), коммит**
 
 ```
 cd apps/mobile && dart analyze lib/ test/
@@ -514,21 +514,21 @@ git commit -m "feat(mobile): секция «О программе» — пров
 ожидаемое. Действовать только через SSH `root@77.239.102.216` (ключ
 `~/.ssh/id_ed25519`, уже проверен рабочим в этой сессии).
 
-- [ ] **Step 1: Бэкап конфига**
+- [x] **Step 1: Бэкап конфига**
 
 ```
 ssh -i ~/.ssh/id_ed25519 root@77.239.102.216 \
   "cp /etc/nginx/sites-enabled/vdsmusic.ru /etc/nginx/sites-enabled/vdsmusic.ru.bak-soundflow-update-20260912"
 ```
 
-- [ ] **Step 2: Создать директории на VDS**
+- [x] **Step 2: Создать директории на VDS**
 
 ```
 ssh -i ~/.ssh/id_ed25519 root@77.239.102.216 \
   "mkdir -p /var/www/soundflow/apk"
 ```
 
-- [ ] **Step 3: Добавить 2 новых location-блока**
+- [x] **Step 3: Добавить 2 новых location-блока**
 
 Вставить в `/etc/nginx/sites-enabled/vdsmusic.ru` СРАЗУ ПОСЛЕ существующего
 блока `location /taskme/kadr/ { ... }` и ПЕРЕД `# /taskme/pwa/ — static PWA demo`
@@ -555,7 +555,7 @@ ssh -i ~/.ssh/id_ed25519 root@77.239.102.216 \
 папку scratchpad), вставить блок локально Edit-инструментом, залить
 обратно `scp`, и только потом `nginx -t`.
 
-- [ ] **Step 4: Проверить синтаксис ПЕРЕД перезапуском**
+- [x] **Step 4: Проверить синтаксис ПЕРЕД перезапуском**
 
 ```
 ssh -i ~/.ssh/id_ed25519 root@77.239.102.216 "nginx -t"
@@ -563,13 +563,13 @@ ssh -i ~/.ssh/id_ed25519 root@77.239.102.216 "nginx -t"
 Ожидается: `syntax is ok` / `test is successful`. Если НЕТ — откатить из
 бэкапа (Step 1) и разбираться, `systemctl reload` НЕ звать.
 
-- [ ] **Step 5: Перезапустить только после успешного -t**
+- [x] **Step 5: Перезапустить только после успешного -t**
 
 ```
 ssh -i ~/.ssh/id_ed25519 root@77.239.102.216 "systemctl reload nginx"
 ```
 
-- [ ] **Step 6: Первая публикация — версия для проверки**
+- [x] **Step 6: Первая публикация — версия для проверки**
 
 Положить `version.json` (versionCode на 1 больше текущего установленного
 у Alex, чтобы Task 3's ручная проверка увидела «есть обновление») и
@@ -581,7 +581,7 @@ scp <актуальный apk> root@77.239.102.216:/var/www/soundflow/apk/SoundF
 scp version.json root@77.239.102.216:/var/www/soundflow/version.json
 ```
 
-- [ ] **Step 7: Проверка**
+- [x] **Step 7: Проверка**
 
 ```
 curl -sI https://vdsmusic.ru/soundflow/version
@@ -591,7 +591,7 @@ curl -sI https://vdsmusic.ru/soundflow/apk/SoundFlow-1.0.0+NN.apk
 Ожидается: первые два — 200 и корректный JSON; третий — 200 и
 `Content-Type: application/vnd.android.package-archive`.
 
-- [ ] **Step 8: Записать привычку в PROGRESS.md**
+- [x] **Step 8: Записать привычку в PROGRESS.md**
 
 Добавить в `docs/PROGRESS.md` (продолжение записи по этапу 66/автообновлению):
 после каждой новой APK для Alex — те же 3 команды (scp apk, обновить
