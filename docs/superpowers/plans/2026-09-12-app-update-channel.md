@@ -8,13 +8,16 @@ Google Play/Obtainium/VPN.
 
 **Architecture:** Статика на VDS (version.json + apk/) отдаётся nginx рядом
 с уже рабочим `/taskme/*`. В приложении — `update_check.dart` (сравнить
-версии через `package_info_plus` + `dio`) и `update_download.dart`
-(скачать APK через `dio`) + маленький нативный Kotlin-канал в
-`MainActivity.kt` (как уже сделано для `soundflow/device`) — запускает
-системный установщик через `FileProvider`.
+версии через `dio`) и `update_download.dart` (скачать APK через `dio`) +
+один нативный Kotlin-канал `soundflow/device` в `MainActivity.kt`
+(тот же, что уже был для модели телефона) — теперь ещё и
+`appVersionCode` (прочитать свою версию) и `installApk` (запустить
+системный установщик через `FileProvider`). Без единой новой сторонней
+библиотеки — обе рассмотренные (`package_info_plus`, `open_filex`)
+оказались проблемными на практике (см. спек, раздел «Клиент»).
 
 **Tech Stack:** Flutter/Dart (apps/mobile), Kotlin (MainActivity.kt), nginx
-(VDS vdsmusic.ru), package_info_plus 10.2.1, dio 5.11.1 (уже в проекте).
+(VDS vdsmusic.ru), dio 5.11.1 (уже в проекте, новых зависимостей нет).
 
 **Spec:** `docs/superpowers/specs/2026-09-12-app-update-channel-design.md`
 
@@ -32,20 +35,23 @@ Google Play/Obtainium/VPN.
 
 ---
 
-### Task 1: Зависимость package_info_plus + серверный клиент проверки версии
+### Task 1: Клиент проверки версии (без новых зависимостей)
 
 **Files:**
-- Modify: `apps/mobile/pubspec.yaml` (уже сделано в этой сессии —
-  `package_info_plus: ^10.2.1` добавлена, `flutter pub get` прогнан)
 - Create: `apps/mobile/lib/core/update_check.dart`
 - Test: `apps/mobile/test/update_check_test.dart`
+
+Версия приложения читается через уже существующий (расширенный в Task 2)
+нативный канал `soundflow/device`, метод `appVersionCode` — не через
+пакет (см. Global Constraints / спек).
 
 **Interfaces:**
 - Produces: `class UpdateInfo { final String version; final int versionCode; final String apkUrl; final String changelog; }`
   и `bool isNewerThan(int installedVersionCode)` на нём;
   `Future<UpdateInfo?> checkForUpdate({Dio? client, int? installedVersionCode})`
   — на входе можно подменить `client` и `installedVersionCode` для теста
-  (реальный вызов без параметров сам берёт `PackageInfo.fromPlatform()`
+  (реальный вызов без параметров сам берёт версию через
+  `MethodChannel('soundflow/device').invokeMethod('appVersionCode')`
   и новый `Dio()`).
 
 - [ ] **Step 1: Написать падающий тест сравнения версий**
@@ -126,7 +132,9 @@ cd apps/mobile && flutter test test/update_check_test.dart
 
 ```dart
 import 'package:dio/dio.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter/services.dart';
+
+const _deviceChannel = MethodChannel('soundflow/device');
 
 /// Канал обновлений SoundFlow — статика на VDS Alex-а (vdsmusic.ru),
 /// работает из любой сети, не завязан на домашний сервер (12.09.2026,
@@ -152,7 +160,7 @@ const _versionUrl = 'https://vdsmusic.ru/soundflow/version';
 Future<UpdateInfo?> checkForUpdate({Dio? client, int? installedVersionCode}) async {
   final dio = client ?? Dio();
   final myVersionCode = installedVersionCode ??
-      int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0;
+      await _deviceChannel.invokeMethod<int>('appVersionCode') ?? 0;
   try {
     final res = await dio.get<Map<String, dynamic>>(_versionUrl);
     final data = res.data;
@@ -260,9 +268,12 @@ import java.io.File
 ```
 
 В `when (call.method) { ... }` внутри уже существующего
-`setMethodCallHandler`, рядом с `"info" -> ...`, добавить:
+`setMethodCallHandler`, рядом с `"info" -> ...`, добавить ДВА новых
+случая — `appVersionCode` (версия приложения, без `package_info_plus` —
+см. Global Constraints) и `installApk`:
 
 ```kotlin
+                    "appVersionCode" -> result.success(installedVersionCode())
                     "installApk" -> {
                         val path = call.argument<String>("path")
                         if (path == null) {
@@ -283,6 +294,18 @@ import java.io.File
 
 (Обёртка `return@setMethodCallHandler` — потому что это лямбда, а не
 обычная функция; без метки `return` внутри `if` не скомпилируется.)
+
+И новый приватный метод рядом с `deviceModel()`/`transport()`:
+
+```kotlin
+    private fun installedVersionCode(): Int {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toInt() else {
+            @Suppress("DEPRECATION")
+            info.versionCode
+        }
+    }
+```
 
 - [ ] **Step 4: `update_download.dart`**
 
@@ -371,9 +394,10 @@ cd apps/mobile && flutter test test/profile_update_test.dart
 
 Добавить импорты в начало файла:
 ```dart
+import 'package:flutter/services.dart';
+
 import '../../core/update_check.dart';
 import '../../core/update_download.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 ```
 
 Заменить последнюю строку списка (`const _Row(icon: Icons.settings_outlined, ...)`)
@@ -410,9 +434,10 @@ class _UpdateRowState extends State<_UpdateRow> {
   }
 
   Future<void> _load() async {
-    final info = await PackageInfo.fromPlatform();
+    const channel = MethodChannel('soundflow/device');
+    final code = await channel.invokeMethod<int>('appVersionCode') ?? 0;
     if (!mounted) return;
-    setState(() => _installed = 'v${info.buildNumber}');
+    setState(() => _installed = 'v$code');
     final update = await checkForUpdate();
     if (mounted) setState(() => _available = update);
   }

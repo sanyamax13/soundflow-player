@@ -1,12 +1,15 @@
 package ru.soundflow.soundflow
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import androidx.core.content.FileProvider
 import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 // AudioServiceFragmentActivity вместо FlutterActivity — нужно audio_service
 // для медиа-сессии (Bluetooth-магнитола, наушники, экран блокировки), см.
@@ -14,7 +17,9 @@ import io.flutter.plugin.common.MethodChannel
 //
 // MethodChannel "soundflow/device" — модель телефона и тип связи (Wi-Fi /
 // провод / моб. интернет) для окна «Устройства» на компьютере (Alex TG
-// 18917). Своя пара строк на Kotlin, без сторонних пакетов.
+// 18917); плюс installApk — запуск системного установщика для
+// автообновления (12.09.2026). Своя пара строк на Kotlin, без сторонних
+// пакетов.
 class MainActivity : AudioServiceFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -24,9 +29,39 @@ class MainActivity : AudioServiceFragmentActivity() {
                     "info" -> result.success(
                         mapOf("model" to deviceModel(), "transport" to transport())
                     )
+                    "appVersionCode" -> result.success(installedVersionCode())
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null) {
+                            result.error("no_path", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        val uri = FileProvider.getUriForFile(
+                            this, "ru.soundflow.soundflow.fileprovider", File(path)
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(intent)
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Свой versionCode приложения — вместо package_info_plus (у него на
+    // этой машине падает Kotlin-инкрементальный кэш Gradle, т.к. pub-cache
+    // на диске C:, а проект на E: — Windows не строит relative path между
+    // разными дисками, известный баг тулчейна, не нашего кода). Нужен для
+    // автообновления (12.09.2026) — сравнить со version.json на VDS.
+    private fun installedVersionCode(): Int {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toInt() else {
+            @Suppress("DEPRECATION")
+            info.versionCode
+        }
     }
 
     private fun deviceModel(): String {

@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter/services.dart';
+
+const _deviceChannel = MethodChannel('soundflow/device');
 
 /// Канал обновлений SoundFlow — статика на VDS Alex-а (vdsmusic.ru),
 /// работает из любой сети, не завязан на домашний сервер (12.09.2026,
@@ -25,7 +27,7 @@ const _versionUrl = 'https://vdsmusic.ru/soundflow/version';
 Future<UpdateInfo?> checkForUpdate({Dio? client, int? installedVersionCode}) async {
   final dio = client ?? Dio();
   final myVersionCode = installedVersionCode ??
-      int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0;
+      await _deviceChannel.invokeMethod<int>('appVersionCode') ?? 0;
   try {
     final res = await dio.get<Map<String, dynamic>>(_versionUrl);
     final data = res.data;

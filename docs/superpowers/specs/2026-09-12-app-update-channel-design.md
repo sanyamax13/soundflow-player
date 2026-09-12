@@ -112,20 +112,26 @@ location /soundflow/apk/ {
 
 ### Клиент (Flutter, apps/mobile) — новые файлы/правки
 
-- **Новая зависимость** (pubspec.yaml): `package_info_plus` (прочитать
-  реальный установленный `versionCode` приложения на телефоне —
-  надёжнее, чем хардкодить строку). Для запуска установки — БЕЗ сторонней
-  библиотеки: маленький нативный Kotlin-кусочек в `MainActivity.kt`, тем
-  же способом, что уже сделано для `soundflow/device` (модель телефона,
-  05.09.2026, «своя пара строк на Kotlin, без сторонних пакетов»).
-  Причина отказа от готовых APK-installer-пакетов (`open_filex`,
-  `android_package_installer`) — проверено при реализации: `open_filex`
-  сам вырезает `REQUEST_INSTALL_PACKAGES` из манифеста (заточен под
-  политику Google Play, нам мешает), у `android_package_installer` низкая
-  версия (0.0.3) и требует избыточное разрешение
-  `MANAGE_EXTERNAL_STORAGE`. Нативный `FileProvider.getUriForFile` +
-  `Intent.ACTION_VIEW` — 15 строк Kotlin, полностью под контролем, без
-  сюрпризов от чужого мёрджа манифеста.
+- **Без новых сторонних библиотек вообще.** И версия приложения
+  (`versionCode`), и запуск установки — маленький нативный Kotlin-кусочек
+  в `MainActivity.kt`, тем же способом, что уже сделано для
+  `soundflow/device` (модель телефона, 05.09.2026, «своя пара строк на
+  Kotlin, без сторонних пакетов»).
+  Причины отказа от готовых пакетов (обе найдены при реализации, не
+  теоретически): (1) APK-installer-пакеты — `open_filex` сам вырезает
+  `REQUEST_INSTALL_PACKAGES` из манифеста (заточен под политику Google
+  Play, нам мешает), у `android_package_installer` низкая версия (0.0.3)
+  и требует избыточное разрешение `MANAGE_EXTERNAL_STORAGE`; (2)
+  `package_info_plus` — на этой машине ломает сборку (Kotlin-инкрементальный
+  кэш Gradle падает, потому что pub-cache пакета лежит на диске C:, а
+  проект на E: — Windows не считает relative path между разными дисками,
+  баг тулчейна конкретно на этой машине, не нашего кода; переустановка
+  Flutter на тот же диск, что проект, это бы вылечило, но трогать не
+  стали). И то, и другое решено своим Kotlin: `installedVersionCode()`
+  (через `packageManager.getPackageInfo`) и `installApk`
+  (`FileProvider.getUriForFile` + `Intent.ACTION_VIEW`) — оба в одном
+  файле, полностью под контролем, без сюрпризов от чужого мёрджа
+  манифеста или конфликтов путей.
 - **`lib/core/update_check.dart` (новый):** `checkForUpdate()` — GET
   `https://vdsmusic.ru/soundflow/version` (через существующий `dio`),
   сравнить `versionCode` с `PackageInfo.fromPlatform()`, вернуть
