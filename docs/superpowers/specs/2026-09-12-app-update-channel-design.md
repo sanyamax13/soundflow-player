@@ -112,11 +112,20 @@ location /soundflow/apk/ {
 
 ### Клиент (Flutter, apps/mobile) — новые файлы/правки
 
-- **Новые зависимости** (pubspec.yaml): `package_info_plus` (прочитать
+- **Новая зависимость** (pubspec.yaml): `package_info_plus` (прочитать
   реальный установленный `versionCode` приложения на телефоне —
-  надёжнее, чем хардкодить строку), `open_filex` (открыть скачанный APK →
-  системный экран установки, обычный способ в Flutter-экосистеме для
-  этой задачи).
+  надёжнее, чем хардкодить строку). Для запуска установки — БЕЗ сторонней
+  библиотеки: маленький нативный Kotlin-кусочек в `MainActivity.kt`, тем
+  же способом, что уже сделано для `soundflow/device` (модель телефона,
+  05.09.2026, «своя пара строк на Kotlin, без сторонних пакетов»).
+  Причина отказа от готовых APK-installer-пакетов (`open_filex`,
+  `android_package_installer`) — проверено при реализации: `open_filex`
+  сам вырезает `REQUEST_INSTALL_PACKAGES` из манифеста (заточен под
+  политику Google Play, нам мешает), у `android_package_installer` низкая
+  версия (0.0.3) и требует избыточное разрешение
+  `MANAGE_EXTERNAL_STORAGE`. Нативный `FileProvider.getUriForFile` +
+  `Intent.ACTION_VIEW` — 15 строк Kotlin, полностью под контролем, без
+  сюрпризов от чужого мёрджа манифеста.
 - **`lib/core/update_check.dart` (новый):** `checkForUpdate()` — GET
   `https://vdsmusic.ru/soundflow/version` (через существующий `dio`),
   сравнить `versionCode` с `PackageInfo.fromPlatform()`, вернуть
