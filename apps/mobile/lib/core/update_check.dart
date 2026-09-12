@@ -26,9 +26,9 @@ const _versionUrl = 'https://vdsmusic.ru/soundflow/version';
 /// просто как будто не нашли ничего новее, как ведёт себя AutoSync).
 Future<UpdateInfo?> checkForUpdate({Dio? client, int? installedVersionCode}) async {
   final dio = client ?? Dio();
-  final myVersionCode = installedVersionCode ??
-      await _deviceChannel.invokeMethod<int>('appVersionCode') ?? 0;
   try {
+    final myVersionCode = installedVersionCode ??
+        await _deviceChannel.invokeMethod<int>('appVersionCode') ?? 0;
     final res = await dio.get<Map<String, dynamic>>(_versionUrl);
     final data = res.data;
     if (data == null) return null;
