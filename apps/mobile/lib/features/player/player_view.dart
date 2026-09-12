@@ -11,7 +11,7 @@ import '../../core/config.dart';
 import '../../data/api.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
-import 'cover_backdrop.dart';
+import 'cover_art.dart';
 import 'cover_palette.dart';
 import 'player_controller.dart';
 

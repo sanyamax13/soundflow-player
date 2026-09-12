@@ -19,7 +19,7 @@ import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
 import 'package:soundflow/data/sync_repo.dart';
-import 'package:soundflow/features/player/cover_backdrop.dart';
+import 'package:soundflow/features/player/cover_art.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/features/player/player_view.dart';
 
