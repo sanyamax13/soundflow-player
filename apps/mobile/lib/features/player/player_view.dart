@@ -852,67 +852,95 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       backgroundColor: Afisha.surface,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) {
-        final q = _p.queueView;
-        final i = _p.currentIndex;
-        final upcoming = <MapEntry<int, NowPlaying>>[
-          for (var k = 0; k < q.length; k++)
-            if (k > i) MapEntry(k, q[k]),
-        ];
-        return SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.7),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Дальше',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                ),
-                if (upcoming.isEmpty)
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final q = _p.queueView;
+          final i = _p.currentIndex;
+          final upcoming = <MapEntry<int, NowPlaying>>[
+            for (var k = 0; k < q.length; k++)
+              if (k > i) MapEntry(k, q[k]),
+          ];
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.7),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Очередь пустая',
-                        style: TextStyle(color: Afisha.inkDim)),
-                  )
-                else
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: upcoming.length,
-                      itemBuilder: (_, x) {
-                        final e = upcoming[x];
-                        return ListTile(
-                          leading: CoverThumb(
-                            path: e.value.coverPath,
-                            url: coverUrlFor(e.value.id),
-                            size: 44,
-                          ),
-                          title: Text(e.value.title,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(e.value.artist,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _p.jumpTo(e.key);
-                          },
-                        );
-                      },
+                    padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Дальше',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600)),
                     ),
                   ),
-              ],
+                  if (upcoming.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Очередь пустая',
+                          style: TextStyle(color: Afisha.inkDim)),
+                    )
+                  else
+                    Flexible(
+                      child: ReorderableListView.builder(
+                        shrinkWrap: true,
+                        buildDefaultDragHandles: false,
+                        itemCount: upcoming.length,
+                        onReorderItem: (oldLocal, newLocal) {
+                          final oldReal = upcoming[oldLocal].key;
+                          final newReal = i + 1 + newLocal;
+                          _p.reorderQueue(oldReal, newReal);
+                          setModalState(() {});
+                        },
+                        itemBuilder: (_, x) {
+                          final e = upcoming[x];
+                          return ListTile(
+                            key: ValueKey(e.key),
+                            leading: CoverThumb(
+                              path: e.value.coverPath,
+                              url: coverUrlFor(e.value.id),
+                              size: 44,
+                            ),
+                            title: Text(e.value.title,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(e.value.artist,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.close,
+                                      color: Afisha.inkDim, size: 20),
+                                  onPressed: () {
+                                    _p.removeFromQueue(e.key);
+                                    setModalState(() {});
+                                  },
+                                ),
+                                ReorderableDragStartListener(
+                                  index: x,
+                                  child: const Icon(Icons.drag_handle,
+                                      color: Afisha.inkDim),
+                                ),
+                              ],
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _p.jumpTo(e.key);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

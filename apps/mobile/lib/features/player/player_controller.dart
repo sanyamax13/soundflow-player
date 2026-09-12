@@ -292,6 +292,36 @@ class PlayerController {
     radio.value = true;
   }
 
+  /// Переставить трек в очереди (лист «Дальше»). Оба индекса — только
+  /// среди ещё не сыгранных (> currentIndex), список в плеере других не
+  /// показывает.
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    final src = _source;
+    if (src == null) return;
+    if (oldIndex < 0 ||
+        oldIndex >= _queue.length ||
+        newIndex < 0 ||
+        newIndex >= _queue.length ||
+        oldIndex == newIndex ||
+        oldIndex <= _index ||
+        newIndex <= _index) {
+      return;
+    }
+    await src.move(oldIndex, newIndex);
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, item);
+  }
+
+  /// Убрать трек из очереди (смахнул в листе «Дальше»). Текущий и уже
+  /// сыгранные трогать нельзя.
+  Future<void> removeFromQueue(int index) async {
+    final src = _source;
+    if (src == null) return;
+    if (index <= _index || index >= _queue.length) return;
+    await src.removeAt(index);
+    _queue.removeAt(index);
+  }
+
   /// Строго "играть" (не переключатель) — нужно внешнему управлению
   /// (Bluetooth-магнитола, наушники, экран блокировки — см. audio_handler.dart,
   /// 05.09.2026), которое присылает раздельные команды play/pause, а не тап
