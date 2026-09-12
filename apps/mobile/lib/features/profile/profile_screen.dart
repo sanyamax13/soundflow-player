@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
 import '../../core/crash_log.dart';
 import '../../core/theme.dart';
+import '../../core/update_check.dart';
+import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
 import '../removed/removed_screen.dart';
@@ -55,6 +58,7 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           const _Row(icon: Icons.settings_outlined, title: 'Настройки', subtitle: 'скоро'),
+          const _UpdateRow(),
         ],
       ),
     );
@@ -157,6 +161,80 @@ class _Row extends StatelessWidget {
       subtitle: Text(subtitle, style: const TextStyle(color: Afisha.inkDim)),
       trailing: const Icon(Icons.chevron_right, color: Afisha.line),
       onTap: onTap,
+    );
+  }
+}
+
+/// «О программе» — версия + автопроверка обновления при открытии Профиля
+/// (тихо, без всплывающих окон) + тап ставит скачанную версию (Alex,
+/// 12.09.2026 — канал vdsmusic.ru, см. core/update_check.dart).
+class _UpdateRow extends StatefulWidget {
+  const _UpdateRow();
+
+  @override
+  State<_UpdateRow> createState() => _UpdateRowState();
+}
+
+class _UpdateRowState extends State<_UpdateRow> {
+  static const _channel = MethodChannel('soundflow/device');
+
+  String _installed = '…';
+  UpdateInfo? _available;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    int code;
+    try {
+      code = await _channel.invokeMethod<int>('appVersionCode') ?? 0;
+    } catch (_) {
+      code = 0;
+    }
+    if (!mounted) return;
+    setState(() => _installed = 'v$code');
+    final update = await checkForUpdate();
+    if (mounted) setState(() => _available = update);
+  }
+
+  Future<void> _install() async {
+    final u = _available;
+    if (u == null || _busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await downloadAndInstallUpdate(u.apkUrl);
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Не получилось скачать обновление')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final u = _available;
+    if (u == null) {
+      return _Row(
+        icon: Icons.info_outline,
+        title: 'О программе',
+        subtitle: 'установлена $_installed',
+        onTap: _busy ? null : _load,
+      );
+    }
+    return _Row(
+      icon: Icons.system_update_outlined,
+      title: _busy ? 'Скачивание…' : 'Доступно обновление v${u.version}',
+      subtitle: u.changelog.isEmpty ? 'нажми, чтобы поставить' : u.changelog,
+      onTap: _busy ? null : _install,
     );
   }
 }
