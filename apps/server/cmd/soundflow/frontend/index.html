@@ -232,6 +232,7 @@
     <div class="brand">SoundFlow</div>
     <div class="sp"></div>
     <div class="pill" id="status"><span class="dot"></span>Сервер работает</div>
+    <div class="pill off" id="staleWarn" hidden title="Телефон долго не выходил на связь с этим компом — проверь, что он подключён и открыт"><span class="dot"></span><span id="staleWarnTxt"></span></div>
     <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
@@ -1201,6 +1202,30 @@ $("#tasteRebuild").onclick = () => {
   jpost("/api/taste/rebuild").then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+e))
     .finally(()=>{ b.disabled = false; b.textContent = "Пересобрать"; });
 };
+
+/* ---------- телефон давно не выходил на связь (Опус-ревью 14.09.2026, пункт 4) ----------
+   Раньше окно молчало, даже если телефон не синхронился 1.5 суток (этап 69 —
+   TorrServer тихо занял порт, а никто этого не заметил). Проверяем самое
+   свежее из известных устройств: если последняя связь была больше суток
+   назад — честно показать баннер, а не изображать «всё в порядке». */
+const STALE_PHONE_MS = 24 * 3600 * 1000;
+async function checkStalePhone(){
+  try{
+    const devs = await jget("/api/devices");
+    const w = $("#staleWarn");
+    const last = devs.length && devs[0].last_sync_at ? new Date(devs[0].last_sync_at) : null;
+    if(!last){ w.hidden = true; return; }
+    const ageMs = Date.now() - last.getTime();
+    if(ageMs > STALE_PHONE_MS){
+      $("#staleWarnTxt").textContent = "телефон не на связи " + (ageMs/86400000).toFixed(1) + " дн.";
+      w.hidden = false;
+    } else {
+      w.hidden = true;
+    }
+  }catch(e){}
+}
+checkStalePhone();
+setInterval(checkStalePhone, 60000);
 
 /* ---------- обновление ---------- */
 function tick(){
