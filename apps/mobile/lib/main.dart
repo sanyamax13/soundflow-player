@@ -50,8 +50,11 @@ Future<void> _boot() async {
   if (savedUrl != null && savedUrl.isNotEmpty) {
     apiBase = savedUrl;
   } else {
-    final found = await discoverServer()
-        .timeout(const Duration(seconds: 5), onTimeout: () => null);
+    // scanSubnet: false — только 127.0.0.1 (USB), не тянуть старт на
+    // секунды ради полного перебора подсети; для этого есть кнопка в
+    // Профиле.
+    final found = await discoverServer(scanSubnet: false)
+        .timeout(const Duration(seconds: 3), onTimeout: () => null);
     if (found != null) {
       apiBase = found;
       await db.kvSet('server_url', found);

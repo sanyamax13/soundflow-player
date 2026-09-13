@@ -18,25 +18,27 @@ const _discoveryPorts = [8090, 8091];
 /// именно SoundFlow (поле `service` в `/v1/health` — отличает от случайно
 /// занятого кем-то ещё того же порта, как было с TorrServer 13.09.2026),
 /// либо `null`, если никто не ответил.
+/// [scanSubnet] — false пропускает перебор Wi-Fi-подсети (только
+/// `127.0.0.1`, для USB) — используется при тихом запуске приложения,
+/// чтобы не задерживать старт на десяток секунд; кнопка «Найти сервер
+/// самому» всегда сканирует полностью.
 /// [candidatesOverride]/[dioOverride] — только для тестов (не гонять реальную
 /// сеть/254 адреса в юнит-тестах); в проде вызывать без параметров.
 Future<String?> discoverServer({
+  bool scanSubnet = true,
   List<String>? candidatesOverride,
   Dio? dioOverride,
 }) async {
-  final candidates = candidatesOverride ?? await _buildCandidates();
-  final dio = dioOverride ??
-      Dio(BaseOptions(
-        connectTimeout: _perRequestTimeout,
-        receiveTimeout: _perRequestTimeout,
-      ));
+  final candidates = candidatesOverride ?? await _buildCandidates(scanSubnet);
+  final dio = dioOverride ?? Dio();
   return _probeAll(candidates, dio);
 }
 
-Future<List<String>> _buildCandidates() async {
+Future<List<String>> _buildCandidates(bool scanSubnet) async {
   final candidates = <String>[
     for (final port in _discoveryPorts) 'http://127.0.0.1:$port',
   ];
+  if (!scanSubnet) return candidates;
   final prefix = await _localSubnetPrefix();
   if (prefix != null) {
     for (var i = 1; i <= 254; i++) {
@@ -70,8 +72,14 @@ Future<String?> _localSubnetPrefix() async {
   return null;
 }
 
-const _perRequestTimeout = Duration(milliseconds: 400);
-const _batchSize = 80;
+// Таймаут Dio (connectTimeout) на некоторых Android-телефонах не успевает
+// оборвать зависшее ARP/TCP-подключение к несуществующему адресу подсети
+// (обнаружено 13.09.2026 на реальном устройстве Alex — автопоиск не находил
+// программу, хотя вручную адрес отвечал сразу). Поэтому дополнительно рубим
+// снаружи через Future.timeout — это гарантирует потолок по времени
+// независимо от того, что происходит внутри сокета.
+const _perRequestTimeout = Duration(milliseconds: 700);
+const _batchSize = 32;
 
 Future<String?> _probeAll(List<String> urls, Dio dio) async {
   for (var i = 0; i < urls.length; i += _batchSize) {
@@ -87,12 +95,14 @@ Future<String?> _probeAll(List<String> urls, Dio dio) async {
 
 Future<String?> _probeOne(Dio dio, String url) async {
   try {
-    final res = await dio.get<Map<String, dynamic>>('$url/v1/health');
+    final res = await dio
+        .get<Map<String, dynamic>>('$url/v1/health')
+        .timeout(_perRequestTimeout);
     if (res.statusCode == 200 && res.data?['service'] == 'soundflow') {
       return url;
     }
   } catch (_) {
-    // не ответил / не тот сервис — обычный исход перебора, не ошибка
+    // не ответил / не тот сервис / истёк таймаут — обычный исход перебора
   }
   return null;
 }
