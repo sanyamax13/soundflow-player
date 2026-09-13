@@ -30,6 +30,11 @@ class MainActivity : AudioServiceFragmentActivity() {
                         mapOf("model" to deviceModel(), "transport" to transport())
                     )
                     "appVersionCode" -> result.success(installedVersionCode())
+                    // Свободное место на телефоне — для проверки перед скачиванием
+                    // большой порции (Опус-ревью телефона 14.09.2026, пункт 7).
+                    // java.io.File.usableSpace — встроенное в JDK, без сторонних
+                    // пакетов (тот же принцип, что и у остальных методов этого канала).
+                    "freeSpaceBytes" -> result.success(File(filesDir.path).usableSpace)
                     "installApk" -> {
                         val path = call.argument<String>("path")
                         if (path == null) {

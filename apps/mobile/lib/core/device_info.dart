@@ -32,4 +32,16 @@ class DeviceInfo {
       return const DeviceInfo(model: 'Android', transport: '');
     }
   }
+
+  /// Свободное место на телефоне в байтах — перед «Докачать ещё» большой
+  /// порции (Опус-ревью телефона 14.09.2026, пункт 7). null — не Android или
+  /// канал не ответил; вызывающий должен просто пропустить проверку.
+  static Future<int?> freeSpaceBytes() async {
+    try {
+      final v = await _ch.invokeMethod<int>('freeSpaceBytes');
+      return v;
+    } catch (_) {
+      return null;
+    }
+  }
 }
