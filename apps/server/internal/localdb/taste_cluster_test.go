@@ -297,6 +297,53 @@ func TestRecomputeTasteClustersBelowThreshold(t *testing.T) {
 	}
 }
 
+func TestTasteCentroidsHashChangesWithData(t *testing.T) {
+	d := open(t)
+	h1, err := d.TasteCentroidsHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ {
+		v := make([]float32, VecDim)
+		v[i] = 1
+		id := "t" + itoa(i)
+		if _, err := d.sql.Exec(
+			`INSERT INTO tracks (id, artist, title, normalized_key, feature_vector) VALUES (?,?,?,?,?)`,
+			id, "A", id, id, vecToBlob(v)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.sql.Exec(
+			`INSERT INTO feedback_event (event_uuid, track_id, artist, event_type, value, created_at)
+			 VALUES (?,?,?,?,?,?)`, "e"+id, id, "A", "like", 5.0, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
+		t.Fatal(err)
+	}
+	h2, err := d.TasteCentroidsHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h1 == h2 {
+		t.Error("hash should change after building long_term clusters")
+	}
+	h3, err := d.TasteCentroidsHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h2 != h3 {
+		t.Error("hash should be stable when data unchanged")
+	}
+	blobs, err := d.TasteCentroidsLayerBlobs("long_term")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blobs) == 0 {
+		t.Error("expected at least one base64 centroid")
+	}
+}
+
 func itoa(i int) string {
 	if i == 0 {
 		return "0"

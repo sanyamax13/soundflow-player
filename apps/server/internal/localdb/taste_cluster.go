@@ -1,6 +1,9 @@
 package localdb
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"sort"
 	"strings"
 	"time"
@@ -253,6 +256,47 @@ func (d *DB) TasteClusters(perCluster int) ([]TasteClusterInfo, error) {
 			info.Exemplars = append(info.Exemplars, b[i].row)
 		}
 		out[ci] = info
+	}
+	return out, nil
+}
+
+// TasteCentroidsHash — sha256 от конкатенации всех центров long_term+recent,
+// по порядку (layer, idx). Меняется, только когда центры реально другие —
+// используется телефоном, чтобы не тянуть блобы при каждой синхронизации.
+func (d *DB) TasteCentroidsHash() (string, error) {
+	h := sha256.New()
+	for _, layer := range []string{"long_term", "recent"} {
+		rows, err := d.sql.Query(`SELECT vec FROM taste_cluster WHERE layer = ? ORDER BY idx`, layer)
+		if err != nil {
+			return "", err
+		}
+		for rows.Next() {
+			var b []byte
+			if err := rows.Scan(&b); err != nil {
+				rows.Close()
+				return "", err
+			}
+			h.Write(b)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return "", err
+		}
+		rows.Close()
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// TasteCentroidsLayerBlobs — центры одного слоя, как base64 (для HTTP-ответа
+// телефону — тот же формат BLOB, что в БД, little-endian float32).
+func (d *DB) TasteCentroidsLayerBlobs(layer string) ([]string, error) {
+	cents, err := d.tasteCentroidsLayer(layer)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(cents))
+	for i, c := range cents {
+		out[i] = base64.StdEncoding.EncodeToString(vecToBlob(c))
 	}
 	return out, nil
 }

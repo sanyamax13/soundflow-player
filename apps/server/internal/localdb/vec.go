@@ -22,6 +22,9 @@ func vecToBlob(v []float32) []byte {
 	return b
 }
 
+// VecToBlob — экспортируемая обёртка vecToBlob, для кода вне пакета (HTTP-ручки).
+func VecToBlob(v []float32) []byte { return vecToBlob(v) }
+
 // blobToVec — BLOB → []float32. Пустой/битой длины → nil.
 func blobToVec(b []byte) []float32 {
 	if len(b) == 0 || len(b)%4 != 0 {
