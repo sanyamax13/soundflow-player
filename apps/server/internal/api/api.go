@@ -96,8 +96,9 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		dbState = "down"
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status": "alive",
-		"db":     dbState,
+		"status":  "alive",
+		"db":      dbState,
+		"service": "soundflow",
 	})
 }
 

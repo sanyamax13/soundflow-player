@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
+import '../../core/server_discovery.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
 
@@ -20,6 +21,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
   late final TextEditingController _ctrl;
   bool _checking = false;
   bool _saving = false;
+  bool _scanning = false;
   bool? _reachable; // null — ещё не проверяли
 
   @override
@@ -48,6 +50,26 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     });
   }
 
+  Future<void> _scan() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _scanning = true;
+      _reachable = null;
+    });
+    final found = await discoverServer()
+        .timeout(const Duration(seconds: 6), onTimeout: () => null);
+    if (!mounted) return;
+    setState(() => _scanning = false);
+    if (found == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не нашёл в сети — впиши адрес вручную')),
+      );
+      return;
+    }
+    _ctrl.text = found;
+    await _check();
+  }
+
   Future<void> _save() async {
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
@@ -74,6 +96,18 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
             'Адрес компьютера, где запущена программа SoundFlow, в домашней '
             'сети. Например: 192.168.1.104 — порт 8090 подставится сам.',
             style: TextStyle(color: Afisha.inkDim),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _checking || _saving || _scanning ? null : _scan,
+              icon: _scanning
+                  ? const SizedBox(
+                      height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.wifi_find),
+              label: Text(_scanning ? 'Ищу в сети…' : 'Найти сервер самому'),
+            ),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -110,7 +144,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _checking || _saving ? null : _check,
+                  onPressed: _checking || _saving || _scanning ? null : _check,
                   child: _checking
                       ? const SizedBox(
                           height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -120,7 +154,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: _checking || _saving ? null : _save,
+                  onPressed: _checking || _saving || _scanning ? null : _save,
                   child: _saving
                       ? const SizedBox(
                           height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -133,7 +167,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton(
-              onPressed: _checking || _saving
+              onPressed: _checking || _saving || _scanning
                   ? null
                   : () => setState(() {
                         _ctrl.text = kDefaultApiBase;

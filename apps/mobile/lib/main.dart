@@ -9,6 +9,7 @@ import 'app/providers.dart';
 import 'app/shell.dart';
 import 'core/config.dart';
 import 'core/crash_log.dart';
+import 'core/server_discovery.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
 import 'data/auto_sync.dart';
@@ -40,10 +41,22 @@ Future<void> _boot() async {
   };
 
   final db = await Db.open();
-  // Адрес сервера пользователь задаёт в Профиле — берём сохранённый, иначе
-  // адрес по умолчанию (см. core/config.dart).
+  // Адрес сервера пользователь задаёт в Профиле — берём сохранённый. Совсем
+  // новая установка (ничего не сохранено) — пробуем один раз сами найти
+  // программу в сети/по USB, прежде чем откатиться на адрес по умолчанию
+  // (см. core/config.dart; Alex TG 13.09.2026 — не заставлять вводить руками
+  // при первом запуске).
   final savedUrl = await db.kvGet('server_url');
-  if (savedUrl != null && savedUrl.isNotEmpty) apiBase = savedUrl;
+  if (savedUrl != null && savedUrl.isNotEmpty) {
+    apiBase = savedUrl;
+  } else {
+    final found = await discoverServer()
+        .timeout(const Duration(seconds: 5), onTimeout: () => null);
+    if (found != null) {
+      apiBase = found;
+      await db.kvSet('server_url', found);
+    }
+  }
   final api = Api(baseUrl: apiBase);
   final sync = SyncRepo(api, db);
   final downloads = DownloadsRepo(api, db, sync);
