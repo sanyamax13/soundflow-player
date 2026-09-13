@@ -19,6 +19,8 @@ class SyncRepo {
 
   static const _kDeviceId = 'device_id';
   static const _kLastSync = 'last_sync_at';
+  static const _kTasteHash = 'taste_centroids_hash';
+  static const _kTasteData = 'taste_centroids';
 
   final _rnd = Random.secure();
 
@@ -81,6 +83,7 @@ class SyncRepo {
     final pending = await _db.pendingEvents();
     if (pending.isEmpty) {
       await _db.kvSet(_kLastSync, DateTime.now().toIso8601String());
+      await _pullTasteCentroidsIfChanged();
       return (sent: 0, pending: 0);
     }
 
@@ -109,7 +112,29 @@ class SyncRepo {
     final batch = [for (final e in pending) e['uuid'] as String];
     await _db.markSynced(batch);
     await _db.kvSet(_kLastSync, DateTime.now().toIso8601String());
+    await _pullTasteCentroidsIfChanged();
 
     return (sent: accepted.length, pending: await _db.pendingCount());
+  }
+
+  /// Слепок вкуса — тянем только когда хэш на сервере разошёлся с тем, что
+  /// уже сохранено (иначе при частых синках гоняли бы одни и те же
+  /// центры лишний раз). Сеть недоступна/сервер старой версии — тихо
+  /// пропускаем, следующий синк попробует снова.
+  Future<void> _pullTasteCentroidsIfChanged() async {
+    final serverHash = await _api.tasteCentroidsHash();
+    if (serverHash == null) return;
+    final localHash = await _db.kvGet(_kTasteHash);
+    if (serverHash == localHash) return;
+    final data = await _api.tasteCentroids();
+    if (data == null) return;
+    await _db.kvSet(_kTasteHash, data.hash);
+    await _db.kvSet(
+      _kTasteData,
+      jsonEncode({
+        'long_term': [for (final v in data.longTerm) base64Encode(v)],
+        'recent': [for (final v in data.recent) base64Encode(v)],
+      }),
+    );
   }
 }

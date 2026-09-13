@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
@@ -79,6 +80,18 @@ class DownloadsRepo {
       await _db.setFavorite(id, true);
       await _sync?.record('like', trackId: id);
     }
+
+    // Отпечаток — необязательная надстройка для офлайн-радио (см.
+    // features/player/player_view.dart _radio()); нет сети/старая версия
+    // сервера — молча пропускаем, попробует backfillVectors() при
+    // следующем запуске.
+    try {
+      final vectors = await _api.trackVectors([id]);
+      if (vectors[id] case final v?) {
+        await _db.setTrackVector(id, v);
+      }
+    } catch (_) {}
+
     return size;
   }
 
@@ -236,6 +249,30 @@ class DownloadsRepo {
       final dur = (m['duration_sec'] as num?)?.toInt();
       if ((fmt ?? '').isEmpty && (br ?? 0) == 0 && (dur ?? 0) == 0) continue;
       await _db.updateMeta(id, bitrateKbps: br, format: fmt, durationSec: dur);
+    }
+  }
+
+  /// Докачать отпечатки уже скачанным трекам, у которых их ещё нет — для
+  /// офлайн-радио (docs/superpowers/specs/2026-09-13-taste-layers-offline-design.md
+  /// §4.4). Пачками по 200 (одна ручка принимает список, не по одному
+  /// треку). Фоном при старте, как backfillCovers/backfillMeta.
+  Future<void> backfillVectors() async {
+    final all = await _db.allDownloaded();
+    final have = await _db.trackVectorsFor([for (final t in all) t.id]);
+    final need = [for (final t in all) if (!have.containsKey(t.id)) t.id];
+    if (need.isEmpty) return;
+    const chunk = 200;
+    for (var i = 0; i < need.length; i += chunk) {
+      final part = need.sublist(i, i + chunk > need.length ? need.length : i + chunk);
+      Map<String, Uint8List> vectors;
+      try {
+        vectors = await _api.trackVectors(part);
+      } catch (_) {
+        return; // нет сети — попробуем в следующий раз
+      }
+      for (final entry in vectors.entries) {
+        await _db.setTrackVector(entry.key, entry.value);
+      }
     }
   }
 
