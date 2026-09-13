@@ -12,11 +12,13 @@ import (
 // параллельно несколько жанров, среднее по ним «каша».
 
 const posScoredWithVector = `
-	SELECT t.id, t.artist, t.title, fe.s, t.feature_vector
+	SELECT t.id, t.artist, t.title, fe.s, fe.last_at, t.feature_vector
 	FROM tracks t
-	JOIN (SELECT track_id, SUM(value) AS s FROM feedback_event
+	JOIN (SELECT track_id, SUM(value) AS s, MAX(created_at) AS last_at
+	      FROM feedback_event
 	      WHERE track_id <> '' GROUP BY track_id HAVING s > 0) fe ON fe.track_id = t.id
-	WHERE t.feature_vector IS NOT NULL`
+	WHERE t.feature_vector IS NOT NULL
+	ORDER BY t.id`
 
 // kFor — сколько центров по числу любимых треков.
 func kFor(n int) int {
@@ -40,10 +42,10 @@ func (d *DB) RecomputeTasteClusters() (nClusters, nTracks int, err error) {
 	}
 	var vecs [][]float32
 	for rows.Next() {
-		var id, artist, title string
+		var id, artist, title, lastAt string
 		var score float64
 		var blob []byte
-		if err := rows.Scan(&id, &artist, &title, &score, &blob); err != nil {
+		if err := rows.Scan(&id, &artist, &title, &score, &lastAt, &blob); err != nil {
 			rows.Close()
 			return 0, 0, err
 		}
@@ -202,8 +204,9 @@ func (d *DB) TasteClusters(perCluster int) ([]TasteClusterInfo, error) {
 	buckets := make([][]scored, len(cents))
 	for rows.Next() {
 		var r TasteRow
+		var lastAt string
 		var blob []byte
-		if err := rows.Scan(&r.ID, &r.Artist, &r.Title, &r.Score, &blob); err != nil {
+		if err := rows.Scan(&r.ID, &r.Artist, &r.Title, &r.Score, &lastAt, &blob); err != nil {
 			rows.Close()
 			return nil, err
 		}

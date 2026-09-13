@@ -158,6 +158,49 @@ func TestRecomputeTasteClustersAndScore(t *testing.T) {
 	}
 }
 
+func TestRecomputeTasteClustersDeterministic(t *testing.T) {
+	d := open(t)
+	for i := 0; i < 20; i++ {
+		v := make([]float32, VecDim)
+		v[i%VecDim] = 1
+		if _, err := d.sql.Exec(
+			`INSERT INTO tracks (id, artist, title, normalized_key, feature_vector) VALUES (?,?,?,?,?)`,
+			"t"+itoa(i), "A"+itoa(i%3), "t"+itoa(i), "t"+itoa(i), vecToBlob(v)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.sql.Exec(
+			`INSERT INTO feedback_event (event_uuid, track_id, artist, event_type, value, created_at)
+			 VALUES (?,?,?,?,?,?)`,
+			"e"+itoa(i), "t"+itoa(i), "A"+itoa(i%3), "like", 5.0, "2026-09-01T00:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nc1, _, err := d.RecomputeTasteClusters()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := d.tasteCentroids()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc2, _, err := d.RecomputeTasteClusters()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := d.tasteCentroids()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nc1 != nc2 || len(first) != len(second) {
+		t.Fatalf("cluster count changed: %d/%d vs %d/%d", nc1, len(first), nc2, len(second))
+	}
+	for i := range first {
+		if cosine(first[i], second[i]) < 0.999 {
+			t.Errorf("centroid %d drifted between identical recomputes: cosine=%v", i, cosine(first[i], second[i]))
+		}
+	}
+}
+
 func itoa(i int) string {
 	if i == 0 {
 		return "0"
