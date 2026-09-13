@@ -42,11 +42,16 @@ func TestOrderRadioFallbackNoTaste(t *testing.T) {
 
 func TestOrderRadioTasteAware(t *testing.T) {
 	d := open(t)
-	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700. 8 fav-треков —
-	// минимум для построения слоя (minClusterTracks), см. Task 2 плана.
+	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700.
 	radioTrack(t, d, "seed", "Seed", 0, 0)
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 4; i++ {
 		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
+	}
+	// «filler» — ещё 4 лайкнутых трека той же оси, НЕ участвующие в cands
+	// ниже: только чтобы добрать minClusterTracks (Task 2), не меняя набор
+	// и относительный расклад очков реальных кандидатов теста.
+	for i := 0; i < 4; i++ {
+		radioTrack(t, d, "filler"+itoa(i), "Filler"+itoa(i), 0, 0.05+float32(i)*0.01)
 	}
 	// три трека одного нейтрального артиста, близкие по звуку: обычный,
 	// недавно пропущенный, и нелюбимого артиста рядом — чтобы правило
@@ -59,8 +64,11 @@ func TestOrderRadioTasteAware(t *testing.T) {
 	}
 
 	evs := []SyncEvent{}
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 4; i++ {
 		evs = append(evs, SyncEvent{UUID: "l" + itoa(i), Kind: "like", TrackID: "fav" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
+	}
+	for i := 0; i < 4; i++ {
+		evs = append(evs, SyncEvent{UUID: "lf" + itoa(i), Kind: "like", TrackID: "filler" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
 	}
 	evs = append(evs, SyncEvent{UUID: "dis", Kind: "dislike", TrackID: "hated", Payload: json.RawMessage(``), ClientTS: 1})
 	if _, err := d.SaveSync(Device{ID: "d"}, evs); err != nil {
@@ -102,5 +110,152 @@ func TestOrderRadioTasteAware(t *testing.T) {
 	// нелюбимый артист — ниже нейтрального такого же по звуку
 	if pos["hated"] < pos["n_plain"] {
 		t.Errorf("hated (pos %d) should rank below n_plain (pos %d)", pos["hated"], pos["n_plain"])
+	}
+}
+
+// TestOrderRadioNoDuplicatesNoDrops — регрессия на баг слияния антипузыря:
+// если far-кандидат оказывался на границе 8-го слота уже пройденным обычным
+// ходом по cs, он инъецировался повторно (дубль), а самый низкий по score
+// кандидат терялся вовсе. Найдено 13.09.2026 при подключении recent/session
+// слоёв (Task 5) — сдвиг шкалы aff подвинул «нелюбимого» кандидата ровно на
+// границу и обнажил давнюю ошибку в radio.go, не связанную с самой формулой.
+func TestOrderRadioNoDuplicatesNoDrops(t *testing.T) {
+	d := open(t)
+	radioTrack(t, d, "seed", "Seed", 0, 0)
+	for i := 0; i < 8; i++ {
+		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
+	}
+	radioTrack(t, d, "n_plain", "Neutral", 0, 0.006)
+	radioTrack(t, d, "hated", "HatedArtist", 0, 0.005)
+	for i := 0; i < 4; i++ {
+		radioTrack(t, d, "far"+itoa(i), "FarArtist"+itoa(i), 700, float32(i)*0.01)
+	}
+	var evs []SyncEvent
+	for i := 0; i < 8; i++ {
+		evs = append(evs, SyncEvent{UUID: "l" + itoa(i), Kind: "like", TrackID: "fav" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
+	}
+	evs = append(evs, SyncEvent{UUID: "dis", Kind: "dislike", TrackID: "hated", Payload: json.RawMessage(``), ClientTS: 1})
+	if _, err := d.SaveSync(Device{ID: "d"}, evs); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	cands := []string{"far0", "hated", "far1", "fav0", "n_plain", "fav1", "far2", "fav2", "fav3", "far3"}
+	got, _, err := d.OrderRadio("seed", cands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(cands) {
+		t.Fatalf("got %d ids, want %d (duplicate or dropped candidate): %v", len(got), len(cands), got)
+	}
+	seen := map[string]int{}
+	for _, id := range got {
+		seen[id]++
+	}
+	for _, id := range cands {
+		if seen[id] != 1 {
+			t.Errorf("candidate %q appears %d times in result %v; want exactly 1", id, seen[id], got)
+		}
+	}
+}
+
+func TestOrderRadioMatchesOldBehaviorWhenNoRecentOrSession(t *testing.T) {
+	d := open(t)
+	radioTrack(t, d, "seed", "Seed", 0, 0)
+	for i := 0; i < 4; i++ {
+		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
+	}
+	for i := 0; i < 4; i++ {
+		radioTrack(t, d, "far"+itoa(i), "Far"+itoa(i), 700, float32(i)*0.01)
+	}
+	evs := []SyncEvent{}
+	for i := 0; i < 4; i++ {
+		evs = append(evs, SyncEvent{UUID: "l" + itoa(i), Kind: "like", TrackID: "fav" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
+	}
+	if _, err := d.SaveSync(Device{ID: "d"}, evs); err != nil {
+		t.Fatal(err)
+	}
+	// только long_term построен (4 лайкнутых < порога 8, значит слой НЕ
+	// построится вовсе → aff=0 везде → должно совпасть с OrderBySimilarity)
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	cands := []string{"far0", "fav0", "far1", "fav1", "far2", "fav2", "far3", "fav3"}
+	got, reordered, err := d.OrderRadio("seed", cands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, wantReordered, err := d.OrderBySimilarity("seed", cands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reordered != wantReordered {
+		t.Fatalf("reordered mismatch: got %v want %v", reordered, wantReordered)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("order diverged at %d: got %v want %v (full got=%v want=%v)", i, got[i], want[i], got, want)
+		}
+	}
+}
+
+func TestOrderRadioBlendsThreeLayers(t *testing.T) {
+	d := open(t)
+	radioTrack(t, d, "seed", "Seed", 0, 0)
+	// long_term: 8 треков жанра "ось 0" — тот же жанр, что seed
+	for i := 0; i < 8; i++ {
+		radioTrack(t, d, "old"+itoa(i), "Old"+itoa(i), 0, float32(i)*0.005)
+	}
+	// recent: 8 треков совсем другого жанра "ось 900" (недавно распробовал)
+	for i := 0; i < 8; i++ {
+		radioTrack(t, d, "recent"+itoa(i), "Recent"+itoa(i), 900, float32(i)*0.005)
+	}
+	// кандидат такого же звучания, как recent-жанр, но БЕЗ фидбека сам по себе
+	radioTrack(t, d, "cand_recent_genre", "X", 900, 0.02)
+	// кандидат далёкого жанра — не пересекается ни с одним слоем
+	radioTrack(t, d, "cand_far", "Y", 300, 0)
+
+	var evs []SyncEvent
+	for i := 0; i < 8; i++ {
+		evs = append(evs, SyncEvent{UUID: "old" + itoa(i), Kind: "like", TrackID: "old" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
+	}
+	if _, err := d.SaveSync(Device{ID: "d"}, evs); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
+		t.Fatal(err)
+	}
+	// recent-слой строим из отдельных фидбек-строк (не через SaveSync, чтобы
+	// не задеть окно отбора long_term — сценарий "то же самое, но недавно")
+	for i := 0; i < 8; i++ {
+		if _, err := d.sql.Exec(
+			`INSERT INTO feedback_event (event_uuid, track_id, artist, event_type, value, created_at)
+			 VALUES (?,?,?,?,?,?)`,
+			"rf"+itoa(i), "recent"+itoa(i), "Recent"+itoa(i), "like", 5.0, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutoff := time.Now().AddDate(0, 0, -21)
+	if _, _, err := d.RecomputeTasteClusters("recent", &cutoff); err != nil {
+		t.Fatal(err)
+	}
+
+	cands := []string{"cand_far", "cand_recent_genre"}
+	got, reordered, err := d.OrderRadio("seed", cands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reordered {
+		t.Fatal("expected reordered")
+	}
+	pos := map[string]int{}
+	for i, id := range got {
+		pos[id] = i
+	}
+	if pos["cand_recent_genre"] > pos["cand_far"] {
+		t.Errorf("recent-layer affinity should lift cand_recent_genre above cand_far: pos=%v", pos)
 	}
 }

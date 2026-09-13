@@ -33,12 +33,20 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 	if err != nil {
 		return nil, false, err
 	}
-	cents, err := d.tasteCentroidsLayer("long_term")
+	centsLong, err := d.tasteCentroidsLayer("long_term")
 	if err != nil {
 		return nil, false, err
 	}
-	if len(seedVec) == 0 || len(cents) == 0 || len(candidateIDs) == 0 {
+	if len(seedVec) == 0 || len(centsLong) == 0 || len(candidateIDs) == 0 {
 		return d.OrderBySimilarity(seedID, candidateIDs)
+	}
+	centsRecent, err := d.tasteCentroidsLayer("recent") // может быть пуст — affRecent тогда 0
+	if err != nil {
+		return nil, false, err
+	}
+	sessVecs, err := d.sessionVectors() // может быть nil — affSession тогда 0
+	if err != nil {
+		return nil, false, err
 	}
 
 	artScore := map[string]float64{}
@@ -84,7 +92,10 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 		}
 		seen[id] = true
 		sim := cosine(seedVec, v)
-		aff := tasteAffinity(cents, v)
+		affLong := tasteAffinity(centsLong, v)
+		affRecent := tasteAffinity(centsRecent, v)
+		affSession := tasteAffinity(sessVecs, v)
+		aff := 0.60*affLong + 0.25*affRecent + 0.15*affSession
 		sc := sim + 0.15*aff
 		if a := artScore[artist]; a < 0 {
 			sc -= 0.5 * clamp01(-a/3) // растёт с «нелюбовью», насыщается на -3
@@ -116,7 +127,12 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 		}
 	}
 	sort.SliceStable(far, func(i, j int) bool { return far[i].simSeed > far[j].simSeed })
-	farUsed := map[string]bool{}
+	// emitted — какие id уже попали в merged, ЛЮБЫМ путём (обычным ходом по
+	// cs или инъекцией антипузыря). Раньше отмечался только путь инъекции,
+	// из-за чего far-кандидат, до которого обычный ход cs добирался РАНЬШЕ
+	// своего 8-го слота, потом инъецировался ПОВТОРНО — дубль занимал слот,
+	// а последний (самый низкий по score) кандидат из cs терялся вовсе.
+	emitted := map[string]bool{}
 
 	// собираем список: каждый 8-й слот — из far (если есть и ещё не взят)
 	merged := make([]radioCand, 0, len(cs))
@@ -125,23 +141,24 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 		if (pos+1)%8 == 0 {
 			var pick *radioCand
 			for i := range far {
-				if !farUsed[far[i].id] {
+				if !emitted[far[i].id] {
 					pick = &far[i]
 					break
 				}
 			}
 			if pick != nil {
-				farUsed[pick.id] = true
+				emitted[pick.id] = true
 				merged = append(merged, *pick)
 				continue
 			}
 		}
-		for mi < len(cs) && farUsed[cs[mi].id] {
+		for mi < len(cs) && emitted[cs[mi].id] {
 			mi++
 		}
 		if mi >= len(cs) {
 			break
 		}
+		emitted[cs[mi].id] = true
 		merged = append(merged, cs[mi])
 		mi++
 	}
