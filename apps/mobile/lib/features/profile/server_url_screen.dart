@@ -57,7 +57,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
       _reachable = null;
     });
     final found = await discoverServer()
-        .timeout(const Duration(seconds: 15), onTimeout: () => null);
+        .timeout(const Duration(seconds: 20), onTimeout: () => null);
     if (!mounted) return;
     setState(() => _scanning = false);
     if (found == null) {

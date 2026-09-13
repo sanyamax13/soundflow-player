@@ -75,11 +75,19 @@ Future<String?> _localSubnetPrefix() async {
 // Таймаут Dio (connectTimeout) на некоторых Android-телефонах не успевает
 // оборвать зависшее ARP/TCP-подключение к несуществующему адресу подсети
 // (обнаружено 13.09.2026 на реальном устройстве Alex — автопоиск не находил
-// программу, хотя вручную адрес отвечал сразу). Поэтому дополнительно рубим
-// снаружи через Future.timeout — это гарантирует потолок по времени
-// независимо от того, что происходит внутри сокета.
+// программу, хотя вручную адрес отвечал сразу). Future.timeout снаружи
+// гарантирует потолок ПО ВРЕМЕНИ ОЖИДАНИЯ, но САМ запрос без явной отмены
+// остаётся висеть в фоне — на батче в 32+ таких зависших подключений
+// подряд (обычная картина при переборе почти пустой /24) это похоже на
+// исчерпание сокетов/файловых дескрипторов телефона, из-за чего КАЖДЫЙ
+// следующий батч стартует медленнее предыдущего, и таймаут кнопки истекает
+// раньше, чем скан доходит до настоящего сервера — фикс с одним лишь
+// Future.timeout (13.09.2026, коммит c1fa9ad) это не полностью решил,
+// подтверждено на реальном устройстве Alex. Через CancelToken отменяем
+// подключение по-настоящему, а не просто перестаём его ждать — это и есть
+// разница между «бросил ждать» и «действительно закрыл сокет».
 const _perRequestTimeout = Duration(milliseconds: 700);
-const _batchSize = 32;
+const _batchSize = 24;
 
 Future<String?> _probeAll(List<String> urls, Dio dio) async {
   for (var i = 0; i < urls.length; i += _batchSize) {
@@ -94,10 +102,14 @@ Future<String?> _probeAll(List<String> urls, Dio dio) async {
 }
 
 Future<String?> _probeOne(Dio dio, String url) async {
+  final cancel = CancelToken();
   try {
     final res = await dio
-        .get<Map<String, dynamic>>('$url/v1/health')
-        .timeout(_perRequestTimeout);
+        .get<Map<String, dynamic>>('$url/v1/health', cancelToken: cancel)
+        .timeout(_perRequestTimeout, onTimeout: () {
+      cancel.cancel('поиск сервера: не ответил вовремя');
+      throw TimeoutException('probe timeout: $url');
+    });
     if (res.statusCode == 200 && res.data?['service'] == 'soundflow') {
       return url;
     }
