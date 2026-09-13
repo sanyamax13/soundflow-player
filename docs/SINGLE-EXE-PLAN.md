@@ -192,17 +192,68 @@ Files только на чтение).
     Wi-Fi (`192.168.1.73:8090`, адрес в приложении уже такой): воспроизведение,
     поиск, радио, докачка, «Добавить музыку». Откат: `fg-rollback.ps1`
     (вернуть `SoundFlow2`; Postgres/`srv.exe`/сайдкар не трогали).
-  - **Слим сайдкара (отдельный шаг, детали):** `d:\soundflow-app` git repo,
-    ветка. Удалить `src/providers/{youtube.py,youtube_music_download.py,rutube.py,
-    soundcloud.py,soundcloud_download.py,soulseek.py,soulseek_download.py,
-    audio_features.py}` + их регистрацию в `audio_chain.py`/`main.py`. Из
-    `pyproject.toml` убрать torch/torchaudio/panns-inference/librosa/yt-dlp/
-    bgutil-ytdlp-pot-provider/slskd-api. `main.py` сам зовёт `yt_dlp` (3 места —
-    проверить, для чего; если только youtube/resolve — убрать). `uv sync`.
-    Docker: погасить `soundflow-bgutil-pot`, `soundflow-slskd`. Оставить:
-    yandex, musify, mp3party, rutor/rutracker/nnmclub/tapochek (+ curl_cffi,
-    yandex_music, playwright, qbittorrent-api). Тест: каждый из 3 источников
-    Alex реально качает трек.
+  - **Слим сайдкара — СДЕЛАНО 13.09.2026.** Удалены (не только файлы, но и
+    регистрация): `src/providers/{youtube.py,youtube_music_download.py,
+    rutube.py,soundcloud.py,soundcloud_download.py,soulseek.py,
+    soulseek_download.py,audio_features.py,loudness.py,filters.py}` + мёртвые
+    ручки в `main.py` (`/search`,`/resolve`,`/soulseek/find-and-download`,
+    `/analyze-features`,`/analyze-loudness`,`/import-playlist`,`/import-url`,
+    `/musify-download`,`/musify-find`,`/umap-projection`) + верхнеуровневый
+    `import yt_dlp`. Из `pyproject.toml` убраны torch/torchaudio/
+    panns-inference/librosa/yt-dlp/bgutil-ytdlp-pot-provider/slskd-api —
+    47 пакетов в `uv.lock` вместо 110.
+    - **ЛОВУШКА, чуть не сломала живое:** `soulseek_download.py` внутри себя
+      хранил ОБЩИЕ хелперы (`normalize_key`, `make_filename`, `_file_matches`,
+      `_FORBIDDEN_FS_CHARS`) без всякой связи с slskd/сетью — их реально
+      импортируют `mp3party_download.py`, `nnmclub_album.py`, `rutor_album.py`,
+      `tapochek_album.py`, `rutracker_album.py` (ЖИВЫЕ, в цепочке
+      `audio_chain.py`). Простое удаление файла сломало бы весь торрент-путь.
+      Вынесены в новый `src/providers/_filename_utils.py`, импорты 5 файлов
+      переключены. Поймано только потому что проверял по факту импортов
+      (`ast`-обход всего дерева), а не по именам файлов/маршрутов — тот же
+      урок, что и с `rutracker_album.py`, который уже был общим хелпером под
+      чужим именем (см. комментарий в `audio_chain.py`).
+    - Заодно найден и починен пред-существующий синтаксис-баг в
+      `mp3party_download.py` (`from ._validators import (, validate_...` —
+      лишняя запятая) — файл и так не участвовал в цепочке (mp3party.net
+      отдаёт заглушки в РФ, Alex оставил на будущее), но был бы неимпортируем,
+      если бы кто-то попытался вернуть его в строй.
+    - **Что осталось живым, подтверждено по коду Go (`internal/sidecar/
+      client.go`, `internal/acquire/acquire.go`), не по названиям файлов:**
+      `/health`, `/find-audio` (цепочка yandex→musify→nnmclub→rutor→tapochek→
+      soulseek, но Go всегда шлёт soundcloud/youtube_music/youtube/soulseek в
+      skip_providers — они были мертвы и раньше), `/yandex/search-artist`,
+      `/yandex/track-cover`, `/id3-info`. Депсы оставлены: fastapi, uvicorn,
+      httpx, python-dotenv, mutagen, qbittorrent-api, yandex-music,
+      beautifulsoup4 (нужен и musify.py, не только чартам), playwright,
+      curl-cffi (нужен musify.py).
+    - **Проверка (не только автотесты):** `pytest` — 55 зелёных, те же 6
+      падений что и на НЕтронутом оригинале (пред-существующие, не мои —
+      `test_path_translation.py`/`test_validators_quality.py`, drift
+      теста/кода, не трогал). Прямое HTTP-сравнение бок-о-бок «старый сайдкар
+      на fg:8001» vs «урезанный на scratch-порту» — health/yandex-search-
+      artist/yandex-track-cover/id3-info/find-audio (реальный трек Кино —
+      Пачка сигарет, настоящее скачивание с Яндекса) — ответы побайтово
+      совпали. Слим-версия синкнута на fg-стороне (`uv sync`, 38 пакетов) и
+      прогнана ДО переключения на реальных путях fg.
+    - **Деплой:** НЕ трогал живую папку `D:\soundflow-app\apps\python-sidecar`
+      (она так и остаётся с исходным `pyproject.toml`/venv — мгновенный откат).
+      Новая — `D:\soundflow-app\apps\python-sidecar-slim`, служба
+      `soundflow-sidecar` (nssm) переключена на неё (`nssm set ... AppDirectory
+      ...-slim`). Откат — одна команда `nssm set` обратно + restart. Проверено
+      ПОСЛЕ переключения теми же 5 ручками на живом порту 8001 — совпадает.
+    - **ВАЖНО, не сделано:** `D:\soundflow-app` — git-репозиторий с реальным
+      remote (`github-soundflow:sanyamax13/soundflow.git`). Слим НЕ закоммичен
+      туда (сделан как соседняя папка в обход git, ради безопасного отката) —
+      исходный `apps/python-sidecar` в этом репо всё ещё содержит старый,
+      нетронутый `pyproject.toml` с torch/yt-dlp/slskd. Если решим сделать это
+      постоянным — надо отдельно оформить веткой/коммитом в том репо (внешний
+      remote, пуш — решение Alex, не сделано самовольно). Копия слим-версии
+      также лежит на brain в `E:\soundflow-lab\fg-sidecar-src\` (не в git,
+      «лабораторная» папка) — синхронизирована с тем, что реально работает
+      на fg сейчас.
+    - Docker `soundflow-bgutil-pot`/`soundflow-slskd` НЕ гасил — не факт что
+      что-то ещё их использует помимо убранного кода, отдельная проверка.
   - **Пересчёт отпечатков (шаг 3 по всей базе) — ЗАВЕРШЁН 07.09.2026.** На brain
     (`sffp.exe -fg soundflow-fg -workers 3` → `soundflow-new.db`), 3ч15м. Записано
     8744, ошибок 37 (файлы пропали на fg: 11 интервью Laura Branigan, 4 рэп-скита,
