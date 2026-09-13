@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:sqflite/sqflite.dart';
 
 /// Локальная база телефона.
@@ -16,11 +18,12 @@ class Db {
     final db = await f.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 5,
+        version: 6,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
           await _createRemoved(db);
+          await _createTrackVectors(db);
         },
         onUpgrade: (db, from, _) async {
           if (from < 2) await _createSync(db);
@@ -33,6 +36,7 @@ class Db {
             await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN format TEXT');
             await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN duration_sec INTEGER');
           }
+          if (from < 6) await _createTrackVectors(db);
         },
       ),
     );
@@ -67,6 +71,19 @@ class Db {
           bytes      INTEGER NOT NULL DEFAULT 0,
           reason     TEXT NOT NULL DEFAULT '',
           removed_at INTEGER NOT NULL
+        )
+      ''');
+
+  /// Звуковые отпечатки уже скачанных песен — для офлайн-радио, когда
+  /// сервер недоступен. ОТДЕЛЬНАЯ таблица, не колонка в downloaded_tracks:
+  /// downloaded_tracks читается целиком в автосинке каждые 3 минуты и в
+  /// списке «Моя музыка» — колонка на 8 КБ раздула бы эти чтения, а
+  /// INSERT OR REPLACE при повторной докачке (redownload/_fetchCoverFor)
+  /// затирал бы значение, если явно не перечислить его в каждом апдейте.
+  static Future<void> _createTrackVectors(Database db) => db.execute('''
+        CREATE TABLE IF NOT EXISTS track_vectors (
+          id  TEXT PRIMARY KEY,
+          vec BLOB NOT NULL
         )
       ''');
 
@@ -250,6 +267,28 @@ class Db {
 
   Future<void> kvSet(String k, String v) =>
       _db.insert('kv', {'k': k, 'v': v}, conflictAlgorithm: ConflictAlgorithm.replace);
+
+  // --- Отпечатки треков (офлайн-радио) ---
+
+  Future<void> setTrackVector(String id, Uint8List vec) => _db.insert(
+        'track_vectors',
+        {'id': id, 'vec': vec},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+  Future<Uint8List?> trackVector(String id) async {
+    final rows = await _db.query('track_vectors', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : rows.first['vec'] as Uint8List;
+  }
+
+  Future<Map<String, Uint8List>> trackVectorsFor(List<String> ids) async {
+    if (ids.isEmpty) return {};
+    final q = List.filled(ids.length, '?').join(',');
+    final rows = await _db.query('track_vectors', where: 'id IN ($q)', whereArgs: ids);
+    return {
+      for (final r in rows) r['id'] as String: r['vec'] as Uint8List,
+    };
+  }
 
   Future<void> close() => _db.close();
 }
