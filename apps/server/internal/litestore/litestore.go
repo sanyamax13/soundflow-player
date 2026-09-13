@@ -12,6 +12,8 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"soundflow/server/internal/db"
@@ -22,6 +24,10 @@ import (
 type Store struct {
 	d   *localdb.DB
 	raw *sql.DB
+
+	recomputeMu      sync.Mutex
+	recomputeRunning atomic.Bool
+	lastRecompute    time.Time
 }
 
 // New оборачивает уже открытую localdb.DB.
@@ -394,13 +400,62 @@ func (s *Store) SaveSync(ctx context.Context, dev db.Device, events []db.SyncEve
 	for i, e := range events {
 		le[i] = localdb.SyncEvent{UUID: e.UUID, Kind: e.Kind, TrackID: e.TrackID, Payload: e.Payload, ClientTS: e.ClientTS}
 	}
-	return s.d.SaveSync(
+	accepted, err := s.d.SaveSync(
 		localdb.Device{
 			ID: dev.ID, Name: dev.Name, AppVersion: dev.AppVersion,
 			MusicBytes: dev.MusicBytes, Transport: dev.Transport,
 		},
 		le,
 	)
+	if err == nil && hasTasteSignal(events, accepted) {
+		s.scheduleRecompute()
+	}
+	return accepted, err
+}
+
+// hasTasteSignal — среди принятых событий есть хоть одно, реально пишущее
+// строку в feedback_event (см. recordFeedback в internal/localdb/taste.go).
+func hasTasteSignal(events []db.SyncEvent, accepted []string) bool {
+	acc := make(map[string]bool, len(accepted))
+	for _, u := range accepted {
+		acc[u] = true
+	}
+	tasteKinds := map[string]bool{
+		"like": true, "dislike": true, "more_like": true, "less_like": true,
+		"complete": true, "skip": true, "delete": true,
+	}
+	for _, e := range events {
+		if acc[e.UUID] && tasteKinds[e.Kind] {
+			return true
+		}
+	}
+	return false
+}
+
+// scheduleRecompute — фоновый пересчёт long_term+recent, не чаще раза в
+// 5 минут, с флагом "уже идёт" (тот же паттерн, что importRunning в
+// internal/api/catalog.go:307 — обход библиотеки тоже не должен идти
+// параллельно сам с собой).
+func (s *Store) scheduleRecompute() {
+	if s.recomputeRunning.Load() {
+		return
+	}
+	s.recomputeMu.Lock()
+	if time.Since(s.lastRecompute) < 5*time.Minute {
+		s.recomputeMu.Unlock()
+		return
+	}
+	s.lastRecompute = time.Now()
+	s.recomputeMu.Unlock()
+	if !s.recomputeRunning.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer s.recomputeRunning.Store(false)
+		_, _, _ = s.d.RecomputeTasteClusters("long_term", nil)
+		cutoff := time.Now().AddDate(0, 0, -21)
+		_, _, _ = s.d.RecomputeTasteClusters("recent", &cutoff)
+	}()
 }
 
 func (s *Store) SyncReport(ctx context.Context, deviceID string) (*time.Time, int64, error) {

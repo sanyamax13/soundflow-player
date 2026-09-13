@@ -82,6 +82,14 @@ func NewService() (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("база %s: %w", dbPath, err)
 	}
+	// Слой 'recent' протухает по времени (окно 21 день), а не только по
+	// событиям — пересчитываем и при старте, чтобы неделю простоя не
+	// показывала позапрошлый месяц до первого нового лайка.
+	go func() {
+		_, _, _ = db.RecomputeTasteClusters("long_term", nil)
+		cutoff := time.Now().AddDate(0, 0, -21)
+		_, _, _ = db.RecomputeTasteClusters("recent", &cutoff)
+	}()
 
 	assets := env("SOUNDFLOW_ASSETS", exeDir())
 	var eng *inference.Engine
