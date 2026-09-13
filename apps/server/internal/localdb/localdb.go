@@ -30,7 +30,11 @@ type DB struct {
 // Open открывает (создаёт при отсутствии) базу по пути и накатывает схему.
 // Для read-only доступа рабочего кода передавай ?mode=ro в DSN снаружи.
 func Open(path string) (*DB, error) {
-	h, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	h, err := sql.Open("sqlite", path+sep+"_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
