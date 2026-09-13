@@ -245,7 +245,6 @@
       <a data-v="devices">Устройства</a>
       <a data-v="taste">Вкус</a>
       <a data-v="jobs">Задачи</a>
-      <a data-v="log">Журнал</a>
       <a data-v="settings">Настройки</a>
       <div class="gap"></div>
       <div class="ver">SoundFlow.exe<br>v0.1 · sqlite</div>
@@ -336,9 +335,13 @@
         <div id="jobsList"><div class="muted">ничего не выполняется</div></div>
       </section>
 
-      <!-- Журнал -->
+      <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
+           из главной навигации в «Настройки» — Alex она нужна редко, для
+           диагностики, а не для повседневной работы) -->
       <section class="view" id="v-log">
+        <button class="btn" onclick="showView('settings')" style="margin-bottom:12px">‹ Настройки</button>
         <h2>Журнал сервера</h2>
+        <div class="hint">Техническая история событий — для разбора, если что-то пошло не так. Для повседневной работы не нужен.</div>
         <div class="logrows" id="logRows"></div>
       </section>
 
@@ -379,6 +382,33 @@ const nfmt = n => (n||0).toLocaleString("ru-RU");
 
 async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
 async function jpost(u){ const r = await fetch(u,{method:"POST"}); return r.ok ? r.json().catch(()=>({})) : Promise.reject(await r.text()); }
+
+/* ---------- понятные сообщения об ошибках (Опус-ревью 14.09.2026, пункт 7) ----------
+   Сырой текст ошибок (пути Windows, коды Go/SQLite/сети) раньше шёл прямо в
+   alert() как есть. Здесь — перевод самых частых на простой язык; то, что
+   не распознали, показываем как есть (не прячем), просто такое реже. */
+const ERROR_DICT = [
+  [/connection refused|connectex|dial tcp/i, "Не могу достучаться до вспомогательной программы — похоже, она не запущена или ещё не поднялась."],
+  [/context deadline exceeded|client\.timeout exceeded/i, "Сервис слишком долго не отвечал. Попробуй ещё раз через минуту."],
+  [/no such host/i, "Не нашёл нужный адрес в сети — проверь подключение к интернету."],
+  [/database is locked/i, "База данных сейчас занята другой операцией — попробуй через несколько секунд."],
+  [/no such table|no such column/i, "Внутренняя ошибка базы данных — если повторится, покажи это разработчику."],
+  [/unique constraint failed/i, "Такая запись уже есть."],
+  [/cannot find the (file|path)/i, "Файл или папка не найдены на диске."],
+  [/access is denied|permission denied/i, "Нет прав на файл или папку."],
+  [/used by another process|sharing violation/i, "Файл сейчас занят другой программой — закрой её и попробуй снова."],
+  [/unexpected end of json|invalid character/i, "Вспомогательная программа вернула что-то непонятное — возможно, она ещё не до конца запустилась."],
+  [/429|too many requests/i, "Источник просит не торопиться — слишком много запросов подряд, попробуй позже."],
+  [/no space left on device/i, "Кончилось место на диске."],
+  [/i\/o timeout/i, "Не дождались ответа по сети — таймаут."],
+  [/failed to fetch|networkerror|econnreset/i, "Порвалась связь с программой — проверь, что она ещё работает, и попробуй снова."],
+  [/^eof$/i, "Соединение оборвалось на середине — попробуй ещё раз."],
+];
+function friendlyError(raw){
+  const s = String((raw&&raw.message) || raw || "");
+  for(const [re, txt] of ERROR_DICT) if(re.test(s)) return txt;
+  return s;
+}
 
 /* ---------- навигация по разделам ---------- */
 const VIEWS = ["catalog","find","devices","taste","jobs","log","settings"];
@@ -594,10 +624,10 @@ async function runAcquire(){
   $("#fGo").disabled = true;
   try{
     const r = await fetch("/api/acquire?artist="+encodeURIComponent(a)+"&title="+encodeURIComponent(t),{method:"POST"});
-    if(!r.ok){ alert(await r.text()); return; }
+    if(!r.ok){ alert(friendlyError(await r.text())); return; }
     $("#fTitle").value = "";
     await loadAcqLog();
-  }catch(e){ alert("Не запустить: "+e); }
+  }catch(e){ alert("Не запустить: "+friendlyError(e)); }
   finally{ $("#fGo").disabled = false; }
 }
 
@@ -617,7 +647,7 @@ async function torSearch(){
   $("#tCands").innerHTML = '<div class="muted">опрашиваю трекеры…</div>'; $("#tActions").hidden = true;
   try{
     const r = await fetch("/api/torrent/search?artist="+encodeURIComponent(a),{method:"POST"});
-    if(!r.ok){ $("#tCands").innerHTML=""; $("#tErr").textContent = await r.text(); return; }
+    if(!r.ok){ $("#tCands").innerHTML=""; $("#tErr").textContent = friendlyError(await r.text()); return; }
     const d = await r.json();
     tCandList = d.candidates || [];
     if(d.errors && d.errors.length) $("#tErr").textContent = d.errors.join("; ");
@@ -630,7 +660,7 @@ async function torSearch(){
         `<span class="cm"><span class="cf ${fmt}">${esc(c.fmt||"?")}</span> · ${esc(meta)}</span></label>`;
     }).join("");
     $("#tActions").hidden = false;
-  }catch(e){ $("#tCands").innerHTML=""; $("#tErr").textContent = "ошибка: "+e; }
+  }catch(e){ $("#tCands").innerHTML=""; $("#tErr").textContent = "ошибка: "+friendlyError(e); }
   finally{ $("#tGo").disabled = false; }
 }
 async function torDownload(){
@@ -640,11 +670,11 @@ async function torDownload(){
   try{
     for(const c of picks){
       const r = await fetch("/api/torrent/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(c)});
-      if(!r.ok){ alert(await r.text()); }
+      if(!r.ok){ alert(friendlyError(await r.text())); }
     }
     document.querySelectorAll("#tCands input:checked").forEach(cb => cb.checked=false);
     await loadTorLog();
-  }catch(e){ alert("Не запустить: "+e); }
+  }catch(e){ alert("Не запустить: "+friendlyError(e)); }
   finally{ $("#tDl").disabled = false; }
 }
 async function loadTorLog(){
@@ -874,7 +904,7 @@ async function _devDelete(id){
     openDevice(_devCur);   // пересобрать плитки/счётчики из свежих данных
   }catch(e){
     if(row) row.classList.remove("busy");
-    alert("не вышло удалить: "+e);
+    alert("не вышло удалить: "+friendlyError(e));
   }
 }
 function _devOpenA(i){ _devOpenArtist = _devArtists[i] && _devArtists[i].key; _devBody(); }
@@ -1015,7 +1045,7 @@ $("#syncNext").onclick = async () => {
   try{
     const r = await fetch("/api/devices/"+encodeURIComponent(_syncDev)+"/sync-plan",
       {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(!r.ok){ alert(await r.text()); $("#syncNext").disabled=false; return; }
+    if(!r.ok){ alert(friendlyError(await r.text())); $("#syncNext").disabled=false; return; }
     const names = [...document.querySelectorAll("#syncBody input.a:checked")]
       .slice(0,10).map(x=>x.closest(".srow").querySelector(".st").textContent);
     $("#syncBody").innerHTML =
@@ -1026,7 +1056,7 @@ $("#syncNext").onclick = async () => {
     $("#syncSummary").textContent = `+${body.add.length}  −${body.remove.length}`;
     $("#syncNext").disabled = true;
     setTimeout(()=>{ $("#syncModal").hidden = true; }, 3200);
-  }catch(e){ alert("Не сохранить: "+e); $("#syncNext").disabled=false; }
+  }catch(e){ alert("Не сохранить: "+friendlyError(e)); $("#syncNext").disabled=false; }
 };
 
 /* ---------- Задачи ---------- */
@@ -1159,7 +1189,8 @@ async function loadSettings(){
     `<h3>Ещё</h3>`+
     `<div class="f"><b>Файлов музыки</b><span>${nfmt(d.files)}</span></div>`+
     `<div class="f"><b>Свободно на диске</b><span>${fmtGB(d.disk_free)}</span></div>`+
-    `<div class="f"><b>Работает</b><span>${Math.round((d.uptime_sec||0)/60)} мин</span></div>`;
+    `<div class="f"><b>Работает</b><span>${Math.round((d.uptime_sec||0)/60)} мин</span></div>`+
+    `<div style="margin-top:12px"><button class="btn" onclick="showView('log')">Журнал сервера (для диагностики)</button></div>`;
 
   const addr = $("#setAddr")?.textContent || "";
   $("#setCopy") && ($("#setCopy").onclick = () => {
@@ -1168,14 +1199,14 @@ async function loadSettings(){
   });
   $("#setAdd") && ($("#setAdd").onclick = pickAndScan);
   $("#setReindex") && ($("#setReindex").onclick = () =>
-    jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Пересчёт похожести: "+e)));
+    jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Пересчёт похожести: "+friendlyError(e))));
   $("#setReveal") && ($("#setReveal").onclick = () => {
     try{ window.go.main.Service.RevealPath(d.db_path||""); }catch(e){}
   });
   document.querySelectorAll("[data-rescan]").forEach(b => b.onclick = () => {
     fetch("/api/scan?dir="+encodeURIComponent(b.dataset.rescan),{method:"POST"})
       .then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); showView("jobs"); })
-      .catch(e => alert("Не запустить скан: "+e));
+      .catch(e => alert("Не запустить скан: "+friendlyError(e)));
   });
 }
 
@@ -1189,13 +1220,13 @@ async function pickAndScan(){
   try{
     await fetch("/api/scan?dir="+encodeURIComponent(dir),{method:"POST"}).then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); });
     showView("jobs");
-  }catch(e){ alert("Не запустить скан: "+e); }
+  }catch(e){ alert("Не запустить скан: "+friendlyError(e)); }
 }
 
 /* ---------- кнопки каталога ---------- */
 $("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
 $("#btnPick").onclick = pickAndScan;
-$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Пересчёт похожести: "+e));
+$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Пересчёт похожести: "+friendlyError(e)));
 $("#fGo").onclick = runAcquire;
 $("#fTitle").addEventListener("keydown", e => { if(e.key==="Enter") runAcquire(); });
 document.querySelectorAll(".seg").forEach(b => b.onclick = () => setFindMode(b.dataset.fm));
@@ -1207,7 +1238,7 @@ $("#tDl").onclick = torDownload;
 $("#btnStop").onclick = () => jpost("/api/stop");
 $("#tasteRebuild").onclick = () => {
   const b = $("#tasteRebuild"); b.disabled = true; b.textContent = "Собираю…";
-  jpost("/api/taste/rebuild").then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+e))
+  jpost("/api/taste/rebuild").then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+friendlyError(e)))
     .finally(()=>{ b.disabled = false; b.textContent = "Пересобрать"; });
 };
 
