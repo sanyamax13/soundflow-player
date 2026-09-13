@@ -26,6 +26,8 @@
   .pill .dot{width:8px; height:8px; border-radius:50%; background:var(--ok)}
   .pill.off{color:var(--warn); background:#fbf6e8; border-color:#eadfc4}
   .pill.off .dot{background:var(--warn)}
+  .pill.busy{color:#1b6fb0; background:#eaf6ff; border-color:#cfe7f7; cursor:pointer}
+  .pill.busy .dot{background:#1b6fb0}
   .addr{font-size:13px; font-weight:700; background:var(--limebox); border:1px solid var(--line);
     padding:6px 11px; border-radius:8px; cursor:pointer}
   .disk{font-size:12px; color:var(--mut)}
@@ -234,6 +236,7 @@
     <div class="pill" id="status"><span class="dot"></span>Сервер работает</div>
     <div class="pill off" id="staleWarn" hidden title="Телефон долго не выходил на связь с этим компом — проверь, что он подключён и открыт"><span class="dot"></span><span id="staleWarnTxt"></span></div>
     <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
+    <div class="pill busy" id="jobPill" hidden title="Открыть вкладку «Задачи»"><span class="dot"></span><span id="jobPillTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -1060,15 +1063,31 @@ $("#syncNext").onclick = async () => {
 };
 
 /* ---------- Задачи ---------- */
+function jobPct(j){ return j.total ? Math.min(100, Math.round(j.done*100/j.total)) : (j.running?12:100); }
+// Шапка окна: пока идёт хоть одна фоновая задача (скан, пересчёт отпечатков,
+// скачивание трека/альбома) — видно из любой вкладки, не только «Задачи»
+// (Alex TG 14.09.2026: «показывать все прогресс бары, тот же отпечаток»).
+function updateJobPill(jobs){
+  const running = jobs.filter(j=>j.running);
+  const pill = $("#jobPill");
+  if(!running.length){ pill.hidden = true; return; }
+  const j = running[0];
+  const pct = j.total ? jobPct(j)+"%" : "";
+  let txt = j.label + (pct ? " — "+pct : "…");
+  if(running.length > 1) txt += " (+"+(running.length-1)+" ещё)";
+  $("#jobPillTxt").textContent = txt;
+  pill.hidden = false;
+}
 async function loadJobs(){
   try{
     const jobs = await jget("/api/jobs");
     $("#jobsList").innerHTML = jobs.length ? jobs.map(j => {
-      const pct = j.total ? Math.min(100, Math.round(j.done*100/j.total)) : (j.running?12:100);
+      const pct = jobPct(j);
       return `<div class="job"><div class="lbl"><span>${esc(j.label)}</span>`+
-        `<span>${j.running ? j.done+" / "+(j.total||"?") : (j.note||"готово")}</span></div>`+
+        `<span>${j.running ? (j.total ? j.done+" / "+j.total : "идёт…") : (j.note||"готово")}</span></div>`+
         `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
     }).join("") : '<div class="muted">ничего не выполняется</div>';
+    updateJobPill(jobs);
     const running = jobs.some(j=>j.running);
     $("#btnReindex").disabled = running || $("#btnReindex").disabled;
     // «Отменить пересчёт» — жаргонная красная кнопка читалась как «выключить
@@ -1077,6 +1096,7 @@ async function loadJobs(){
     $("#btnStop").hidden = !running;
   }catch(e){}
 }
+$("#jobPill").onclick = () => showView("jobs");
 
 /* ---------- Журнал ---------- */
 async function loadLog(){

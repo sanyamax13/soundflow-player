@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,17 +18,22 @@ import (
 	"soundflow/server/internal/waveform"
 )
 
-// JobRunner — одна фоновая задача одновременно (скан папки или пересчёт
-// отпечатков). Прогресс виден в окне, «Стоп» отменяет.
+// JobRunner — фоновые задачи с прогрессом для окна. Скан папки и пересчёт
+// отпечатков — по одной штуке одновременно (jr.cur), «Стоп» их отменяет.
+// Скачивание («Найти трек», торрент-альбом) может идти сразу несколько штук
+// параллельно — для них jr.extra: карточка прогресса на время работы, без
+// эксклюзивности и без «Стоп» (Alex TG 14.09.2026: «показывать все
+// прогресс бары, тот же отпечаток» — до этого качалка прогресс не показывала).
 type JobRunner struct {
-	svc *Service
-	mu  sync.Mutex
-	cur *Job
+	svc   *Service
+	mu    sync.Mutex
+	cur   *Job
+	extra map[string]*Job
 }
 
 type Job struct {
 	ID        string    `json:"id"`
-	Kind      string    `json:"kind"` // scan | reindex
+	Kind      string    `json:"kind"` // scan | reindex | acquire | torrent
 	Label     string    `json:"label"`
 	Total     int       `json:"total"`
 	Done      int       `json:"done"`
@@ -43,12 +49,53 @@ func NewJobRunner(s *Service) *JobRunner { return &JobRunner{svc: s} }
 func (jr *JobRunner) Status() []Job {
 	jr.mu.Lock()
 	defer jr.mu.Unlock()
-	if jr.cur == nil {
-		return []Job{}
+	out := make([]Job, 0, len(jr.extra)+1)
+	if jr.cur != nil {
+		j := *jr.cur
+		j.cancel = nil
+		out = append(out, j)
 	}
-	j := *jr.cur
-	j.cancel = nil
-	return []Job{j}
+	for _, j := range jr.extra {
+		cp := *j
+		cp.cancel = nil
+		out = append(out, cp)
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].StartedAt.Before(out[k].StartedAt) })
+	return out
+}
+
+// beginAmbient — карточка прогресса для скачивания (acquire/torrent), без
+// эксклюзивности: можно несколько сразу. Total не считаем (нет способа честно
+// узнать долю прогресса на скачивании одного трека/альбома) — окно рисует
+// индикатор-«крутилку» через тот же фолбэк, что и для scan/reindex без total.
+func (jr *JobRunner) beginAmbient(kind, label string) *Job {
+	jr.mu.Lock()
+	defer jr.mu.Unlock()
+	if jr.extra == nil {
+		jr.extra = map[string]*Job{}
+	}
+	j := &Job{
+		ID:        kind + "_" + fmt.Sprint(time.Now().UnixNano()),
+		Kind:      kind, Label: label, Running: true,
+		StartedAt: time.Now(),
+	}
+	jr.extra[j.ID] = j
+	return j
+}
+
+// finishAmbient — пометить готовой и убрать через паузу: успевает мигнуть
+// «готово»/«не вышло» в шапке и на вкладке «Задачи», не захламляет их надолго.
+func (jr *JobRunner) finishAmbient(j *Job, note string) {
+	jr.mu.Lock()
+	j.Running = false
+	j.Note = note
+	id := j.ID
+	jr.mu.Unlock()
+	time.AfterFunc(8*time.Second, func() {
+		jr.mu.Lock()
+		delete(jr.extra, id)
+		jr.mu.Unlock()
+	})
 }
 
 func (jr *JobRunner) CancelAll() {

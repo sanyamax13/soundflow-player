@@ -102,6 +102,7 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	idx := s.acq().add(artist, title)
+	aj := s.jobs.beginAmbient("acquire", "Скачиваю: "+artist+" — "+title)
 	_ = s.db.AddServerLog("info", artist, title, "поиск и скачивание запущены", 0)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
@@ -109,7 +110,9 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 		res, err := svc.Acquire(ctx, acquire.Request{Artist: artist, Title: title})
 		switch {
 		case err == nil && res.Created:
-			s.acq().set(idx, "done", "скачано: "+res.Source+" · "+res.QualityTier)
+			note := "скачано: " + res.Source + " · " + res.QualityTier
+			s.acq().set(idx, "done", note)
+			s.jobs.finishAmbient(aj, note)
 			_ = s.db.AddServerLog("added", artist, title, "скачано ("+res.Source+")", 0)
 			// Отпечаток — фоном, не держим ответ. Нет движка/ffmpeg — трек
 			// просто не попадёт в умное радио, не ошибка.
@@ -128,9 +131,11 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 			}(res.TrackID)
 		case err == nil && !res.Created:
 			s.acq().set(idx, "done", "уже было в каталоге")
+			s.jobs.finishAmbient(aj, "уже было в каталоге")
 			_ = s.db.AddServerLog("info", artist, title, "уже в каталоге", 0)
 		case errors.Is(err, acquire.ErrNotFound):
 			s.acq().set(idx, "fail", "не нашёл ни на одном источнике")
+			s.jobs.finishAmbient(aj, "не нашёл ни на одном источнике")
 			_ = s.db.AddServerLog("error", artist, title, "не найдено", 0)
 		default:
 			note := "ошибка"
@@ -140,6 +145,7 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 				note = err.Error()
 			}
 			s.acq().set(idx, "fail", note)
+			s.jobs.finishAmbient(aj, note)
 			_ = s.db.AddServerLog("error", artist, title, note, 0)
 		}
 	}()

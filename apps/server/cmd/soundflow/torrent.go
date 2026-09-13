@@ -150,12 +150,14 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		label = c.Title
 	}
 	idx := s.tor().add(c.Tracker, label)
+	tj := s.jobs.beginAmbient("torrent", "Качаю альбом: "+label)
 	_ = s.db.AddServerLog("info", c.Tracker, label, "качаю альбом с торрента", 0)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 		defer cancel()
 		if err := ensureQBittorrent(); err != nil {
 			s.tor().set(idx, "fail", err.Error())
+			s.jobs.finishAmbient(tj, err.Error())
 			_ = s.db.AddServerLog("error", c.Tracker, label, err.Error(), 0)
 			return
 		}
@@ -164,6 +166,7 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		}, 40*time.Minute)
 		if err != nil {
 			s.tor().set(idx, "fail", err.Error())
+			s.jobs.finishAmbient(tj, err.Error())
 			_ = s.db.AddServerLog("error", c.Tracker, label, "торрент: "+err.Error(), 0)
 			return
 		}
@@ -187,11 +190,14 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 				note = "альбом не скачался"
 			}
 			s.tor().set(idx, "fail", note)
+			s.jobs.finishAmbient(tj, note)
 			_ = s.db.AddServerLog("error", c.Tracker, label, note, 0)
 			return
 		}
 		added, skipped := s.addAlbumTracks(ctx, res.Tracks, c.Tracker)
-		s.tor().set(idx, "done", fmt.Sprintf("добавлено %d, уже было %d", added, skipped))
+		note := fmt.Sprintf("добавлено %d, уже было %d", added, skipped)
+		s.tor().set(idx, "done", note)
+		s.jobs.finishAmbient(tj, note)
 		_ = s.db.AddServerLog("added", c.Tracker, label, fmt.Sprintf("альбом: +%d трек.", added), 0)
 	}()
 	writeJSON(w, map[string]any{"queued": true})
