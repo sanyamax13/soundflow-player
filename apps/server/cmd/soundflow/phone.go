@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/dhowden/tag"
@@ -17,6 +20,41 @@ import (
 	"soundflow/server/internal/pathmap"
 	"soundflow/server/internal/sidecar"
 )
+
+// maxPortFallbackTries — если настроенный порт занят другой программой (как
+// TorrServer занял 8090 у Alex 13.09.2026), пробуем следующие по счёту порты
+// вместо того, чтобы тихо падать и оставлять окно врать «сервер работает»
+// (Опус-ревью 14.09.2026, пункт 1).
+const maxPortFallbackTries = 5
+
+// listenWithFallback — слушать addr ("0.0.0.0:8090", ":8090"...); если порт
+// занят — пробовать port+1, port+2, ... до maxPortFallbackTries раз. Возвращает
+// реально открытый listener и адрес, на котором он висит.
+func listenWithFallback(addr string, maxTries int) (net.Listener, string, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, "", err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		// нечисловой порт — редкость, пробуем как есть один раз
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return nil, "", err
+		}
+		return ln, addr, nil
+	}
+	var lastErr error
+	for i := 0; i < maxTries; i++ {
+		tryAddr := net.JoinHostPort(host, strconv.Itoa(port+i))
+		ln, err := net.Listen("tcp", tryAddr)
+		if err == nil {
+			return ln, tryAddr, nil
+		}
+		lastErr = err
+	}
+	return nil, "", fmt.Errorf("порты %d..%d заняты: %w", port, port+maxTries-1, lastErr)
+}
 
 // startPhoneServer поднимает HTTP на :8090:
 //   - /v1/*  — телефонный + админский API. Тот же проверенный код, что у старого
@@ -77,9 +115,37 @@ func (s *Service) startPhoneServer() {
 	s.mountAPI(r)
 	r.Handle("/*", s.staticHandler())
 
-	s.phoneSrv = &http.Server{Addr: s.phoneAddr, Handler: r, ReadHeaderTimeout: 10 * time.Second}
-	_ = s.db.AddServerLog("info", "", "", "телефонный API слушает "+s.phoneAddr, 0)
-	if err := s.phoneSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	ln, boundAddr, err := listenWithFallback(s.phoneAddr, maxPortFallbackTries)
+	if err != nil {
+		s.mu.Lock()
+		s.phoneListening = false
+		s.phoneListenErr = err.Error()
+		s.mu.Unlock()
+		_ = s.db.AddServerLog("error", "", "", "телефонный API не смог начать слушать ("+s.phoneAddr+"): "+err.Error(), 0)
+		return
+	}
+	s.mu.Lock()
+	s.phoneListening = true
+	s.phoneBoundAddr = boundAddr
+	s.phoneListenErr = ""
+	s.mu.Unlock()
+	if boundAddr != s.phoneAddr {
+		_ = s.db.AddServerLog("info", "", "", "порт "+s.phoneAddr+" занят другой программой, встал на "+boundAddr, 0)
+	}
+
+	s.phoneSrv = &http.Server{Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	_ = s.db.AddServerLog("info", "", "", "телефонный API слушает "+boundAddr, 0)
+	// USB-туннель (Alex: «только USB») — держим adb reverse живым, пока
+	// телефон в кабеле, на РЕАЛЬНО занятом порту (не на настроенном, если
+	// пришлось откатиться на следующий свободный). adb.exe нет рядом →
+	// тихо выключено, только Wi-Fi.
+	startUSBTunnel(boundAddr)
+
+	if err := s.phoneSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		s.mu.Lock()
+		s.phoneListening = false
+		s.phoneListenErr = err.Error()
+		s.mu.Unlock()
 		_ = s.db.AddServerLog("error", "", "", "телефонный API упал: "+err.Error(), 0)
 	}
 }

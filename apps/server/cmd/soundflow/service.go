@@ -49,6 +49,15 @@ type Service struct {
 	startedAt time.Time
 	frontend  embed.FS
 	mu        sync.Mutex
+
+	// Честный статус телефонного слушателя (Опус-ревью 14.09.2026, пункт 1):
+	// раньше окно всегда показывало «сервер работает», даже если порт был
+	// занят другой программой (реальный случай — TorrServer на 8090) и
+	// bind тихо падал в фоне. phoneListening/phoneBoundAddr/phoneListenErr
+	// отражают, что произошло НА САМОМ ДЕЛЕ.
+	phoneListening bool
+	phoneBoundAddr string // "" пока не забиндились; напр. "0.0.0.0:8091"
+	phoneListenErr string
 }
 
 // staticHandler — отдаёт вшитый frontend/ (index.html в корне).
@@ -110,11 +119,8 @@ func NewService() (*Service, error) {
 	if s.dl = newDownloaderProc(); s.dl != nil {
 		go s.dl.run()
 	}
-	go s.startPhoneServer()
-	// USB-туннель (Alex: «только USB») — держим adb reverse живым, пока
-	// телефон в кабеле. adb.exe нет рядом → тихо выключено, только Wi-Fi.
 	writeServerLogSafe = func(m string) error { return s.db.AddServerLog("info", "", "", m, 0) }
-	startUSBTunnel(s.phoneAddr)
+	go s.startPhoneServer()
 	return s, nil
 }
 
@@ -193,18 +199,30 @@ func writeJSON(w http.ResponseWriter, v any) {
 func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 	c, _ := s.db.Counts()
 	free, _, _ := diskspace.Free(s.dataDir)
+	s.mu.Lock()
+	listening, boundAddr, listenErr := s.phoneListening, s.phoneBoundAddr, s.phoneListenErr
+	s.mu.Unlock()
+	addr := localAddr(s.phoneAddr)
+	fellBack := false
+	if boundAddr != "" {
+		addr = localAddr(boundAddr)
+		fellBack = boundAddr != s.phoneAddr
+	}
 	writeJSON(w, map[string]any{
-		"addr":        localAddr(s.phoneAddr),
-		"running":     true,
-		"has_model":   s.eng != nil,
-		"tracks":      c.Tracks,
-		"with_vector": c.WithVector,
-		"albums":      c.AlbumsGuess,
-		"files":       c.TrackFiles,
-		"disk_free":   free,
-		"db_path":     s.dbPath,
-		"uptime_sec":  int(time.Since(s.startedAt).Seconds()),
-		"usb":         usb.Status(),
+		"addr":            addr,
+		"running":         listening, // раньше было true всегда — теперь по факту привязки порта
+		"listen_error":    listenErr,
+		"addr_fell_back":  fellBack, // порт из настроек был занят, взяли следующий свободный
+		"configured_addr": localAddr(s.phoneAddr),
+		"has_model":       s.eng != nil,
+		"tracks":          c.Tracks,
+		"with_vector":     c.WithVector,
+		"albums":          c.AlbumsGuess,
+		"files":           c.TrackFiles,
+		"disk_free":       free,
+		"db_path":         s.dbPath,
+		"uptime_sec":      int(time.Since(s.startedAt).Seconds()),
+		"usb":             usb.Status(),
 	})
 }
 
