@@ -57,6 +57,10 @@ func Open(path string) (*DB, error) {
 			layer TEXT NOT NULL DEFAULT 'all', idx INTEGER NOT NULL,
 			vec BLOB NOT NULL, n INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (layer, idx))`,
+		// Слой 'all' заменён на 'long_term'/'recent' (13.09.2026) — это
+		// derived-кэш, не пользовательские данные, безопасно сносить каждый
+		// старт (реальные слои соберёт следующий пересчёт).
+		`DELETE FROM taste_cluster WHERE layer = 'all'`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

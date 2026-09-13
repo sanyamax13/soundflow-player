@@ -42,9 +42,10 @@ func TestOrderRadioFallbackNoTaste(t *testing.T) {
 
 func TestOrderRadioTasteAware(t *testing.T) {
 	d := open(t)
-	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700
+	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700. 8 fav-треков —
+	// минимум для построения слоя (minClusterTracks), см. Task 2 плана.
 	radioTrack(t, d, "seed", "Seed", 0, 0)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 8; i++ {
 		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
 	}
 	// три трека одного нейтрального артиста, близкие по звуку: обычный,
@@ -58,7 +59,7 @@ func TestOrderRadioTasteAware(t *testing.T) {
 	}
 
 	evs := []SyncEvent{}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 8; i++ {
 		evs = append(evs, SyncEvent{UUID: "l" + itoa(i), Kind: "like", TrackID: "fav" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
 	}
 	evs = append(evs, SyncEvent{UUID: "dis", Kind: "dislike", TrackID: "hated", Payload: json.RawMessage(``), ClientTS: 1})
@@ -71,7 +72,7 @@ func TestOrderRadioTasteAware(t *testing.T) {
 		time.Now().UTC().Format(time.RFC3339)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := d.RecomputeTasteClusters(); err != nil {
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
 		t.Fatal(err)
 	}
 

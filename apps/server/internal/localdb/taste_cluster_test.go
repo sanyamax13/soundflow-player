@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math/rand"
 	"testing"
+	"time"
 )
 
 // синтетический вектор около «направления» dir с шумом.
@@ -107,7 +108,7 @@ func TestRecomputeTasteClustersAndScore(t *testing.T) {
 		like("g1_"+itoa(i), 1000)
 	}
 
-	nc, nt, err := d.RecomputeTasteClusters()
+	nc, nt, err := d.RecomputeTasteClusters("long_term", nil)
 	if err != nil {
 		t.Fatalf("recompute: %v", err)
 	}
@@ -175,19 +176,19 @@ func TestRecomputeTasteClustersDeterministic(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	nc1, _, err := d.RecomputeTasteClusters()
+	nc1, _, err := d.RecomputeTasteClusters("long_term", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := d.tasteCentroids()
+	first, err := d.tasteCentroidsLayer("long_term")
 	if err != nil {
 		t.Fatal(err)
 	}
-	nc2, _, err := d.RecomputeTasteClusters()
+	nc2, _, err := d.RecomputeTasteClusters("long_term", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := d.tasteCentroids()
+	second, err := d.tasteCentroidsLayer("long_term")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,6 +199,101 @@ func TestRecomputeTasteClustersDeterministic(t *testing.T) {
 		if cosine(first[i], second[i]) < 0.999 {
 			t.Errorf("centroid %d drifted between identical recomputes: cosine=%v", i, cosine(first[i], second[i]))
 		}
+	}
+}
+
+func TestRecomputeTasteClustersLayeredByTime(t *testing.T) {
+	d := open(t)
+	old := "2020-01-01T00:00:00Z"
+	fresh := time.Now().UTC().Format(time.RFC3339)
+	for i := 0; i < 10; i++ {
+		v := make([]float32, VecDim)
+		v[i%VecDim] = 1
+		id := "old" + itoa(i)
+		if _, err := d.sql.Exec(
+			`INSERT INTO tracks (id, artist, title, normalized_key, feature_vector) VALUES (?,?,?,?,?)`,
+			id, "A", id, id, vecToBlob(v)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.sql.Exec(
+			`INSERT INTO feedback_event (event_uuid, track_id, artist, event_type, value, created_at)
+			 VALUES (?,?,?,?,?,?)`, "e"+id, id, "A", "like", 5.0, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 10; i++ {
+		v := make([]float32, VecDim)
+		v[(i+500)%VecDim] = 1
+		id := "new" + itoa(i)
+		if _, err := d.sql.Exec(
+			`INSERT INTO tracks (id, artist, title, normalized_key, feature_vector) VALUES (?,?,?,?,?)`,
+			id, "B", id, id, vecToBlob(v)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.sql.Exec(
+			`INSERT INTO feedback_event (event_uuid, track_id, artist, event_type, value, created_at)
+			 VALUES (?,?,?,?,?,?)`, "e"+id, id, "B", "like", 5.0, fresh); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ncLong, ntLong, err := d.RecomputeTasteClusters("long_term", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ntLong != 20 {
+		t.Errorf("long_term should see all 20 tracks, got %d", ntLong)
+	}
+	if ncLong == 0 {
+		t.Error("long_term should build clusters")
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -21)
+	ncRecent, ntRecent, err := d.RecomputeTasteClusters("recent", &cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ntRecent != 10 {
+		t.Errorf("recent should see only the 10 fresh tracks, got %d", ntRecent)
+	}
+	if ncRecent == 0 {
+		t.Error("recent should build clusters (10 >= threshold 8)")
+	}
+}
+
+func TestRecomputeTasteClustersBelowThreshold(t *testing.T) {
+	d := open(t)
+	for i := 0; i < 5; i++ { // ниже порога 8
+		v := make([]float32, VecDim)
+		v[i] = 1
+		id := "t" + itoa(i)
+		if _, err := d.sql.Exec(
+			`INSERT INTO tracks (id, artist, title, normalized_key, feature_vector) VALUES (?,?,?,?,?)`,
+			id, "A", id, id, vecToBlob(v)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.sql.Exec(
+			`INSERT INTO feedback_event (event_uuid, track_id, artist, event_type, value, created_at)
+			 VALUES (?,?,?,?,?,?)`, "e"+id, id, "A", "like", 5.0, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nc, nt, err := d.RecomputeTasteClusters("long_term", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nc != 0 {
+		t.Errorf("below threshold (5 < 8) should build no clusters, got %d", nc)
+	}
+	if nt != 5 {
+		t.Errorf("nTracks should still report the 5 seen, got %d", nt)
+	}
+	cents, err := d.tasteCentroidsLayer("long_term")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cents) != 0 {
+		t.Errorf("layer table should be empty below threshold, got %d centroids", len(cents))
 	}
 }
 

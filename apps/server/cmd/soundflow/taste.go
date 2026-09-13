@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -53,14 +54,24 @@ func (s *Service) hTasteRebuild(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	nc, nt, cerr := s.db.RecomputeTasteClusters()
+	ncLong, ntLong, cerr := s.db.RecomputeTasteClusters("long_term", nil)
+	if cerr != nil {
+		http.Error(w, cerr.Error(), 500)
+		return
+	}
+	cutoff := time.Now().AddDate(0, 0, -21)
+	ncRecent, ntRecent, cerr := s.db.RecomputeTasteClusters("recent", &cutoff)
 	if cerr != nil {
 		http.Error(w, cerr.Error(), 500)
 		return
 	}
 	_ = s.db.AddServerLog("info", "", "",
-		"пересобран вкус: "+strconv.Itoa(n)+" сигналов, "+strconv.Itoa(nc)+" центров по "+strconv.Itoa(nt)+" трекам", 0)
-	writeJSON(w, map[string]any{"rows": n, "clusters": nc, "cluster_tracks": nt})
+		"пересобран вкус: "+strconv.Itoa(n)+" сигналов, "+strconv.Itoa(ncLong)+" долгих центров по "+strconv.Itoa(ntLong)+" трекам, "+strconv.Itoa(ncRecent)+" недавних по "+strconv.Itoa(ntRecent), 0)
+	writeJSON(w, map[string]any{
+		"rows":      n,
+		"long_term": map[string]int{"clusters": ncLong, "tracks": ntLong},
+		"recent":    map[string]int{"clusters": ncRecent, "tracks": ntRecent},
+	})
 }
 
 // GET /api/devices/{id}/suggest?n=30 — «Предлагаю по вкусу»: что скачать на
@@ -86,12 +97,21 @@ func (s *Service) hSuggest(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/taste/cluster — пересчитать только центры вкуса (по звуку).
 func (s *Service) hTasteCluster(w http.ResponseWriter, r *http.Request) {
-	nc, nt, err := s.db.RecomputeTasteClusters()
+	ncLong, ntLong, err := s.db.RecomputeTasteClusters("long_term", nil)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	cutoff := time.Now().AddDate(0, 0, -21)
+	ncRecent, ntRecent, err := s.db.RecomputeTasteClusters("recent", &cutoff)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	_ = s.db.AddServerLog("info", "", "",
-		"пересчитаны центры вкуса: "+strconv.Itoa(nc)+" по "+strconv.Itoa(nt)+" трекам", 0)
-	writeJSON(w, map[string]any{"clusters": nc, "cluster_tracks": nt})
+		"пересчитаны центры вкуса: "+strconv.Itoa(ncLong)+" долгих по "+strconv.Itoa(ntLong)+", "+strconv.Itoa(ncRecent)+" недавних по "+strconv.Itoa(ntRecent), 0)
+	writeJSON(w, map[string]any{
+		"long_term": map[string]int{"clusters": ncLong, "tracks": ntLong},
+		"recent":    map[string]int{"clusters": ncRecent, "tracks": ntRecent},
+	})
 }

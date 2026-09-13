@@ -33,7 +33,7 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 	if err != nil {
 		return nil, false, err
 	}
-	cents, err := d.tasteCentroids()
+	cents, err := d.tasteCentroidsLayer("long_term")
 	if err != nil {
 		return nil, false, err
 	}

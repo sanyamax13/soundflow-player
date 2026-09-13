@@ -32,10 +32,16 @@ func kFor(n int) int {
 	}
 }
 
-// RecomputeTasteClusters — пересобрать taste_cluster (слой 'all') из текущих
-// сигналов вкуса. Мало данных (<2 трека с вектором) — просто чистим старые
-// центры. Возвращает число центров и число треков, по которым считали.
-func (d *DB) RecomputeTasteClusters() (nClusters, nTracks int, err error) {
+// minClusterTracks — ниже этого числа треков с положительной оценкой слой
+// не строится (иначе k-means на единицах треков даёт «центр = одна песня»,
+// т.к. пустой кластер пересеивается случайным вектором из входных).
+const minClusterTracks = 8
+
+// RecomputeTasteClusters — пересобрать taste_cluster для одного слоя.
+// since=nil — весь позитивный фидбек (long_term); since!=nil — только
+// треки, чей ПОСЛЕДНИЙ положительный сигнал не старше since (recent).
+// Меньше minClusterTracks треков — слой не строится, старые центры чистим.
+func (d *DB) RecomputeTasteClusters(layer string, since *time.Time) (nClusters, nTracks int, err error) {
 	rows, err := d.sql.Query(posScoredWithVector)
 	if err != nil {
 		return 0, 0, err
@@ -49,6 +55,12 @@ func (d *DB) RecomputeTasteClusters() (nClusters, nTracks int, err error) {
 			rows.Close()
 			return 0, 0, err
 		}
+		if since != nil {
+			lt, perr := time.Parse(time.RFC3339, lastAt)
+			if perr != nil || lt.Before(*since) {
+				continue
+			}
+		}
 		if v := blobToVec(blob); len(v) > 0 {
 			vecs = append(vecs, l2norm(v))
 		}
@@ -57,10 +69,11 @@ func (d *DB) RecomputeTasteClusters() (nClusters, nTracks int, err error) {
 	if err := rows.Err(); err != nil {
 		return 0, 0, err
 	}
+	nTracks = len(vecs)
 
-	if len(vecs) < 2 {
-		_, _ = d.sql.Exec(`DELETE FROM taste_cluster WHERE layer = 'all'`)
-		return 0, len(vecs), nil
+	if len(vecs) < minClusterTracks {
+		_, _ = d.sql.Exec(`DELETE FROM taste_cluster WHERE layer = ?`, layer)
+		return 0, nTracks, nil
 	}
 
 	cents, assign := kmeansCosine(vecs, kFor(len(vecs)), 60, 42)
@@ -74,26 +87,26 @@ func (d *DB) RecomputeTasteClusters() (nClusters, nTracks int, err error) {
 		return 0, 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if _, err := tx.Exec(`DELETE FROM taste_cluster WHERE layer = 'all'`); err != nil {
+	if _, err := tx.Exec(`DELETE FROM taste_cluster WHERE layer = ?`, layer); err != nil {
 		return 0, 0, err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i, c := range cents {
 		if _, err := tx.Exec(
-			`INSERT INTO taste_cluster (layer, idx, vec, n, updated_at) VALUES ('all', ?, ?, ?, ?)`,
-			i, vecToBlob(c), counts[i], now); err != nil {
+			`INSERT INTO taste_cluster (layer, idx, vec, n, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			layer, i, vecToBlob(c), counts[i], now); err != nil {
 			return 0, 0, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
-	return len(cents), len(vecs), nil
+	return len(cents), nTracks, nil
 }
 
-// tasteCentroids — загруженные центры вкуса (нормированы при записи).
-func (d *DB) tasteCentroids() ([][]float32, error) {
-	rows, err := d.sql.Query(`SELECT vec FROM taste_cluster WHERE layer = 'all' ORDER BY idx`)
+// tasteCentroidsLayer — центры вкуса одного слоя (нормированы при записи).
+func (d *DB) tasteCentroidsLayer(layer string) ([][]float32, error) {
+	rows, err := d.sql.Query(`SELECT vec FROM taste_cluster WHERE layer = ? ORDER BY idx`, layer)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +151,7 @@ func tasteAffinity(cents [][]float32, vec []float32) float64 {
 // вкус» в автоподборе (этап 4).
 func (d *DB) ScoreTracksByTaste(ids []string) (map[string]float64, error) {
 	out := make(map[string]float64, len(ids))
-	cents, err := d.tasteCentroids()
+	cents, err := d.tasteCentroidsLayer("long_term")
 	if err != nil || len(cents) == 0 {
 		return out, err
 	}
@@ -189,7 +202,7 @@ func (d *DB) TasteClusters(perCluster int) ([]TasteClusterInfo, error) {
 	if perCluster <= 0 {
 		perCluster = 4
 	}
-	cents, err := d.tasteCentroids()
+	cents, err := d.tasteCentroidsLayer("long_term")
 	if err != nil || len(cents) == 0 {
 		return nil, err
 	}

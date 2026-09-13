@@ -81,7 +81,7 @@ func (d *DB) SuggestDownloads(deviceID string, n int) ([]Suggestion, error) {
 		rows.Close()
 	}
 
-	cents, err := d.tasteCentroids()
+	cents, err := d.tasteCentroidsLayer("long_term")
 	if err != nil {
 		return nil, err
 	}

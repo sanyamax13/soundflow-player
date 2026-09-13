@@ -39,9 +39,10 @@ func TestSuggestDownloads(t *testing.T) {
 	}
 
 	dev := Device{ID: "d1"}
-	// лайкаем 4 трека жанра A и скачиваем их (они на телефоне — в кандидаты не идут)
+	// лайкаем 8 треков жанра A (minClusterTracks) и скачиваем их (они на
+	// телефоне — в кандидаты не идут)
 	evs := []SyncEvent{}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 8; i++ {
 		id := itoa(i) + "_a"
 		evs = append(evs,
 			SyncEvent{UUID: "like_" + id, Kind: "like", TrackID: id, Payload: json.RawMessage(``), ClientTS: 1},
@@ -51,7 +52,7 @@ func TestSuggestDownloads(t *testing.T) {
 	if _, err := d.SaveSync(dev, evs); err != nil {
 		t.Fatalf("SaveSync: %v", err)
 	}
-	if _, _, err := d.RecomputeTasteClusters(); err != nil {
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
 		t.Fatalf("clusters: %v", err)
 	}
 
@@ -63,7 +64,10 @@ func TestSuggestDownloads(t *testing.T) {
 		t.Fatalf("got %d suggestions; want 1..10", len(got))
 	}
 
-	onPhone := map[string]bool{"0_a": true, "1_a": true, "2_a": true, "3_a": true}
+	onPhone := map[string]bool{
+		"0_a": true, "1_a": true, "2_a": true, "3_a": true,
+		"4_a": true, "5_a": true, "6_a": true, "7_a": true,
+	}
 	seen := map[string]bool{}
 	var tasteA int
 	for _, s := range got {
@@ -78,7 +82,7 @@ func TestSuggestDownloads(t *testing.T) {
 			tasteA++
 		}
 	}
-	// оставшиеся треки жанра A (4..9) — самые близкие к вкусу, должны
+	// оставшиеся треки жанра A (8..9) — самые близкие к вкусу, должны
 	// попасть в подбор «по вкусу»
 	if tasteA == 0 {
 		t.Errorf("expected some ArtistA tracks suggested as «по вкусу»; got none: %+v", got)
