@@ -119,6 +119,37 @@ func TestOrderRadioTasteAware(t *testing.T) {
 // кандидат терялся вовсе. Найдено 13.09.2026 при подключении recent/session
 // слоёв (Task 5) — сдвиг шкалы aff подвинул «нелюбимого» кандидата ровно на
 // границу и обнажил давнюю ошибку в radio.go, не связанную с самой формулой.
+func TestFarThresholdAdaptsToRealDistribution(t *testing.T) {
+	// имитация «сжатой» реальной шкалы (0.5..0.95) — фиксированный 0.4
+	// не отсекает никого, процентильный обязан отсечь заметную долю
+	cs := make([]radioCand, 20)
+	for i := range cs {
+		cs[i] = radioCand{id: "t" + itoa(i), aff: 0.5 + float64(i)*0.02}
+	}
+	th := farThreshold(cs)
+	if th < 0.4 {
+		t.Fatalf("threshold %.3f too low for a compressed 0.5..0.95 distribution", th)
+	}
+	far := 0
+	for _, c := range cs {
+		if c.aff < th {
+			far++
+		}
+	}
+	if far == 0 {
+		t.Error("expected the threshold to actually select some candidates as «far» on this distribution")
+	}
+	if far == len(cs) {
+		t.Error("threshold should not select ALL candidates as «far»")
+	}
+}
+
+func TestFarThresholdEmptyInput(t *testing.T) {
+	if th := farThreshold(nil); th != 0 {
+		t.Errorf("empty input should give threshold 0 (nobody qualifies as far), got %v", th)
+	}
+}
+
 func TestOrderRadioNoDuplicatesNoDrops(t *testing.T) {
 	d := open(t)
 	radioTrack(t, d, "seed", "Seed", 0, 0)

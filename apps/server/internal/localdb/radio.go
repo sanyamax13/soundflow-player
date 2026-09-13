@@ -18,6 +18,33 @@ import (
 
 const radioSkipDays = 14
 
+// farPercentile — какая доля кандидатов (снизу по aff) считается «далёкой
+// от вкуса» для антипузыря. Фиксированное число (было 0.4) не подходит:
+// реальные эмбеддинги (PANNs CNN14) дают косинусы, сжатые в узкий верхний
+// диапазон (проверено на soundflow-lab.db 13.09.2026 — 0% ниже 0.5), так
+// что абсолютный порог 0.4 никогда не срабатывал. Процентиль самокалибруется
+// под любую реальную шкалу и не протухает при смене модели отпечатков.
+const farPercentile = 0.20
+
+// farThreshold — порог aff, ниже которого кандидат идёт в антипузырь:
+// нижние farPercentile от текущего набора кандидатов. Пусто → 0 (никого
+// не выбрать, антипузырь молча выключен — как было раньше при пустых cs).
+func farThreshold(cs []radioCand) float64 {
+	if len(cs) == 0 {
+		return 0
+	}
+	affs := make([]float64, len(cs))
+	for i, c := range cs {
+		affs[i] = c.aff
+	}
+	sort.Float64s(affs)
+	idx := int(float64(len(affs)) * farPercentile)
+	if idx >= len(affs) {
+		idx = len(affs) - 1
+	}
+	return affs[idx]
+}
+
 type radioCand struct {
 	id      string
 	artist  string
@@ -120,9 +147,10 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 	})
 
 	// антипузырь: отдельная очередь «далеко от вкуса», по близости к seed
+	threshold := farThreshold(cs)
 	var far []radioCand
 	for _, c := range cs {
-		if c.aff < 0.4 {
+		if c.aff < threshold {
 			far = append(far, c)
 		}
 	}
