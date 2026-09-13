@@ -85,7 +85,11 @@ func (s *Service) tor() *torTracker {
 func (s *Service) dlPost(ctx context.Context, path string, body any, timeout time.Duration) ([]byte, error) {
 	url := s.dl.URL()
 	if url == "" {
-		return nil, fmt.Errorf("качалка ещё запускается")
+		_, _, reason := s.downloaderState()
+		if reason == "" {
+			reason = "качалка ещё запускается"
+		}
+		return nil, fmt.Errorf("%s", reason)
 	}
 	buf, _ := json.Marshal(body)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url+path, bytes.NewReader(buf))
@@ -134,7 +138,11 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.dl.URL() == "" || s.store == nil {
-		http.Error(w, "качалка ещё запускается", 503)
+		_, _, reason := s.downloaderState()
+		if reason == "" {
+			reason = "качалка ещё запускается"
+		}
+		http.Error(w, reason, 503)
 		return
 	}
 	label := c.Album
@@ -190,7 +198,14 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) hTorrentLog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"ready": s.dl.URL() != "" && s.store != nil, "items": s.tor().snapshot()})
+	_, permanent, reason := s.downloaderState()
+	writeJSON(w, map[string]any{
+		"ready":     s.dl.URL() != "" && s.store != nil,
+		"available": s.dl != nil,
+		"permanent": permanent,
+		"reason":    reason,
+		"items":     s.tor().snapshot(),
+	})
 }
 
 // addAlbumTracks — вписать скачанные mp3 альбома в каталог (пропуская уже

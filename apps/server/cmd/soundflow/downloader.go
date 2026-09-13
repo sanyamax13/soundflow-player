@@ -179,6 +179,23 @@ func (d *downloaderProc) waitHealth(port int, timeout time.Duration) bool {
 	return false
 }
 
+// downloaderState — честная причина, почему «Найти и скачать»/торренты
+// недоступны (Опус-ревью 14.09.2026, пункт 3): вкладка раньше вечно писала
+// «качалка ещё запускается», хотя на установленной копии (папки apps/
+// downloader рядом с exe нет — инсталлятор её не кладёт) она вообще никогда
+// не появится. permanent=true — качалки нет в этой копии программы и она не
+// появится за этот запуск; permanent=false — есть, но ещё поднимается или
+// перезапускается после сбоя (сообщение может стать неактуальным само).
+func (s *Service) downloaderState() (ready, permanent bool, reason string) {
+	if s.dl == nil {
+		return false, true, "качалка не входит в эту копию программы — скачивание одного трека и через торренты недоступно"
+	}
+	if url := s.dl.URL(); url != "" {
+		return true, false, ""
+	}
+	return false, false, "качалка ещё запускается — попробуй через минуту"
+}
+
 // URL — базовый адрес качалки, если она сейчас готова. "" — не готова.
 func (d *downloaderProc) URL() string {
 	if d == nil {

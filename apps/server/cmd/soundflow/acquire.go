@@ -94,7 +94,11 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 	}
 	svc := s.acquireService()
 	if svc == nil {
-		http.Error(w, "качалка ещё запускается — попробуй через минуту", 503)
+		_, _, reason := s.downloaderState()
+		if reason == "" {
+			reason = "качалка ещё запускается — попробуй через минуту"
+		}
+		http.Error(w, reason, 503)
 		return
 	}
 	idx := s.acq().add(artist, title)
@@ -145,5 +149,12 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 // GET /api/acquire/log — последние попытки «Найти трек» для окна.
 func (s *Service) hAcquireLog(w http.ResponseWriter, r *http.Request) {
 	ready := s.dl.URL() != "" && s.store != nil
-	writeJSON(w, map[string]any{"ready": ready, "items": s.acq().snapshot()})
+	_, permanent, reason := s.downloaderState()
+	writeJSON(w, map[string]any{
+		"ready":     ready,
+		"available": s.dl != nil, // false — качалки нет в этой копии, не появится за этот запуск
+		"permanent": permanent,
+		"reason":    reason,
+		"items":     s.acq().snapshot(),
+	})
 }

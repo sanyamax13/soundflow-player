@@ -286,7 +286,7 @@
             <input id="tArtist" placeholder="Исполнитель" autocomplete="off">
             <button class="btn primary" id="tGo">Показать релизы</button>
           </div>
-          <div class="hint">Опрашиваем трекеры (nnmclub, rutor, tapochek, rustorka). Отметь галочками нужные альбомы и нажми «Скачать выбранное» — качается через qBittorrent, песни идут в каталог.</div>
+          <div class="hint" id="tHint">Опрашиваем трекеры (nnmclub, rutor, tapochek, rustorka). Отметь галочками нужные альбомы и нажми «Скачать выбранное» — качается через qBittorrent, песни идут в каталог.</div>
           <div id="tErr" class="hint" style="color:var(--err)"></div>
           <div id="tCands"></div>
           <div id="tActions" hidden><button class="btn primary" id="tDl">Скачать выбранное</button></div>
@@ -566,7 +566,12 @@ async function loadAcqLog(){
   try{
     const d = await jget("/api/acquire/log");
     $("#fGo").disabled = !d.ready;
-    $("#fHint").style.opacity = d.ready ? "1" : ".6";
+    if(d.available === false){
+      $("#fHint").textContent = d.reason || "Качалка не входит в эту копию программы — скачивание недоступно.";
+      $("#fHint").style.opacity = "1";
+    } else {
+      $("#fHint").style.opacity = d.ready ? "1" : ".6";
+    }
     const items = d.items || [];
     $("#fLog").innerHTML = items.length ? items.map(it => {
       const cls = it.state==="done" ? "wire" : (it.state==="fail" ? "" : "wifi");
@@ -642,6 +647,10 @@ async function torDownload(){
 async function loadTorLog(){
   try{
     const d = await jget("/api/torrent/log");
+    if(d.available === false){
+      $("#tGo").disabled = true;
+      $("#tHint").textContent = d.reason || "Качалка не входит в эту копию программы — скачивание через торренты недоступно.";
+    }
     const items = d.items || [];
     $("#tLog").innerHTML = items.length ? items.map(it => {
       const tag = it.state==="running" ? '<span class="tag wifi">качаю…</span>'
