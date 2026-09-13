@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../core/config.dart';
@@ -8,6 +11,15 @@ class AcquireException implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+/// Слепок вкуса, пришедший с сервера — центры long_term+recent как «сырые»
+/// векторы (little-endian float32, 8192 байта на каждый при VecDim=2048).
+class TasteCentroids {
+  const TasteCentroids({required this.hash, required this.longTerm, required this.recent});
+  final String hash;
+  final List<Uint8List> longTerm;
+  final List<Uint8List> recent;
 }
 
 /// Клиент к серверу на Go. Входа нет — плеер личный, сервер в домашней сети.
@@ -21,6 +33,9 @@ class Api {
   }
 
   final Dio _dio;
+
+  /// Только для тестов — подменить HTTP-адаптер фейковым.
+  set debugAdapter(HttpClientAdapter a) => _dio.httpClientAdapter = a;
 
   /// Текущий адрес сервера, к которому обращается клиент.
   String get baseUrl => _dio.options.baseUrl;
@@ -140,6 +155,56 @@ class Api {
       return [for (final b in bars) (b.toDouble() / 255.0).clamp(0.0, 1.0)];
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Слепок вкуса — только версия (несколько байт), НЕ сами центры. Дёргаем
+  /// после каждой синхронизации; если отличается от сохранённого локально —
+  /// тянем полный [tasteCentroids]. Сервер недоступен → null (тихо, вкус
+  /// не критичен для работы приложения).
+  Future<String?> tasteCentroidsHash() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/api/taste/centroids-hash');
+      return res.data?['hash'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Полный слепок вкуса (центры long_term+recent) — только когда хэш
+  /// разошёлся с локальным (см. [tasteCentroidsHash]).
+  Future<TasteCentroids?> tasteCentroids() async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/api/taste/centroids');
+      final data = res.data;
+      if (data == null) return null;
+      List<Uint8List> decode(String key) => [
+            for (final s in (data[key] as List? ?? const []))
+              base64Decode('$s'),
+          ];
+      return TasteCentroids(
+        hash: '${data['hash'] ?? ''}',
+        longTerm: decode('long_term'),
+        recent: decode('recent'),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Отпечатки треков — телефон дёргает сразу после скачивания и при
+  /// разовом бэкфилле старых скачиваний. Отсутствующий id — тихо пропущен
+  /// (не у каждого трека в каталоге есть отпечаток).
+  Future<Map<String, Uint8List>> trackVectors(List<String> ids) async {
+    if (ids.isEmpty) return {};
+    try {
+      final res = await _dio.post<Map<String, dynamic>>('/api/tracks/vectors', data: {'ids': ids});
+      final vectors = (res.data?['vectors'] as Map?) ?? const {};
+      return {
+        for (final e in vectors.entries) '${e.key}': base64Decode('${e.value}'),
+      };
+    } catch (_) {
+      return {};
     }
   }
 
