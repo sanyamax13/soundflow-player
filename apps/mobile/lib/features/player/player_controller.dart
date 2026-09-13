@@ -1,10 +1,26 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../core/crash_log.dart';
+
+/// [tracks] переставленные так: сперва элемент с индексом [startIndex],
+/// затем остальные — вперемешку. Используется вместо встроенного шаффла
+/// just_audio (see `playQueue`) — тот шаффлит порядок воспроизведения
+/// ВНУТРИ плеера отдельно от списка `_queue`, из-за чего подпись «Дальше»
+/// и список очереди в UI показывали не ту песню, что реально играла
+/// следующей (Alex TG 13.09.2026, скриншоты «Дальше: Shiny Happy People» /
+/// реально играет «Get Away»). Свой шаффл — один список везде: очередь,
+/// показ «Дальше», перестановка/удаление в ней.
+@visibleForTesting
+List<NowPlaying> shufflePinned(List<NowPlaying> tracks, int startIndex, [Random? rng]) {
+  final start = tracks[startIndex.clamp(0, tracks.length - 1)];
+  final rest = [for (final t in tracks) if (!identical(t, start)) t]..shuffle(rng);
+  return [start, ...rest];
+}
 
 /// Обёртка над проигрывателем. Держит очередь локальных файлов (офлайн),
 /// отдаёт наружу простые ValueNotifier'ы для UI. Фон/локскрин — через
@@ -180,8 +196,11 @@ class PlayerController {
     bool autoplay = true,
   }) async {
     if (tracks.isEmpty) return;
-    _queue = List.of(tracks);
-    _index = startIndex.clamp(0, tracks.length - 1);
+    // Шаффл — свой (переставляем сам список), а не встроенный в just_audio:
+    // тот держит порядок воспроизведения отдельно от списка очереди, и
+    // «Дальше» в UI начинает показывать не ту песню, что играет следующей.
+    _queue = shuffle ? shufflePinned(tracks, startIndex) : List.of(tracks);
+    _index = shuffle ? 0 : startIndex.clamp(0, tracks.length - 1);
     _prevIndex = _index; // новая очередь — не считаем сменой трека
     _userSeek = false;
     _lastPlayId = null;
@@ -194,7 +213,7 @@ class PlayerController {
     _source = src;
     try {
       await p.setLoopMode(loop ? LoopMode.all : LoopMode.off);
-      await p.setShuffleModeEnabled(shuffle);
+      await p.setShuffleModeEnabled(false);
       this.shuffle.value = shuffle;
       await p.setAudioSource(src, initialIndex: _index, initialPosition: Duration.zero);
       now.value = _queue[_index];
@@ -251,27 +270,21 @@ class PlayerController {
     await p.seek(Duration.zero, index: i);
   }
 
-  Future<void> toggleShuffle() async {
-    final p = _player;
-    if (p == null) return;
-    final v = !shuffle.value;
-    await p.setShuffleModeEnabled(v);
-    shuffle.value = v;
-    // Перемешал руками — «радио по песне» больше не про этот порядок.
-    if (v) radio.value = false;
-  }
-
-  /// Выключить «Радио по этой»: вернуть перемешивание Потока. Хвост очереди
-  /// (уже подобранный по звуку) оставляем как есть — просто дальше играем
-  /// вперемешку. Кнопка радио гаснет. Нужно, потому что второе нажатие на
-  /// кнопку раньше просто пересобирало радио и выключить его было нечем
-  /// (Alex, 06.09.2026).
+  /// Выключить «Радио по этой»: вернуть перемешивание Потока — сам
+  /// перемешиваем хвост очереди (см. `playQueue`, встроенный шаффл
+  /// just_audio не используем, чтобы «Дальше» не расходилось с реальным
+  /// порядком). Уже сыгранное не трогаем. Кнопка радио гаснет. Нужно,
+  /// потому что второе нажатие на кнопку раньше просто пересобирало радио
+  /// и выключить его было нечем (Alex, 06.09.2026).
   Future<void> stopRadio() async {
-    final p = _player;
-    if (p != null) {
-      await p.setShuffleModeEnabled(true);
-      shuffle.value = true;
+    final src = _source;
+    if (src != null && _index + 1 < _queue.length) {
+      final tail = _queue.sublist(_index + 1)..shuffle();
+      await src.removeRange(_index + 1, src.length);
+      await src.addAll([for (final t in tail) AudioSource.uri(Uri.file(t.path))]);
+      _queue = [..._queue.sublist(0, _index + 1), ...tail];
     }
+    shuffle.value = true;
     radio.value = false;
   }
 
