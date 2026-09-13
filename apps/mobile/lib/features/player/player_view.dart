@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
+import '../../core/local_taste.dart';
 import '../../data/api.dart';
+import '../../data/db.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import 'cover_art.dart';
@@ -326,9 +331,72 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       if (tail.isEmpty || !mounted) return;
       await _p.setSimilarTail(tail);
       _toast('Дальше — похожее по звуку');
+    } on DioException catch (_) {
+      // именно сетевая ошибка (сервер недоступен) — пробуем локальный
+      // фолбэк по уже скачанным трекам; reordered:false (ветка выше) сюда
+      // не попадает — источник отпечатка у seed один и тот же, что для
+      // сервера, что локально, так что фолбэк там всё равно не поможет.
+      final tail = await _offlineRadioFallback(now, all);
+      if (tail != null && mounted) {
+        await _p.setSimilarTail(tail);
+        _toast('Сервера нет — собрал похожее из уже скачанного');
+        return;
+      }
+      _toast('Сервер не ответил — радио не собралось');
     } catch (_) {
       _toast('Сервер не ответил — радио не собралось');
     }
+  }
+
+  /// Локальный фолбэк, когда сервер недоступен: сравнивает уже скачанные
+  /// треки по кэшированным отпечаткам (docs/superpowers/specs/
+  /// 2026-09-13-taste-layers-offline-design.md §4.5-4.6). Нет отпечатка у
+  /// seed или меньше 2 кандидатов с отпечатками — null (обычный тост
+  /// «радио не собралось» тогда и должен показаться — например, на очень
+  /// старых скачиваниях до бэкфилла).
+  Future<List<NowPlaying>?> _offlineRadioFallback(
+      NowPlaying now, List<DownloadedTrack> all) async {
+    final db = ref.read(dbProvider);
+    final seedBytes = await db.trackVector(now.id);
+    final seedVec = seedBytes == null ? null : bytesToVec(seedBytes);
+    if (seedVec == null) return null;
+
+    final others = [for (final t in all) if (t.id != now.id) t];
+    final rawVecs = await db.trackVectorsFor([for (final t in others) t.id]);
+    final candidateVecs = <String, Float32List>{};
+    for (final entry in rawVecs.entries) {
+      final v = bytesToVec(entry.value);
+      if (v != null) candidateVecs[entry.key] = v;
+    }
+    if (candidateVecs.length < 2) return null;
+
+    final centroidsJson = await db.kvGet('taste_centroids');
+    var longTerm = const <Float32List>[];
+    var recent = const <Float32List>[];
+    if (centroidsJson != null) {
+      final data = jsonDecode(centroidsJson) as Map<String, dynamic>;
+      Float32List? decode(String b64) => bytesToVec(base64Decode(b64));
+      longTerm = [
+        for (final b in (data['long_term'] as List? ?? const [])) ?decode('$b'),
+      ];
+      recent = [
+        for (final b in (data['recent'] as List? ?? const [])) ?decode('$b'),
+      ];
+    }
+
+    final byId = {for (final t in others) t.id: t};
+    final orderedIds = orderOffline(
+      seedVec: seedVec,
+      candidateVecs: candidateVecs,
+      candidateArtists: {for (final t in others) t.id: t.artist},
+      centroidsLongTerm: longTerm,
+      centroidsRecent: recent,
+    );
+    return [
+      for (final id in orderedIds)
+        if (byId[id] case final t?)
+          NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
+    ];
   }
 
   // ── подсказки/сообщения ───────────────────────────────────────────────
