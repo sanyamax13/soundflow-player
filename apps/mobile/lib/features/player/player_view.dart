@@ -529,7 +529,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   color: Colors.white.withValues(alpha: 0.75), size: 20),
             ),
             GestureDetector(
-              onTap: () => _whySheet(now),
+              onTap: () => _radio(now),
               child: ValueListenableBuilder<bool>(
                 valueListenable: _p.radio,
                 builder: (_, on, _) => Container(
