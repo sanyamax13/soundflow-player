@@ -1,5 +1,3 @@
-//go:build !headless
-
 // SoundFlow.exe — «сервер в одном приложении»: окно (WebView2 через Wails),
 // каталог в SQLite (soundflow.db), звуковой отпечаток в этом же процессе
 // (onnxruntime.dll + cnn14.onnx), без Docker и Python.
@@ -7,7 +5,9 @@
 // Рядом с exe должны лежать: onnxruntime.dll, cnn14.onnx (+ cnn14.onnx.data),
 // ffmpeg.exe (или ffmpeg в PATH). База и логи — в %LocalAppData%\SoundFlow\.
 //
-// Сборка headless (для сервера без окна): go build -tags headless — см. main_headless.go.
+// Безоконная (headless) сборка убрана 14.09.2026 — единственный, кто её
+// использовал (fg), уходит в пользу этой же оконной программы на компе
+// Alex; см. docs/PROGRESS.md этапы 72/76.
 package main
 
 import (
