@@ -116,6 +116,18 @@ func NewService() (*Service, error) {
 		startedAt: time.Now(),
 	}
 	s.jobs = NewJobRunner(s)
+	// Alex TG 13.09.2026: не хочет думать про кнопку «Пересчитать похожесть
+	// по звуку» — скан и «Найти и скачать» и так считают отпечаток сразу
+	// при добавлении трека (jobs.go, acquire.go), эта проверка на старте
+	// добирает редкие хвосты (модель не была загружена в момент добавления,
+	// разовый сбой распознавания) молча в фоне, без участия Alex.
+	if eng != nil {
+		go func() {
+			if ids, err := db.TrackIDsNeedingAnalysis(0); err == nil && len(ids) > 0 {
+				s.jobs.StartReindex()
+			}
+		}()
+	}
 	_ = s.db.AddServerLog("info", "", "", "SoundFlow запущен ("+dbPath+"), модель: "+yn(eng != nil), 0)
 	fmt.Printf("SoundFlow: база %s, модель %v, телефонный API %s\n", dbPath, eng != nil, s.phoneAddr)
 	if s.dl = newDownloaderProc(); s.dl != nil {
