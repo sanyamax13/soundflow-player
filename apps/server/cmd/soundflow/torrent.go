@@ -200,11 +200,12 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 func (s *Service) hTorrentLog(w http.ResponseWriter, r *http.Request) {
 	_, permanent, reason := s.downloaderState()
 	writeJSON(w, map[string]any{
-		"ready":     s.dl.URL() != "" && s.store != nil,
-		"available": s.dl != nil,
-		"permanent": permanent,
-		"reason":    reason,
-		"items":     s.tor().snapshot(),
+		"ready":       s.dl.URL() != "" && s.store != nil,
+		"available":   s.dl != nil,
+		"permanent":   permanent,
+		"reason":      reason,
+		"qbittorrent": qBittorrentReachable(), // предупредить заранее (пункт 9), не только после неудачной попытки
+		"items":       s.tor().snapshot(),
 	})
 }
 

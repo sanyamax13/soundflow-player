@@ -220,14 +220,27 @@ func (d *downloaderProc) shutdown() {
 	}
 }
 
+// qBittorrentReachable — только проверка, без запуска (Опус-ревью
+// 14.09.2026, пункт 9): смотрим, отвечает ли Web UI qBittorrent на :8080.
+// Нужна, чтобы предупредить в окне ДО того, как Alex откроет вкладку
+// торрентов и попробует скачать — раньше об отсутствии qBittorrent узнавали
+// только по ошибке после неудачной попытки.
+func qBittorrentReachable() bool {
+	cl := &http.Client{Timeout: 2 * time.Second}
+	resp, err := cl.Get("http://127.0.0.1:8080/")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
+}
+
 // ensureQBittorrent — торрент-режиму нужен запущенный qBittorrent с включённым
 // Web UI (порт 8080, логин из downloader/.env). Если порт молчит — пробуем
 // запустить qbittorrent.exe. Web UI и пароль пользователь настраивает в самом
 // qBittorrent один раз (Настройки → Web UI).
 func ensureQBittorrent() error {
-	cl := &http.Client{Timeout: 2 * time.Second}
-	if resp, err := cl.Get("http://127.0.0.1:8080/"); err == nil {
-		resp.Body.Close()
+	if qBittorrentReachable() {
 		return nil
 	}
 	exe := ""
@@ -254,6 +267,7 @@ func ensureQBittorrent() error {
 		return fmt.Errorf("не смог запустить qBittorrent: %w", err)
 	}
 	// Дать Web UI подняться.
+	cl := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if resp, err := cl.Get("http://127.0.0.1:8080/"); err == nil {

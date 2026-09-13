@@ -289,6 +289,7 @@
           </div>
           <div class="hint" id="tHint">Опрашиваем трекеры (nnmclub, rutor, tapochek, rustorka). Отметь галочками нужные альбомы и нажми «Скачать выбранное» — качается через qBittorrent, песни идут в каталог.</div>
           <div id="tErr" class="hint" style="color:var(--err)"></div>
+          <div id="tQbWarn" class="hint" style="color:var(--warn)" hidden>qBittorrent не найден — он нужен для скачивания через торренты. Установи его и один раз включи Web UI в его настройках, или просто открой программу qBittorrent перед скачиванием.</div>
           <div id="tCands"></div>
           <div id="tActions" hidden><button class="btn primary" id="tDl">Скачать выбранное</button></div>
           <h3 style="margin-top:24px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:800">Закачки</h3>
@@ -653,6 +654,7 @@ async function loadTorLog(){
       $("#tGo").disabled = true;
       $("#tHint").textContent = d.reason || "Качалка не входит в эту копию программы — скачивание через торренты недоступно.";
     }
+    $("#tQbWarn").hidden = d.qbittorrent !== false;
     const items = d.items || [];
     $("#tLog").innerHTML = items.length ? items.map(it => {
       const tag = it.state==="running" ? '<span class="tag wifi">качаю…</span>'
