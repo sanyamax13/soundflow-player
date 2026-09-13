@@ -18,6 +18,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	qrcode "github.com/skip2/go-qrcode"
+
 	"soundflow/server/internal/api"
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/diskspace"
@@ -163,6 +165,7 @@ func (s *Service) APIRouter() http.Handler {
 // окно можно было открыть и обычным браузером для отладки).
 func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/info", s.hInfo)
+	r.Get("/api/qr.png", s.hQR)
 	r.Get("/api/catalog", s.hCatalog)
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
@@ -196,18 +199,29 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
-	c, _ := s.db.Counts()
-	free, _, _ := diskspace.Free(s.dataDir)
+// currentAddr — реальный адрес, на котором сейчас висит телефонный API (с
+// учётом отката порта из пункта 1), в виде "<ip в локальной сети>:порт".
+// Общий для hInfo и QR-кода (пункт 6) — один источник правды, а не два места,
+// которые могут разойтись.
+func (s *Service) currentAddr() (addr string, fellBack bool) {
 	s.mu.Lock()
-	listening, boundAddr, listenErr := s.phoneListening, s.phoneBoundAddr, s.phoneListenErr
+	boundAddr := s.phoneBoundAddr
 	s.mu.Unlock()
-	addr := localAddr(s.phoneAddr)
-	fellBack := false
+	addr = localAddr(s.phoneAddr)
 	if boundAddr != "" {
 		addr = localAddr(boundAddr)
 		fellBack = boundAddr != s.phoneAddr
 	}
+	return addr, fellBack
+}
+
+func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
+	c, _ := s.db.Counts()
+	free, _, _ := diskspace.Free(s.dataDir)
+	s.mu.Lock()
+	listening, listenErr := s.phoneListening, s.phoneListenErr
+	s.mu.Unlock()
+	addr, fellBack := s.currentAddr()
 	writeJSON(w, map[string]any{
 		"addr":            addr,
 		"running":         listening, // раньше было true всегда — теперь по факту привязки порта
@@ -224,6 +238,25 @@ func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec":      int(time.Since(s.startedAt).Seconds()),
 		"usb":             usb.Status(),
 	})
+}
+
+// hQR — QR-код с реальным (уже с учётом отката порта) адресом сервера как
+// обычным текстом (Опус-ревью 14.09.2026, пункт 6). Только для чтения любой
+// камерой/сканером — руками вписать адрес в приложении всё равно надо,
+// автоматического считывания на телефоне это не добавляет (для этого
+// понадобилось бы менять apps/mobile — вне рамок сегодняшней правки).
+func (s *Service) hQR(w http.ResponseWriter, r *http.Request) {
+	addr, _ := s.currentAddr()
+	// Голый "хост:порт", тем же текстом, что в поле «Адрес для телефона» в
+	// Настройках — Alex вписывает именно это в приложение, без http://.
+	png, err := qrcode.Encode(addr, qrcode.Medium, 320)
+	if err != nil {
+		http.Error(w, "не построить QR: "+err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store") // адрес может смениться при следующем запуске/откате порта
+	_, _ = w.Write(png)
 }
 
 func (s *Service) hCatalog(w http.ResponseWriter, r *http.Request) {

@@ -1170,7 +1170,8 @@ async function loadSettings(){
     `<h3>Адрес для телефона</h3>`+
     `<div class="addrbig"><span id="setAddr">${esc(d.addr)}</span><span class="sp"></span>`+
     `<button class="btn" id="setCopy">Скопировать</button></div>`+
-    `<div class="hint">Впиши этот адрес в приложении на телефоне: Профиль → Адрес сервера.</div>`+
+    `<div class="hint">Впиши этот адрес в приложении на телефоне: Профиль → Адрес сервера. Не разобрать циферки — наведи камеру телефона на QR-код ниже, он покажет тот же адрес текстом.</div>`+
+    `<div style="margin-top:10px"><img src="/api/qr.png" width="160" height="160" alt="QR с адресом сервера" style="border:1px solid var(--line, #e5e5e5); border-radius:8px"></div>`+
 
     `<h3>Папки с музыкой</h3>`+
     rootsHtml+
