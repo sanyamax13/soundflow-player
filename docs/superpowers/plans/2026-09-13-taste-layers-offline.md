@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Прогресс (обновляется по ходу):** Task 1-5 — сделаны и закоммичены
+(13.09.2026, коммиты `06f2a9a`..`e8b6e1c`). Task 5 заодно нашла и починила
+реальный баг слияния антипузыря (дубль/потеря кандидата), не связанный с
+формулой — см. коммит `e8b6e1c`. Task 13 добавлена 13.09.2026 по итогам
+гистограммы (Task 4 на реальной библиотеке): фиксированный порог
+антипузыря 0.4 никогда не срабатывал на реальных данных — по просьбе Alex
+записана как отдельная задача плана, не как правка «между делом». Задачи
+6-12 — не начаты.
+
 **Goal:** Разбить единый профиль вкуса на три слоя (long_term/recent/session), автоматизировать пересчёт, и научить телефон радио-фолбэку без сервера (по уже скачанным трекам).
 
 **Architecture:** Сервер (Go, `apps/server`) остаётся единственным источником полного каталога и истории; он считает три слоя вкуса и отдаёт телефону только маленькие производные — центроиды (по хэшу) и отпечаток трека (по запросу после скачивания). Телефон (Flutter, `apps/mobile`) копит свою мини-базу отпечатков уже скачанного и, если сервер недоступен, сам считает приближённый порядок радио локально (cosine, без ML-библиотек).
@@ -12,7 +21,7 @@
 
 ## Global Constraints
 
-- Формула радио: `aff := 0.60*affLong + 0.25*affRecent + 0.15*affSession`, затем `sc := sim + 0.15*aff` — слои складываются МЕЖДУ СОБОЙ внутри `aff`, диапазон `aff` остаётся 0..1, антипузырь/штрафы за артистов НЕ трогать.
+- Формула радио: `aff := 0.60*affLong + 0.25*affRecent + 0.15*affSession`, затем `sc := sim + 0.15*aff` — слои складываются МЕЖДУ СОБОЙ внутри `aff`, диапазон `aff` остаётся 0..1. Штрафы за артистов НЕ трогать. Антипузырь (порог «далеко от вкуса») — не трогать в Task 5, но Task 13 сознательно меняет его на процентильный вместо фиксированного 0.4 (обоснование и код — в Task 13).
 - Новые HTTP-ручки сервера идут мимо `internal/api` — регистрируются прямо в `cmd/soundflow/service.go`, читают `*localdb.DB` напрямую. `internal/api/store.go` и `internal/db` (Postgres, мёртвый `cmd/soundflow-server`) не трогать вообще.
 - Телефон: отпечаток трека — НОВАЯ таблица `track_vectors(id TEXT PRIMARY KEY, vec BLOB)`, не колонка в `downloaded_tracks`.
 - Векторы на телефоне — `Uint8List`/`ByteData` (little-endian), не `List<double>`; тяжёлые сравнения (тысячи кандидатов × 2048 float) — в `compute()` (изолят), не на UI-потоке.
@@ -2696,6 +2705,145 @@ Expected: `No issues found!`
 ```bash
 git add apps/mobile/lib/features/player/player_view.dart apps/mobile/lib/app/providers.dart apps/mobile/test/player_radio_offline_test.dart
 git commit -m "feat(mobile): офлайн-фолбэк радио при недоступности сервера (по уже скачанным трекам)"
+```
+
+---
+
+## Task 13: Антипузырь — динамический порог вместо фиксированного 0.4
+
+**Добавлено 13.09.2026** — не было в первой версии плана. Task 4
+(гистограмма) на реальной библиотеке Alex (`SOUNDFLOW_LAB_DB`) показала: из
+2000 треков ни один не набрал `aff < 0.5`, 60.5% лежат в 0.8-0.9. Порог
+антипузыря `aff < 0.4` (`radio.go`, было на строке ~114 до Task 5, ищи
+`c.aff < 0.4` рядом с комментарием «антипузырь») на реальных данных
+никогда не срабатывает — механизм «раз в 8 слотов — что-то далёкое от
+вкуса» на практике тихо не работает вообще. Так было и до этой сессии, не
+регрессия — просто раньше это не проверяли на цифрах.
+
+Причина: эмбеддинги PANNs CNN14 неотрицательные, из-за чего косинусные
+близости сжаты в узкий верхний диапазон (0.5-1.0 у Alex) — фиксированное
+число 0.4, подобранное «на глаз», не соответствует реальной шкале. Смена
+модели отпечатков в будущем сдвинула бы шкалу ещё раз, и фиксированное
+число снова разошлось бы с реальностью — поэтому чинить нужно не подбором
+новой константы, а переходом на процентиль от РЕАЛЬНОГО набора кандидатов
+в каждом конкретном вызове (самокалибрующийся порог, не зависит от модели
+и не протухает).
+
+**Files:**
+- Modify: `apps/server/internal/localdb/radio.go`
+- Test: `apps/server/internal/localdb/radio_test.go`
+
+**Interfaces:**
+- Consumes: `cs []radioCand` (уже вычислен к этому месту функции).
+- Produces: замена условия `c.aff < 0.4` на `c.aff < farThreshold(cs)` — новая
+  функция `farThreshold(cs []radioCand) float64`.
+
+- [ ] **Step 1: Написать тест на процентильный порог**
+
+Добавить в `apps/server/internal/localdb/radio_test.go`:
+```go
+func TestFarThresholdAdaptsToRealDistribution(t *testing.T) {
+	// имитация «сжатой» реальной шкалы (0.5..0.95) — фиксированный 0.4
+	// не отсекает никого, процентильный обязан отсечь заметную долю
+	cs := make([]radioCand, 20)
+	for i := range cs {
+		cs[i] = radioCand{id: "t" + itoa(i), aff: 0.5 + float64(i)*0.02}
+	}
+	th := farThreshold(cs)
+	if th < 0.4 {
+		t.Fatalf("threshold %.3f too low for a compressed 0.5..0.95 distribution", th)
+	}
+	far := 0
+	for _, c := range cs {
+		if c.aff < th {
+			far++
+		}
+	}
+	if far == 0 {
+		t.Error("expected the threshold to actually select some candidates as «far» on this distribution")
+	}
+	if far == len(cs) {
+		t.Error("threshold should not select ALL candidates as «far»")
+	}
+}
+
+func TestFarThresholdEmptyInput(t *testing.T) {
+	if th := farThreshold(nil); th != 0 {
+		t.Errorf("empty input should give threshold 0 (nobody qualifies as far), got %v", th)
+	}
+}
+```
+
+- [ ] **Step 2: Запустить — падает, функции нет**
+
+Run: `cd apps/server && go test ./internal/localdb/... -run TestFarThreshold -v`
+Expected: FAIL (`undefined: farThreshold`)
+
+- [ ] **Step 3: Реализовать — 20-й процентиль по aff среди кандидатов**
+
+В `apps/server/internal/localdb/radio.go`, рядом с `const radioSkipDays = 14`
+добавить:
+```go
+// farPercentile — какая доля кандидатов (снизу по aff) считается «далёкой
+// от вкуса» для антипузыря. 0.4 — фиксированное число не подходит: реальные
+// эмбеддинги (PANNs CNN14) дают косинусы, сжатые в узкий верхний диапазон
+// (проверено на soundflow-lab.db 13.09.2026 — 0% ниже 0.5), так что абсолютный
+// порог 0.4 никогда не срабатывал. Процентиль самокалибруется под любую
+// реальную шкалу и не протухает при смене модели отпечатков.
+const farPercentile = 0.20
+
+// farThreshold — порог aff, ниже которого кандидат идёт в антипузырь:
+// нижние farPercentile от текущего набора кандидатов. Пусто → 0 (никого
+// не выбрать, антипузырь молча выключен — как было раньше при пустых cs).
+func farThreshold(cs []radioCand) float64 {
+	if len(cs) == 0 {
+		return 0
+	}
+	affs := make([]float64, len(cs))
+	for i, c := range cs {
+		affs[i] = c.aff
+	}
+	sort.Float64s(affs)
+	idx := int(float64(len(affs)) * farPercentile)
+	if idx >= len(affs) {
+		idx = len(affs) - 1
+	}
+	return affs[idx]
+}
+```
+Заменить условие сборки `far` (было `if c.aff < 0.4`):
+```go
+	// антипузырь: отдельная очередь «далеко от вкуса», по близости к seed
+	threshold := farThreshold(cs)
+	var far []radioCand
+	for _, c := range cs {
+		if c.aff < threshold {
+			far = append(far, c)
+		}
+	}
+```
+(`"sort"` уже импортирован в файле.)
+
+- [ ] **Step 4: Прогнать новые тесты**
+
+Run: `cd apps/server && go test ./internal/localdb/... -run TestFarThreshold -v`
+Expected: PASS
+
+- [ ] **Step 5: Прогнать весь пакет — существующие тесты на антипузырь/дубли не должны сломаться**
+
+Run: `cd apps/server && go test ./... -v`
+Expected: PASS, включая `TestOrderRadioTasteAware` и `TestOrderRadioNoDuplicatesNoDrops` (Task 5) — на их синтетических данных (одна ось 0, одна ось 700, косинус ровно 0 или ~1) процентиль 20% должен по-прежнему выделять «far»-треки корректно, но проверить именно прогоном, не предполагать.
+
+- [ ] **Step 6: Проверить на реальной библиотеке — сколько теперь реально попадает в антипузырь**
+
+Run: `cd apps/server && SOUNDFLOW_LAB_DB="E:/soundflow-lab/soundflow.db" go test ./internal/localdb/... -run TestTasteHistogramReport -v`
+(Гистограмма не проверяет сам `farThreshold`, но даёт понять реальный разброс — если 20-й процентиль совпадёт с ожиданиями по гистограмме, порог адекватен. При сомнении — обсудить с Alex перед коммитом, не менять `farPercentile` без обсуждения.)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/server/internal/localdb/radio.go apps/server/internal/localdb/radio_test.go
+git commit -m "fix(server): антипузырь — процентильный порог вместо мёртвого фиксированного 0.4"
 ```
 
 ---
