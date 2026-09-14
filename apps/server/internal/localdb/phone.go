@@ -34,7 +34,7 @@ func (d *DB) NextLibraryBatch(excludeIDs []string, budgetBytes int64) ([]Catalog
 		var t CatalogTrack
 		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec,
 			&t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite,
-			&t.SizeBytes, &t.BitrateKbps, &t.MimeType); err != nil {
+			&t.SizeBytes, &t.BitrateKbps, &t.MimeType, &t.HasFP); err != nil {
 			return nil, 0, err
 		}
 		if ex[t.ID] {

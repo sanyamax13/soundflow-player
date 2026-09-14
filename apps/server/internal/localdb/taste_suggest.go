@@ -97,7 +97,7 @@ func (d *DB) SuggestDownloads(deviceID string, n int) ([]Suggestion, error) {
 		var t CatalogTrack
 		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec,
 			&t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite,
-			&t.SizeBytes, &t.BitrateKbps, &t.MimeType); err != nil {
+			&t.SizeBytes, &t.BitrateKbps, &t.MimeType, &t.HasFP); err != nil {
 			return nil, err
 		}
 		if have[t.ID] {

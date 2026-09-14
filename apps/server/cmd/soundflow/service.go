@@ -179,6 +179,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/info", s.hInfo)
 	r.Get("/api/qr.png", s.hQR)
 	r.Get("/api/catalog", s.hCatalog)
+	r.Get("/api/catalog/flat", s.hCatalogFlat)
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
 	r.Get("/api/devices", s.hDevices)
@@ -278,6 +279,21 @@ func (s *Service) hCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, tree)
+}
+
+// hCatalogFlat — весь каталог плоским списком (id/artist/title/album/cover/
+// has_fp у каждого трека) — для плиток «один альбом = одна плитка», как в
+// iTunes (Alex TG 14.09.2026). Дерево папок (`/api/catalog`) для этого не
+// годится: музыка часто лежит в одной плоской папке без под-папок по
+// альбомам, а плитки нужно строить по тегу «альбом» из самих файлов, не по
+// структуре каталога на диске.
+func (s *Service) hCatalogFlat(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.CatalogList(1_000_000)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, rows)
 }
 
 // hRoots — корневые папки каталога для «Настроек»: путь + сколько песен и

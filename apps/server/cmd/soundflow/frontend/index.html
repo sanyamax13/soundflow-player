@@ -236,7 +236,7 @@
     <div class="pill" id="status"><span class="dot"></span>Сервер работает</div>
     <div class="pill off" id="staleWarn" hidden title="Телефон долго не выходил на связь с этим компом — проверь, что он подключён и открыт"><span class="dot"></span><span id="staleWarnTxt"></span></div>
     <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
-    <div class="pill busy" id="jobPill" hidden title="Открыть вкладку «Задачи»"><span class="dot"></span><span id="jobPillTxt"></span></div>
+    <div class="pill busy" id="jobPill" hidden title="Открыть Каталог"><span class="dot"></span><span id="jobPillTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -247,7 +247,6 @@
       <a data-v="find">Найти и скачать</a>
       <a data-v="devices">Устройства</a>
       <a data-v="taste">Вкус</a>
-      <a data-v="jobs">Задачи</a>
       <a data-v="settings">Настройки</a>
       <div class="gap"></div>
       <div class="ver">SoundFlow.exe<br>v0.1 · sqlite</div>
@@ -332,12 +331,6 @@
         <div id="tasteBody"><div class="muted">загрузка…</div></div>
       </section>
 
-      <!-- Задачи -->
-      <section class="view" id="v-jobs">
-        <h2>Задачи</h2>
-        <div id="jobsList"><div class="muted">ничего не выполняется</div></div>
-      </section>
-
       <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
            из главной навигации в «Настройки» — Alex она нужна редко, для
            диагностики, а не для повседневной работы) -->
@@ -414,7 +407,7 @@ function friendlyError(raw){
 }
 
 /* ---------- навигация по разделам ---------- */
-const VIEWS = ["catalog","find","devices","taste","jobs","log","settings"];
+const VIEWS = ["catalog","find","devices","taste","log","settings"];
 function showView(name){
   name = (name||"").split("?")[0];               // #find?tq=... → find
   if(!VIEWS.includes(name)) name = "catalog";
@@ -429,7 +422,6 @@ function showView(name){
   if(name==="find") loadAcqLog();
   if(name==="devices") loadDevices();
   if(name==="taste") loadTaste();
-  if(name==="jobs") loadJobs();
   if(name==="log") loadLog();
   if(name==="settings") loadSettings();
 }
@@ -460,79 +452,96 @@ async function loadInfo(){
   }catch(e){ $("#status").className="pill off"; }
 }
 
-/* ---------- каталог (дерево) ---------- */
-let collapsed = new Set();   // свёрнутые корни
-let expanded = new Set();    // раскрытые вложенные папки
+/* ---------- каталог (плитки альбомов — iTunes, Alex TG 14.09.2026) ----------
+   Группируем по тегу «альбом» из самих файлов (не по папке на диске — музыка
+   часто лежит в одной плоской папке без под-папок, особенно то, что качается
+   по одной песне через «Найти и скачать»). У трека без тега альбом — своя
+   плитка-«сингл» (как в iTunes). */
 let list = [];               // плоский список видимых треков — очередь плеера
-let rootsInit = false;       // при первой загрузке корни свёрнуты
+let _catAlbums = [];         // все альбомы (плитки верхнего уровня)
+let _catOpenKey = null;      // ключ открытого альбома — null = сетка плиток
+
+function _wordTrack(n){ return plural(n,"трек","трека","треков"); }
+function _albumKey(t){ return (t.artist||"")+" "+(t.album || (""+t.id)); }
+
+function buildAlbums(tracks){
+  const map = new Map();
+  for(const t of tracks){
+    const key = _albumKey(t);
+    let g = map.get(key);
+    if(!g){ g = {key, artist: t.artist||"", album: t.album || t.title || "Без названия", tracks: []}; map.set(key, g); }
+    g.tracks.push(t);
+  }
+  const out = [...map.values()];
+  out.sort((a,b) => (a.artist+a.album).toLowerCase().localeCompare((b.artist+b.album).toLowerCase(), "ru"));
+  return out;
+}
 
 async function loadCatalog(){
   try{
-    const roots = await jget("/api/catalog");
+    const tracks = await jget("/api/catalog/flat");
     const box = $("#tree");
-    if(!roots.length){
+    if(!tracks.length){
       box.innerHTML =
         '<div class="empty"><div class="big">Каталог пуст</div>'+
         '<div class="sub">Укажи папку, где лежит твоя музыка — программа прочитает теги и составит каталог.</div>'+
         '<button class="btn primary" id="emptyPick">Выбрать папку с музыкой</button></div>';
       const b = $("#emptyPick"); if(b) b.onclick = pickAndScan;
-      list=[]; return;
+      list = []; _catAlbums = []; _catOpenKey = null;
+      $("#sum").textContent = "";
+      return;
     }
-    if(!rootsInit){ roots.forEach(r => collapsed.add(r.path)); rootsInit = true; }
-    box.innerHTML = "";
-    list = [];
-    roots.forEach(r => renderNode(box, r, 0));
-    markPlaying();
+    _catAlbums = buildAlbums(tracks);
+    const withFp = tracks.filter(t=>t.has_fp).length;
+    $("#sum").innerHTML = `<b>${nfmt(tracks.length)}</b> ${_wordTrack(tracks.length)} · <b>${nfmt(_catAlbums.length)}</b> ${plural(_catAlbums.length,"альбом","альбома","альбомов")} · `+
+      `<span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(withFp)}</b></span>`;
+    if(_catOpenKey && !_catAlbums.find(a=>a.key===_catOpenKey)) _catOpenKey = null;
+    renderCatalogBody();
   }catch(e){ $("#tree").innerHTML = '<div class="muted">ошибка: '+esc(e.message)+'</div>'; }
 }
-function fpBadge(t,f){
-  if(!t) return "";
-  if(f>=t) return '<span class="fp full" title="У всех треков посчитан звуковой отпечаток — работает умное радио">✓</span>';
-  if(f<=0) return '<span class="fp none" title="Звуковой отпечаток ещё не посчитан ни у одного трека">—</span>';
-  return `<span class="fp part" title="Отпечаток посчитан у ${f} из ${t} треков">${f}/${t}</span>`;
-}
-function renderNode(box, n, depth){
-  const key = n.path;
-  const isRoot = depth===0;
-  const open = isRoot ? !collapsed.has(key) : expanded.has(key);
-  const hasKids = (n.children&&n.children.length) || (n.items&&n.items.length);
-  const row = document.createElement("div");
-  row.className = "row " + (n.kind||"folder");
-  row.style.paddingLeft = (10 + depth*16) + "px";
-  const ico = n.kind==="album" ? "💿" : "📁";
-  row.innerHTML =
-    `<span class="tw">${hasKids ? (open?"▾":"▸") : ""}</span>`+
-    `<span class="ico">${ico}</span>`+
-    `<span class="nm">${esc(n.name)}</span><span class="sp"></span>`+
-    `<span class="meta">${nfmt(n.tracks)} трек.</span>&nbsp;&nbsp;${fpBadge(n.tracks,n.with_fp)}`;
-  if(hasKids){
-    const toggle = () => {
-      if(isRoot){ collapsed.has(key)?collapsed.delete(key):collapsed.add(key); }
-      else { expanded.has(key)?expanded.delete(key):expanded.add(key); }
-      loadCatalog();
-    };
-    row.querySelector(".tw").onclick = toggle;
-    row.style.cursor = "pointer";
-    row.onclick = e => { if(!e.target.classList.contains("tw")) toggle(); };
+
+function renderCatalogBody(){
+  const box = $("#tree");
+  const a = _catOpenKey ? _catAlbums.find(x=>x.key===_catOpenKey) : null;
+  if(a){
+    const tracks = a.tracks.slice().sort((x,y)=>(x.title||"").toLowerCase().localeCompare((y.title||"").toLowerCase(),"ru"));
+    list = tracks;
+    box.innerHTML =
+      `<div class="bar" style="margin:0 0 10px"><button class="btn" onclick="_catBackToTiles()">‹ все альбомы</button>`+
+        `<b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.album)} — ${esc(a.artist)}</b>`+
+        `<span class="sum" style="margin:0">${tracks.length} ${_wordTrack(tracks.length)}</span></div>`+
+      `<div class="dsongs">`+ tracks.map((t,i)=>_catSongRow(t,i)).join("") +`</div>`;
+    markPlaying();
+    return;
   }
-  box.appendChild(row);
-  if(!open) return;
-  (n.children||[]).forEach(c => renderNode(box, c, depth+1));
-  (n.items||[]).forEach(it => {
-    const i = list.length;
-    list.push(it);
-    const tr = document.createElement("div");
-    tr.className = "row track";
-    tr.dataset.i = i;
-    tr.style.paddingLeft = (10 + (depth+1)*16 + 18) + "px";
-    tr.innerHTML =
-      `<span class="ti">${esc(it.title)}</span>`+
-      `<span class="meta">&nbsp;·&nbsp;${esc(it.artist)}</span><span class="sp"></span>`+
-      `<span class="meta">${fmtDur(it.duration_sec)}${it.bitrate_kbps?" · "+it.bitrate_kbps:""}</span>`+
-      `&nbsp;&nbsp;<span class="${it.has_fp?'yes':'no'}" title="${it.has_fp?'Звук распознан — участвует в умном радио и поиске похожих':'Звук ещё не распознан'}">${it.has_fp?'✓':'—'}</span>`;
-    tr.onclick = () => playAt(i);
-    box.appendChild(tr);
-  });
+  list = [];
+  box.innerHTML = `<div class="dtiles">`+ _catAlbums.map((g,i)=>{
+    const first = g.tracks[0]||{};
+    return `<button class="dtile" onclick="_catOpenAlbum(${i})">`+
+      `<span class="dart" style="background:${_devColor(g.artist)}">`+
+        `<span class="dini">${esc(_devInitials(g.artist))}</span>`+
+        (first.id ? `<img src="/api/cover/${encodeURIComponent(first.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
+      `</span>`+
+      `<span class="dcap"><span class="dnm">${esc(g.album)}</span>`+
+      `<span class="dsub">${esc(g.artist)} · ${g.tracks.length} ${_wordTrack(g.tracks.length)}</span></span>`+
+      `</button>`;
+  }).join("") + `</div>`;
+}
+function _catOpenAlbum(i){ const a = _catAlbums[i]; _catOpenKey = a ? a.key : null; renderCatalogBody(); }
+function _catBackToTiles(){ _catOpenKey = null; renderCatalogBody(); }
+
+function _catSongRow(t,i){
+  const on = cur === i;
+  return `<div class="drow${on?" playing":""}" data-i="${i}" onclick="playAt(${i})">`+
+    `<span class="dcv" style="background:${_devColor(t.artist||'')}">`+
+      `<span>${esc(_devInitials(t.artist||''))}</span>`+
+      `<img src="/api/cover/${encodeURIComponent(t.id)}" alt="" loading="lazy" onerror="this.remove()">`+
+      `<span class="pl">${on && !au.paused ? "⏸" : "▶"}</span>`+
+    `</span><span class="dm"><span class="dn">${esc(t.title||t.id)}</span>`+
+    `<span class="da">${esc(t.artist||"")}</span></span>`+
+    `<span class="ds">${fmtDur(t.duration_sec)}${t.bitrate_kbps?" · "+t.bitrate_kbps:""}</span>`+
+    `<span class="${t.has_fp?'yes':'no'}" style="margin-left:8px" title="${t.has_fp?'Звук распознан — участвует в умном радио и поиске похожих':'Звук ещё не распознан'}">${t.has_fp?'✓':'—'}</span>`+
+    `</div>`;
 }
 
 /* ---------- поиск ---------- */
@@ -542,18 +551,9 @@ async function doSearch(){
   const s = $("#q").value.trim();
   if(!s){ loadCatalog(); return; }
   const rows = await jget("/api/search?q="+encodeURIComponent(s));
+  list = rows;
   const box = $("#tree");
-  box.innerHTML = rows.length ? "" : '<div class="muted">ничего не найдено</div>';
-  list = [];
-  rows.forEach(t => {
-    const i = list.length; list.push(t);
-    const tr = document.createElement("div");
-    tr.className = "row track"; tr.style.paddingLeft = "14px"; tr.dataset.i = i;
-    tr.innerHTML = `<span class="ti">${esc(t.title)}</span><span class="meta">&nbsp;·&nbsp;${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span>`+
-      `<span class="sp"></span><span class="meta">${fmtDur(t.duration_sec)}</span>`;
-    tr.onclick = () => playAt(i);
-    box.appendChild(tr);
-  });
+  box.innerHTML = rows.length ? `<div class="dsongs">`+rows.map((t,i)=>_catSongRow(t,i)).join("")+`</div>` : '<div class="muted">ничего не найдено</div>';
   markPlaying();
 }
 
@@ -582,13 +582,18 @@ function playAt(i){
 function playNext(){ if(cur+1 < list.length) playAt(cur+1); }
 function playPrev(){ if(au.currentTime > 3){ au.currentTime = 0; return; } if(cur > 0) playAt(cur-1); }
 function markPlaying(){
-  document.querySelectorAll(".row.track").forEach(r => r.classList.toggle("playing", +r.dataset.i === cur));
+  document.querySelectorAll("#tree .drow").forEach(r => {
+    const on = +r.dataset.i === cur;
+    r.classList.toggle("playing", on);
+    const pl = r.querySelector(".pl");
+    if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";
+  });
 }
 $("#pPlay").onclick = () => { if(au.src){ au.paused ? au.play() : au.pause(); } else playNext(); };
 $("#pNext").onclick = playNext;
 $("#pPrev").onclick = playPrev;
-au.addEventListener("play",  () => $("#pPlay").textContent = "⏸");
-au.addEventListener("pause", () => $("#pPlay").textContent = "▶");
+au.addEventListener("play",  () => { $("#pPlay").textContent = "⏸"; markPlaying(); });
+au.addEventListener("pause", () => { $("#pPlay").textContent = "▶"; markPlaying(); });
 au.addEventListener("ended", playNext);
 au.addEventListener("loadedmetadata", () => $("#pDur").textContent = fmtDur(au.duration));
 au.addEventListener("timeupdate", () => {
@@ -1081,12 +1086,6 @@ function updateJobPill(jobs){
 async function loadJobs(){
   try{
     const jobs = await jget("/api/jobs");
-    $("#jobsList").innerHTML = jobs.length ? jobs.map(j => {
-      const pct = jobPct(j);
-      return `<div class="job"><div class="lbl"><span>${esc(j.label)}</span>`+
-        `<span>${j.running ? (j.total ? j.done+" / "+j.total : "идёт…") : (j.note||"готово")}</span></div>`+
-        `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
-    }).join("") : '<div class="muted">ничего не выполняется</div>';
     updateJobPill(jobs);
     const running = jobs.some(j=>j.running);
     $("#btnReindex").disabled = running || $("#btnReindex").disabled;
@@ -1096,7 +1095,7 @@ async function loadJobs(){
     $("#btnStop").hidden = !running;
   }catch(e){}
 }
-$("#jobPill").onclick = () => showView("jobs");
+$("#jobPill").onclick = () => showView("catalog");
 
 /* ---------- Журнал ---------- */
 async function loadLog(){
@@ -1220,13 +1219,13 @@ async function loadSettings(){
   });
   $("#setAdd") && ($("#setAdd").onclick = pickAndScan);
   $("#setReindex") && ($("#setReindex").onclick = () =>
-    jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Пересчёт похожести: "+friendlyError(e))));
+    jpost("/api/reindex").then(()=>showView("catalog")).catch(e => alert("Пересчёт похожести: "+friendlyError(e))));
   $("#setReveal") && ($("#setReveal").onclick = () => {
     try{ window.go.main.Service.RevealPath(d.db_path||""); }catch(e){}
   });
   document.querySelectorAll("[data-rescan]").forEach(b => b.onclick = () => {
     fetch("/api/scan?dir="+encodeURIComponent(b.dataset.rescan),{method:"POST"})
-      .then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); showView("jobs"); })
+      .then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); showView("catalog"); })
       .catch(e => alert("Не запустить скан: "+friendlyError(e)));
   });
 }
@@ -1240,14 +1239,14 @@ async function pickAndScan(){
   if(!dir) return;
   try{
     await fetch("/api/scan?dir="+encodeURIComponent(dir),{method:"POST"}).then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); });
-    showView("jobs");
+    showView("catalog");
   }catch(e){ alert("Не запустить скан: "+friendlyError(e)); }
 }
 
 /* ---------- кнопки каталога ---------- */
 $("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
 $("#btnPick").onclick = pickAndScan;
-$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("jobs")).catch(e => alert("Пересчёт похожести: "+friendlyError(e)));
+$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("catalog")).catch(e => alert("Пересчёт похожести: "+friendlyError(e)));
 $("#fGo").onclick = runAcquire;
 $("#fTitle").addEventListener("keydown", e => { if(e.key==="Enter") runAcquire(); });
 document.querySelectorAll(".seg").forEach(b => b.onclick = () => setFindMode(b.dataset.fm));

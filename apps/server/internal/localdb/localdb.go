@@ -98,6 +98,7 @@ type CatalogTrack struct {
 	SizeBytes   int64  `json:"size_bytes"`
 	BitrateKbps int    `json:"bitrate_kbps"`
 	MimeType    string `json:"mime_type"`
+	HasFP       bool   `json:"has_fp"`
 }
 
 // то же, что const catalogSelect в internal/db/catalog.go, но на SQLite-диалекте
@@ -108,7 +109,8 @@ const catalogSelect = `
 	       COALESCE(lm.kind = 'favorite', 0) AS favorite,
 	       COALESCE(tf.size_bytes, 0) AS size_bytes,
 	       COALESCE(tf.bitrate_kbps, 0),
-	       COALESCE(tf.mime_type, '')
+	       COALESCE(tf.mime_type, ''),
+	       (t.feature_vector IS NOT NULL) AS has_fp
 	FROM tracks t
 	LEFT JOIN legacy_marks lm ON lm.normalized_key = t.normalized_key
 	LEFT JOIN track_files tf ON tf.track_id = t.id AND tf.rejected = 0
@@ -121,7 +123,7 @@ func (d *DB) scanCatalog(rows *sql.Rows) ([]CatalogTrack, error) {
 		var t CatalogTrack
 		if err := rows.Scan(&t.ID, &t.Artist, &t.Title, &t.Album, &t.DurationSec,
 			&t.ReleaseKind, &t.Explicit, &t.CoverURL, &t.Favorite,
-			&t.SizeBytes, &t.BitrateKbps, &t.MimeType); err != nil {
+			&t.SizeBytes, &t.BitrateKbps, &t.MimeType, &t.HasFP); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
