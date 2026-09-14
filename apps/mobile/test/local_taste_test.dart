@@ -43,7 +43,10 @@ void main() {
   group('orderOffline', () {
     test('ранжирует по похожести на seed + affinity к long_term центру', () {
       final seed = _vec([1, 0, 0, 0]);
-      final close = _vec([0.9, 0.1, 0, 0]);
+      // ~20°, не ~6° («[0.9,0.1]» давал cosine≈0.994) — после калибровки
+      // duplicateSimThreshold (0.98, Alex TG 14.09.2026) такой угол ушёл бы
+      // в хвост как «тот же трек».
+      final close = _vec([0.94, 0.34, 0, 0]);
       final far = _vec([0, 0, 0, 1]);
       final result = orderOffline(
         seedVec: seed,
@@ -57,7 +60,7 @@ void main() {
 
     test('пустые центры вкуса — не падает, сортирует по звуку', () {
       final seed = _vec([1, 0]);
-      final close = _vec([0.9, 0.1]);
+      final close = _vec([0.94, 0.34]); // ~20°, см. комментарий выше
       final far = _vec([0, 1]);
       final result = orderOffline(
         seedVec: seed,
@@ -88,7 +91,7 @@ void main() {
       // разными кредитами артиста играл дважды подряд как «похожее».
       final seed = _vec([1, 0, 0]);
       final duplicate = _vec([1, 0, 0]); // бит-в-бит тот же вектор
-      final realSimilar = _vec([0.9, 0.1, 0]);
+      final realSimilar = _vec([0.94, 0.34, 0]); // ~20°, реально похож, но не дубликат
       final result = orderOffline(
         seedVec: seed,
         candidateVecs: {'duplicate': duplicate, 'real_similar': realSimilar},
@@ -101,10 +104,16 @@ void main() {
     });
 
     test('не больше 2 подряд одного исполнителя', () {
+      // Углы 15-45°, не доли градуса — см. комментарий выше про
+      // duplicateSimThreshold (0.98): a1=[1,0] был бы бит-в-бит дубликатом
+      // seed и ушёл бы в хвост, ломая саму суть проверки (нужны 3 РАЗНЫХ
+      // похожих трека одного артиста подряд).
       final seed = _vec([1, 0]);
       final vecs = {
-        'a1': _vec([1, 0]), 'a2': _vec([0.99, 0.01]), 'a3': _vec([0.98, 0.02]),
-        'b1': _vec([0.5, 0.5]),
+        'a1': _vec([0.966, 0.259]), // 15°
+        'a2': _vec([0.951, 0.309]), // 18°
+        'a3': _vec([0.934, 0.358]), // 21°
+        'b1': _vec([0.5, 0.5]), // 45°
       };
       final artists = {'a1': 'A', 'a2': 'A', 'a3': 'A', 'b1': 'B'};
       final result = orderOffline(
@@ -132,7 +141,7 @@ void main() {
   group('orderOfflineFromBlobs', () {
     test('разбирает BLOB и ранжирует так же, как orderOffline на готовых векторах', () {
       final seed = _vec([1, 0]);
-      final close = <double>[0.9, 0.1];
+      final close = <double>[0.94, 0.34]; // ~20°, см. комментарий у orderOffline выше
       final far = <double>[0, 1];
       final byBlobs = orderOfflineFromBlobs(
         seedVec: seed,
@@ -167,7 +176,7 @@ void main() {
       final result = orderOfflineFromBlobs(
         seedVec: _vec([1, 0]),
         candidateBlobs: {
-          'good1': _vecBytes([0.9, 0.1]),
+          'good1': _vecBytes([0.94, 0.34]), // ~20°, см. комментарий у orderOffline выше
           'good2': _vecBytes([0.8, 0.2]),
           'bad': Uint8List.fromList([1, 2, 3]), // длина не кратна 4
         },

@@ -84,9 +84,14 @@ void main() {
     await db.upsertDownloaded(DownloadedTrack(id: 'a', title: 'A', artist: 'X', path: '/tmp/a', bytes: 1, addedAt: 1));
     await db.upsertDownloaded(DownloadedTrack(id: 'b', title: 'B', artist: 'Y', path: '/tmp/b', bytes: 1, addedAt: 2));
     await db.upsertDownloaded(DownloadedTrack(id: 'c', title: 'C', artist: 'Z', path: '/tmp/c', bytes: 1, addedAt: 3));
+    // Углы 0°/30°/60° друг от друга — не доли градуса, как раньше
+    // ([0.9,0.1] к [1,0] давал cosine≈0.994): после калибровки
+    // duplicateSimThreshold (0.98, Alex TG 14.09.2026) такая близость
+    // считалась бы «тот же трек», а тесту нужны три РАЗНЫХ похожих трека,
+    // независимо от того, какой из них окажется «сейчас играет».
     await db.setTrackVector('a', _vecBytes([1, 0]));
-    await db.setTrackVector('b', _vecBytes([0.9, 0.1]));
-    await db.setTrackVector('c', _vecBytes([0.8, 0.2]));
+    await db.setTrackVector('b', _vecBytes([0.866, 0.5]));
+    await db.setTrackVector('c', _vecBytes([0.5, 0.866]));
     final player = _FakePlayerController();
 
     await tester.pumpWidget(await _appWith(_NetworkDownApi(), db, player: player));
