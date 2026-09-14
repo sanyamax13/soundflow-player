@@ -329,7 +329,19 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     final seedVec = seedBytes == null ? null : bytesToVec(seedBytes);
     if (seedVec == null) return null;
 
-    final others = [for (final t in all) if (t.id != now.id) t];
+    final allOthers = [for (final t in all) if (t.id != now.id) t];
+    // Изолят убирает подвисание ИНТЕРФЕЙСА, но не уменьшает саму РАБОТУ —
+    // на тысячах скачанных песен даже в фоне разбор BLOB'ов + косинусы
+    // занимали ~20-25 сек, и передача стольких BLOB'ов в изолят (там же
+    // копируются целиком) сама по себе не бесплатна (Alex TG 14.09.2026:
+    // «между нажатием и надписью секунд 20-25, печенька подзаикивается»).
+    // Радио не обязано перебрать АБСОЛЮТНО всё скачанное, чтобы набрать
+    // достаточно похожего — берём случайный кусок заранее, до тяжёлого
+    // счёта, а не после (после — уже поздно, вся работа уже сделана).
+    const maxOfflineCandidates = 500;
+    final others = allOthers.length > maxOfflineCandidates
+        ? ([...allOthers]..shuffle()).sublist(0, maxOfflineCandidates)
+        : allOthers;
     final rawVecs = await db.trackVectorsFor([for (final t in others) t.id]);
     if (rawVecs.length < 2) return null;
 
@@ -337,19 +349,18 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 
     final byId = {for (final t in others) t.id: t};
     final candidateArtists = {for (final t in others) t.id: t.artist};
-    // Тысячи кандидатов × косинус к seed и к каждому центру вкуса — тяжёлый
+    // Косинус к seed и к каждому центру вкуса на каждого кандидата — тяжёлый
     // счёт, синхронный сам по себе. Раньше выполнялся прямо тут, на UI-
-    // изоляте — интерфейс замирал на несколько секунд, кнопка «не отвечала»,
-    // звук заикался (Alex TG 14.09.2026: «тормозит... кнопка радио отмирает»
-    // — оказалось, дело не в сервере, он был не дома, а именно в этом
-    // расчёте). Спека это и требовала с самого начала (§4.6: «в изоляте, не
-    // на UI-потоке») — здесь этого не было. `offlineComputeRunner` — по
-    // умолчанию `Isolate.run` (копирует Uint8List/Map в отдельный изолят,
-    // считает там, интерфейс не блокирует); тесты подменяют его синхронным
-    // вызовом (см. local_taste.dart). Разбор BLOB→вектор — тоже ВНУТРИ
-    // изолята (`orderOfflineFromBlobs`, не `orderOffline` напрямую): сам
-    // разбор тысяч BLOB'ов не легче ранжирования, а раньше оставался
-    // снаружи (Alex TG 14.09.2026: «обновил и всё равно задержка есть»).
+    // изоляте — интерфейс замирал, кнопка «не отвечала», звук заикался
+    // (Alex TG 14.09.2026: «тормозит... кнопка радио отмирает» — оказалось,
+    // дело не в сервере, он был не дома, а именно в этом расчёте). Спека
+    // это и требовала с самого начала (§4.6: «в изоляте, не на UI-потоке»)
+    // — здесь этого не было. `offlineComputeRunner` — по умолчанию
+    // `Isolate.run` (копирует Uint8List/Map в отдельный изолят, считает
+    // там, интерфейс не блокирует); тесты подменяют его синхронным вызовом
+    // (см. local_taste.dart). Разбор BLOB→вектор — тоже ВНУТРИ изолята
+    // (`orderOfflineFromBlobs`, не `orderOffline` напрямую): сам разбор
+    // BLOB'ов не легче ранжирования, а раньше оставался снаружи.
     final orderedIds = await offlineComputeRunner(() => orderOfflineFromBlobs(
           seedVec: seedVec,
           candidateBlobs: rawVecs,
