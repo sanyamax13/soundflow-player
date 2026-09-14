@@ -60,6 +60,41 @@ func (d *DB) ImportBlocked(items []BlockedMark) (int, error) {
 	return n, nil
 }
 
+// IsBlocked — стоит ли на artist+title чёрная метка (legacy_marks kind =
+// 'blocked'). Для фильтра кандидатов «Волны» (Alex TG 14.09.2026) — не
+// предлагать то, что уже явно не понравилось (старый чёрный список +
+// дизлайки Яндекса, см. ImportBlocked).
+func (d *DB) IsBlocked(normalizedKey string) (bool, error) {
+	var kind string
+	err := d.sql.QueryRow(`SELECT kind FROM legacy_marks WHERE normalized_key = ?`, normalizedKey).Scan(&kind)
+	if err != nil {
+		return false, nil //nolint:nilerr // нет строки — не заблокирован, не ошибка
+	}
+	return kind == "blocked", nil
+}
+
+// ArtistFeedbackScores — сумма value из feedback_event по артисту (лайк +1,
+// дизлайк/скип-сразу -0.7 и т.д., см. internal/localdb/taste.go). Тот же
+// запрос, что в taste_suggest.go SuggestDownloads — вынесен сюда отдельным
+// методом, чтобы «Волна» могла им воспользоваться, не трогая проверенный код.
+func (d *DB) ArtistFeedbackScores() (map[string]float64, error) {
+	out := map[string]float64{}
+	rows, err := d.sql.Query(`SELECT artist, SUM(value) FROM feedback_event WHERE artist <> '' GROUP BY artist`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a string
+		var s float64
+		if err := rows.Scan(&a, &s); err != nil {
+			return nil, err
+		}
+		out[a] = s
+	}
+	return out, rows.Err()
+}
+
 // TracksCreatedSince — треки с created_at позже since (RFC3339, UTC).
 func (d *DB) TracksCreatedSince(since string) ([]NewSinceItem, error) {
 	rows, err := d.sql.Query(`SELECT id, artist, title, album FROM tracks

@@ -206,6 +206,33 @@ type YandexDislikeItem struct {
 	Title  string `json:"title"`
 }
 
+// YandexWaveItem — сырой кандидат «Волны» (артист/жанр/похожие артисты —
+// НЕ личная рекомендация Яндекса, см. cmd/soundflow/yandex_wave.go).
+type YandexWaveItem struct {
+	YandexID    string `json:"yandex_id"`
+	Artist      string `json:"artist"`
+	Title       string `json:"title"`
+	Album       string `json:"album"`
+	CoverURL    string `json:"cover_url"`
+	DurationSec int    `json:"duration_sec"`
+	Genre       string `json:"genre"`
+	Source      string `json:"source"` // artist | genre | similar_artist
+}
+
+func (c *Client) YandexWaveCandidates(ctx context.Context) ([]YandexWaveItem, error) {
+	var out struct {
+		Items []YandexWaveItem `json:"items"`
+		Error string           `json:"error"`
+	}
+	if err := c.get(ctx, "/yandex/wave-candidates", &out); err != nil {
+		return nil, err
+	}
+	if out.Error != "" {
+		return nil, fmt.Errorf("sidecar yandex/wave-candidates: %s", out.Error)
+	}
+	return out.Items, nil
+}
+
 func (c *Client) YandexDislikes(ctx context.Context) ([]YandexDislikeItem, error) {
 	var out struct {
 		Items []YandexDislikeItem `json:"items"`

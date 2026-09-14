@@ -344,6 +344,19 @@
         </div>
         <div class="hint" id="discHint">загрузка…</div>
         <div class="dsongs" id="discBody"></div>
+
+        <!-- Волна: шаг 2, без личной рекомендации Яндекса (Alex TG
+             14.09.2026 — «алгоритм их изучи, что бы мы сделали похожее для
+             себя»). Кандидаты — ещё треки у лайкнутых артистов, похожие
+             жанры, похожие артисты; отбирает и ранжирует свой вкус-движок
+             (лайки/скипы/дизлайки), не Яндекс. Раз в день, до 100 штук. -->
+        <div class="bar" style="margin-top:24px">
+          <h2 style="margin:0;flex:1">Волна на сегодня — подборка по твоему вкусу</h2>
+          <button class="btn" id="waveRefresh">Обновить</button>
+          <button class="btn primary" id="waveDlAll">Скачать выбранные</button>
+        </div>
+        <div class="hint" id="waveHint">загрузка…</div>
+        <div class="dsongs" id="waveBody"></div>
       </section>
 
       <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
@@ -439,7 +452,7 @@ function showView(name){
   if(name==="taste") loadTaste();
   if(name==="log") loadLog();
   if(name==="settings") loadSettings();
-  if(name==="discover") loadDiscover();
+  if(name==="discover"){ loadDiscover(); loadWave(); }
 }
 document.querySelectorAll(".nav a").forEach(a => a.onclick = () => showView(a.dataset.v));
 window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
@@ -1290,6 +1303,65 @@ $("#discDlAll").onclick = async () => {
   $("#discDlAll").disabled = true;
   for(const i of list){ await _discOne(i); }
   $("#discDlAll").disabled = false;
+};
+
+/* ---------- Волна: шаг 2, до 100 кандидатов в день ----------
+   Источник — /api/yandex/wave (сервер сам отсеял то, что уже в каталоге,
+   и то, что в чёрном списке, и отранжировал по вкусу — тут только показ
+   и закачка, тот же /api/acquire, что и в блоке лайков выше). */
+let _waveItems = [];
+
+async function loadWave(){
+  const hint = $("#waveHint"), box = $("#waveBody");
+  hint.textContent = "подбираю песни по твоему вкусу — это может занять минуту…";
+  box.innerHTML = "";
+  try{
+    _waveItems = await jget("/api/yandex/wave");
+  }catch(e){
+    hint.textContent = "Не вышло собрать волну: "+friendlyError(e);
+    return;
+  }
+  if(!_waveItems.length){
+    hint.textContent = "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.";
+    box.innerHTML = "";
+    return;
+  }
+  hint.innerHTML = `Сегодня подобрано — <b>${nfmt(_waveItems.length)}</b> песен. `+
+    `Отметь галочками, что хочешь, или сразу «Скачать выбранные».`;
+  box.innerHTML = _waveItems.map((t,i) => _waveRow(t,i)).join("");
+}
+
+function _waveRow(t,i){
+  return `<div class="drow" data-i="${i}">`+
+    `<span class="dcv" style="background:${_devColor(t.artist)}">`+
+      (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : `<span>${esc(_devInitials(t.artist))}</span>`)+
+    `</span>`+
+    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span></span>`+
+    (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
+    `<input type="checkbox" class="wavePick" data-i="${i}" style="margin:0 6px">`+
+    `<button class="dx" title="скачать эту песню" onclick="_waveOne(${i})">⬇</button>`+
+    `</div>`;
+}
+
+async function _waveOne(i){
+  const t = _waveItems[i];
+  if(!t) return;
+  const row = document.querySelector('#waveBody .drow[data-i="'+i+'"]');
+  if(row) row.classList.add("busy");
+  try{
+    await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
+  }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
+}
+
+$("#waveRefresh").onclick = loadWave;
+$("#waveDlAll").onclick = async () => {
+  const picked = [...document.querySelectorAll(".wavePick:checked")].map(el => Number(el.dataset.i));
+  const list = picked.length ? picked : _waveItems.map((t,i)=>i);
+  if(!list.length){ alert("Список пуст."); return; }
+  if(!picked.length && !confirm(`Скачать все ${list.length} песен волны?`)) return;
+  $("#waveDlAll").disabled = true;
+  for(const i of list){ await _waveOne(i); }
+  $("#waveDlAll").disabled = false;
 };
 
 async function loadSettings(){
