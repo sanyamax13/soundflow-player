@@ -319,7 +319,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   }
 
   /// Строка одиночной песни в списке исполнителей: обложка, «Название —
-  /// Исполнитель», сердечко и меню. Тап — играть её.
+  /// Исполнитель», сердечко и меню. Тап — играть её и продолжить остальными
+  /// песнями списка (Alex TG 14.09.2026: «нажимаю на первую, играет, если
+  /// следующая — не переходит, начинается заново» — раньше тут ставилась
+  /// очередь из ОДНОЙ этой песни, «следующая» упиралась в пустоту).
   Widget _soloTrackRow(DownloadedTrack t) => ListTile(
         contentPadding: const EdgeInsets.only(left: 16, right: 4),
         leading: CoverThumb(
@@ -333,7 +336,11 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Afisha.inkDim, fontSize: 12)),
-        onTap: () => _playList([t], 0),
+        onTap: () {
+          final items = _items ?? const <DownloadedTrack>[];
+          final i = items.indexOf(t);
+          _playList(items, i < 0 ? 0 : i);
+        },
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
