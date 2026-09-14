@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
-import '../../core/config.dart';
 import '../../core/crash_log.dart';
 import '../../core/theme.dart';
 import '../../core/update_check.dart';
@@ -11,7 +10,7 @@ import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
 import '../removed/removed_screen.dart';
-import 'server_url_screen.dart';
+import '../settings/settings_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
 /// заглушки, приедут своими шагами.
@@ -50,14 +49,13 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           _Row(
-            icon: Icons.lan_outlined,
-            title: 'Адрес сервера',
-            subtitle: apiBase.replaceFirst('http://', ''),
+            icon: Icons.settings_outlined,
+            title: 'Настройки',
+            subtitle: 'адрес сервера, журнал',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
           ),
-          const _Row(icon: Icons.settings_outlined, title: 'Настройки', subtitle: 'скоро'),
           const _UpdateRow(),
         ],
       ),

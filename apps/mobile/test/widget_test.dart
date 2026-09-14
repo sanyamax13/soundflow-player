@@ -149,4 +149,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Пока ничего не убрано'), findsOneWidget);
   });
+
+  // «Адрес сервера» переехал из Профиля в Настройки (Alex TG 14.09.2026: «в
+  // профиле только статистику, остальное — в настройки»); журнал живёт там же.
+  testWidgets('в Профиле «Настройки» ведут на адрес сервера и журнал', (tester) async {
+    await tester.pumpWidget(await _app());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Профиль'));
+    await tester.pumpAndSettle();
+    expect(find.text('Настройки'), findsOneWidget);
+    expect(find.text('Адрес сервера'), findsNothing);
+
+    await tester.tap(find.text('Настройки'));
+    await tester.pumpAndSettle();
+    expect(find.text('Адрес сервера'), findsOneWidget);
+    expect(find.text('Журнал'), findsOneWidget);
+  });
 }

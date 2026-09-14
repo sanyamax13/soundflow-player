@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
+import '../../core/app_log.dart';
 import '../../core/config.dart';
 import '../../core/local_taste.dart';
 import '../../core/net_hint.dart';
@@ -267,11 +268,18 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       for (final t in all)
         if (t.id != now.id) t.id,
     ];
+    // Реальное время НА ЭТОМ ТЕЛЕФОНЕ от нажатия до результата — Alex TG
+    // 14.09.2026 отдельно поправил, что замеры на компьютере (SSD/память
+    // сильно быстрее) не показывают его реальную задержку: «должен как-то
+    // на моём телефоне... а не с компьютера». AppLog.event пишет
+    // DateTime.now() на телефоне пользователя, не на деве.
+    final sw = Stopwatch()..start();
     try {
       final res = await ref
           .read(apiProvider)
           .streamOrder(seedId: now.id, candidateIds: ids);
       if (!res.reordered) {
+        unawaited(AppLog.event('radio_no_fingerprint', {'elapsed_ms': sw.elapsedMilliseconds}));
         _toast('У этой песни нет звукового отпечатка — похожее не подобрать');
         return;
       }
@@ -288,6 +296,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             ),
       ];
       if (tail.isEmpty || !mounted) return;
+      unawaited(AppLog.event('radio_server_ok', {
+        'elapsed_ms': sw.elapsedMilliseconds,
+        'candidates': ids.length,
+        'picked': tail.length,
+      }));
       await _p.setSimilarTail(tail);
       _toast('Дальше — похожее по звуку');
     } on DioException catch (_) {
@@ -295,14 +308,20 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       // фолбэк по уже скачанным трекам; reordered:false (ветка выше) сюда
       // не попадает — источник отпечатка у seed один и тот же, что для
       // сервера, что локально, так что фолбэк там всё равно не поможет.
-      final tail = await _offlineRadioFallback(now, all);
+      final tail = await _offlineRadioFallback(now, all, sw);
       if (tail != null && mounted) {
+        unawaited(AppLog.event('radio_offline_ok', {
+          'elapsed_ms': sw.elapsedMilliseconds,
+          'picked': tail.length,
+        }));
         await _p.setSimilarTail(tail);
         _toast('Сервера нет — собрал похожее из уже скачанного');
         return;
       }
+      unawaited(AppLog.event('radio_offline_failed', {'elapsed_ms': sw.elapsedMilliseconds}));
       _radioUnreachable();
     } catch (_) {
+      unawaited(AppLog.event('radio_error', {'elapsed_ms': sw.elapsedMilliseconds}));
       _radioUnreachable();
     }
   }
@@ -323,7 +342,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   /// «радио не собралось» тогда и должен показаться — например, на очень
   /// старых скачиваниях до бэкфилла).
   Future<List<NowPlaying>?> _offlineRadioFallback(
-      NowPlaying now, List<DownloadedTrack> all) async {
+      NowPlaying now, List<DownloadedTrack> all, Stopwatch sw) async {
     final db = ref.read(dbProvider);
     final seedBytes = await db.trackVector(now.id);
     final seedVec = seedBytes == null ? null : bytesToVec(seedBytes);
@@ -343,6 +362,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         ? ([...allOthers]..shuffle()).sublist(0, maxOfflineCandidates)
         : allOthers;
     final rawVecs = await db.trackVectorsFor([for (final t in others) t.id]);
+    unawaited(AppLog.event('radio_offline_fetch', {
+      'elapsed_ms': sw.elapsedMilliseconds,
+      'candidates': others.length,
+      'vectors': rawVecs.length,
+    }));
     if (rawVecs.length < 2) return null;
 
     final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
@@ -368,6 +392,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           centroidsLongTerm: longTerm,
           centroidsRecent: recent,
         ));
+    unawaited(AppLog.event('radio_offline_compute', {
+      'elapsed_ms': sw.elapsedMilliseconds,
+      'ordered': orderedIds.length,
+    }));
     if (orderedIds.isEmpty) return null;
     return [
       for (final id in orderedIds)

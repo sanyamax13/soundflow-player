@@ -17,8 +17,9 @@ import java.io.File
 //
 // MethodChannel "soundflow/device" — модель телефона и тип связи (Wi-Fi /
 // провод / моб. интернет) для окна «Устройства» на компьютере (Alex TG
-// 18917); плюс installApk — запуск системного установщика для
-// автообновления (12.09.2026). Своя пара строк на Kotlin, без сторонних
+// 18917); installApk — запуск системного установщика для автообновления
+// (12.09.2026); shareText — системное окно «Поделиться» для журнала
+// приложения (14.09.2026). Своя пара строк на Kotlin, без сторонних
 // пакетов.
 class MainActivity : AudioServiceFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -35,6 +36,25 @@ class MainActivity : AudioServiceFragmentActivity() {
                     // java.io.File.usableSpace — встроенное в JDK, без сторонних
                     // пакетов (тот же принцип, что и у остальных методов этого канала).
                     "freeSpaceBytes" -> result.success(File(filesDir.path).usableSpace)
+                    // Общий журнал приложения — Alex сам решает, кому и когда его
+                    // отправлять (TG 14.09.2026: «я сам буду отправлять, буду
+                    // находить ошибку и сам отправлять») — обычное системное
+                    // «Поделиться», без своего транспорта на сервер.
+                    "shareText" -> {
+                        val text = call.argument<String>("text")
+                        if (text == null) {
+                            result.error("no_text", "text is required", null)
+                            return@setMethodCallHandler
+                        }
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        startActivity(Intent.createChooser(send, null).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                        result.success(null)
+                    }
                     "installApk" -> {
                         val path = call.argument<String>("path")
                         if (path == null) {
