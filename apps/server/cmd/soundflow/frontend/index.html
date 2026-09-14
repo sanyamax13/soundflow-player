@@ -154,6 +154,7 @@
   .dtile .dcap{display:block; padding:8px 10px}
   .dtile .dnm{display:block; font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .dtile .dsub{display:block; color:var(--mut); font-size:11px; margin-top:1px}
+  .dtile .dnew{position:absolute; top:6px; right:6px; width:11px; height:11px; border-radius:50%; background:var(--lime); border:2px solid rgba(0,0,0,.55); box-shadow:0 0 0 1px rgba(255,255,255,.6)}
   .dsongs{border:1px solid var(--line); border-radius:10px; overflow:hidden}
   .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); cursor:pointer}
   .dsongs .drow:last-child{border-bottom:0}
@@ -486,6 +487,29 @@ function buildAlbums(tracks){
   return out;
 }
 
+/* ---------- точка «новое» на плитке альбома ----------
+   Alex TG 14.09.2026: «показывать точку на краю обложки, под наш стиль
+   приложения» — для песен, которые появились сами (авто-проверка папки-
+   источника) с прошлого раза, когда была открыта «Каталог». Момент
+   последнего раза — в localStorage самого окна (это только на этом
+   компе, не общая база — ровно то, что нужно для «видел/не видел»). */
+function _lsGet(k){ try{ return localStorage.getItem(k)||""; }catch(e){ return ""; } }
+function _lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+async function _markNewAlbums(albums){
+  const since = _lsGet("catalogLastVisit");
+  if(since){
+    try{
+      const items = await jget("/api/catalog/new-since?since="+encodeURIComponent(since));
+      const newKeys = new Set(items.map(_albumKey));
+      for(const g of albums) g.isNew = newKeys.has(g.key);
+    }catch(e){}
+  }
+  // без миллисекунд — совпадает по формату с time.RFC3339 на сервере
+  // (created_at), иначе текстовое сравнение в SQL путается на границе секунды
+  _lsSet("catalogLastVisit", new Date().toISOString().replace(/\.\d+Z$/, "Z"));
+}
+
 async function loadCatalog(){
   try{
     const tracks = await jget("/api/catalog/flat");
@@ -501,6 +525,7 @@ async function loadCatalog(){
       return;
     }
     _catAlbums = buildAlbums(tracks);
+    await _markNewAlbums(_catAlbums);
     const withFp = tracks.filter(t=>t.has_fp).length;
     $("#sum").innerHTML = `<b>${nfmt(tracks.length)}</b> ${_wordTrack(tracks.length)} · <b>${nfmt(_catAlbums.length)}</b> ${plural(_catAlbums.length,"альбом","альбома","альбомов")} · `+
       `<span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(withFp)}</b></span>`;
@@ -530,6 +555,7 @@ function renderCatalogBody(){
       `<span class="dart" style="background:${_devColor(g.artist)}">`+
         `<span class="dini">${esc(_devInitials(g.artist))}</span>`+
         (first.id ? `<img src="/api/cover/${encodeURIComponent(first.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
+        (g.isNew ? `<span class="dnew" title="новое с прошлого раза"></span>` : "")+
       `</span>`+
       `<span class="dcap"><span class="dnm">${esc(g.album)}</span>`+
       `<span class="dsub">${esc(g.artist)} · ${g.tracks.length} ${_wordTrack(g.tracks.length)}</span></span>`+
@@ -1210,6 +1236,8 @@ async function loadSettings(){
     `<h3>Папки с музыкой</h3>`+
     rootsHtml+
     `<div style="margin-top:12px"><button class="btn primary" id="setAdd">Добавить папку</button></div>`+
+    `<div class="hint" style="margin-top:8px">Папка-источник для авто-проверки: <b>${watchDir?esc(watchDir):"не выбрана"}</b>. `+
+    `Программа сама заглядывает в неё за новыми песнями, когда возвращаешься в окно — новую музыку в неё можно докидывать когда угодно.</div>`+
 
     `<h3>Звуковой отпечаток</h3>`+
     `<div class="srow"><b>Модель</b><span class="sp"></span><span>${d.has_model?"загружена":"нет — положи onnxruntime.dll и cnn14.onnx рядом с программой"}</span></div>`+
@@ -1254,9 +1282,23 @@ async function pickAndScan(){
   if(!dir) return;
   try{
     await fetch("/api/scan?dir="+encodeURIComponent(dir),{method:"POST"}).then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); });
+    watchDir = dir;
+    fetch("/api/settings/watch-dir?dir="+encodeURIComponent(dir),{method:"POST"}).catch(()=>{});
     showView("catalog");
   }catch(e){ alert("Не запустить скан: "+friendlyError(e)); }
 }
+
+/* ---------- папка-источник: сама проверяется при возврате в окно ----------
+   Alex TG 14.09.2026: «опрашивать папку, которую я указал... поменяю папку —
+   опрашивать другую» — на каждый «Выбрать папку» (pickAndScan выше) сама
+   запоминается как watchDir; при возврате фокуса окна — тихий пересканд той
+   же папки, без всплывающих окон (ошибки при авто-проверке не показываем,
+   только явный «Выбрать папку» их показывает). */
+let watchDir = "";
+(async () => { try{ const r = await jget("/api/settings/watch-dir"); watchDir = r.dir||""; }catch(e){} })();
+window.addEventListener("focus", () => {
+  if(watchDir) fetch("/api/scan?dir="+encodeURIComponent(watchDir),{method:"POST"}).catch(()=>{});
+});
 
 /* ---------- кнопки каталога ---------- */
 $("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);

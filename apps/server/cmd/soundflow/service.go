@@ -180,6 +180,9 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/qr.png", s.hQR)
 	r.Get("/api/catalog", s.hCatalog)
 	r.Get("/api/catalog/flat", s.hCatalogFlat)
+	r.Get("/api/catalog/new-since", s.hCatalogNewSince)
+	r.Get("/api/settings/watch-dir", s.hWatchDirGet)
+	r.Post("/api/settings/watch-dir", s.hWatchDirSet)
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
 	r.Get("/api/devices", s.hDevices)
@@ -294,6 +297,51 @@ func (s *Service) hCatalogFlat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, rows)
+}
+
+// hCatalogNewSince — какие треки появились в каталоге после ?since=
+// (RFC3339) — для точки «новое» на плитке альбома (Alex TG 14.09.2026).
+func (s *Service) hCatalogNewSince(w http.ResponseWriter, r *http.Request) {
+	since := strings.TrimSpace(r.URL.Query().Get("since"))
+	if since == "" {
+		writeJSON(w, []localdb.NewSinceItem{})
+		return
+	}
+	items, err := s.db.TracksCreatedSince(since)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, items)
+}
+
+const settingWatchDir = "watch_dir"
+
+// hWatchDirGet/hWatchDirSet — папка, которую программа сама проверяет на
+// новые песни при возврате фокуса окна (Alex TG 14.09.2026: «опрашивать
+// папку, которую я указал... если поменяю папку, то и другую будет
+// опрашивать»). Меняется автоматически при каждом «Выбрать папку» —
+// отдельно её нигде вручную вводить не нужно, только видно в «Настройках».
+func (s *Service) hWatchDirGet(w http.ResponseWriter, r *http.Request) {
+	dir, _, err := s.db.GetSetting(settingWatchDir)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]string{"dir": dir})
+}
+
+func (s *Service) hWatchDirSet(w http.ResponseWriter, r *http.Request) {
+	dir := strings.TrimSpace(r.URL.Query().Get("dir"))
+	if dir == "" {
+		http.Error(w, "нет ?dir", 400)
+		return
+	}
+	if err := s.db.SetSetting(settingWatchDir, dir); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]string{"dir": dir})
 }
 
 // hRoots — корневые папки каталога для «Настроек»: путь + сколько песен и

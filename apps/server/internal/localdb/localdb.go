@@ -65,6 +65,11 @@ func Open(path string) (*DB, error) {
 		// derived-кэш, не пользовательские данные, безопасно сносить каждый
 		// старт (реальные слои соберёт следующий пересчёт).
 		`DELETE FROM taste_cluster WHERE layer = 'all'`,
+		// Мелкие настройки программы (14.09.2026) — сейчас только папка,
+		// которую сама программа проверяет на новые песни при возврате
+		// фокуса окна (Alex TG: «опрашивать папку, которую я указал»).
+		`CREATE TABLE IF NOT EXISTS app_settings (
+			key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()
