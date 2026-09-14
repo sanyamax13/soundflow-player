@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -209,6 +213,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 			nf := localdb.NewTrackFile{
 				ID: "f_" + randHex(), NormalizedKey: key, FilePath: path,
 				MimeType: mime, SizeBytes: size, Source: "scan",
+				DurationSec: probeDurationSec(path),
 			}
 			if err := s.db.InsertTrackWithFile(nt, nf); err != nil {
 				failed++
@@ -275,6 +280,7 @@ func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue) (added
 		nf := localdb.NewTrackFile{
 			ID: "f_" + randHex(), NormalizedKey: key, FilePath: r.Path,
 			MimeType: mime, SizeBytes: size, Source: "scan",
+			DurationSec: probeDurationSec(r.Path),
 		}
 		if err := s.db.InsertTrackWithFile(nt, nf); err != nil {
 			failed++
@@ -369,6 +375,29 @@ func (jr *JobRunner) StartReindex() string {
 		jr.finish(note)
 	}()
 	return j.ID
+}
+
+var reDuration = regexp.MustCompile(`Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)`)
+
+// probeDurationSec — длительность файла в секундах через ffmpeg (без
+// ffprobe — его нет рядом с программой, а ffmpeg и так нужен для
+// отпечатков/волны/разрезки по cue, см. internal/waveform,
+// internal/cuesplit). `ffmpeg -i <file>` без выходного файла всегда
+// возвращает ошибку — это ожидаемо, нужен только вывод в stderr, где он
+// печатает "Duration: HH:MM:SS.xx".
+func probeDurationSec(path string) int {
+	cmd := exec.Command("ffmpeg", "-i", path)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	_ = cmd.Run()
+	m := reDuration.FindStringSubmatch(errb.String())
+	if m == nil {
+		return 0
+	}
+	h, _ := strconv.Atoi(m[1])
+	mi, _ := strconv.Atoi(m[2])
+	sec, _ := strconv.ParseFloat(m[3], 64)
+	return h*3600 + mi*60 + int(sec+0.5)
 }
 
 // ---------------- теги / имя файла ----------------

@@ -572,10 +572,16 @@ let cur = -1;   // индекс в list
 
 function playAt(i){
   if(i<0 || i>=list.length) return;
+  const t = list[i];
+  const src = "/audio/" + encodeURIComponent(t.id);
+  if(cur === i && _devPlayId === "" && au.src && au.src.endsWith(src)){
+    au.paused ? au.play() : au.pause();
+    markPlaying();
+    return;
+  }
   cur = i;
   _devPlayId = "";           // ушли в список каталога — снять подсветку в «Устройствах»
-  const t = list[i];
-  au.src = "/audio/" + encodeURIComponent(t.id);
+  au.src = src;
   au.play().catch(()=>{});
   $("#player").classList.remove("empty");
   $("#pt1").textContent = t.title || "—";
