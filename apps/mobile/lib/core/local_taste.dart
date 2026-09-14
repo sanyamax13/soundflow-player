@@ -93,6 +93,12 @@ List<String> _limitConsecutiveArtist(List<String> orderedByScore, Map<String, St
   return ordered;
 }
 
+// Порог у самой границы 1.0 (не 0.9-0.99) НАРОЧНО: доказан только точный
+// битовый дубликат (см. radio.go duplicateSimThreshold), не «очень похоже» —
+// более низкий порог ловил бы реально похожие-но-разные вещи как ложные
+// срабатывания.
+const _duplicateSimThreshold = 0.99999;
+
 /// Порядок кандидатов: похожесть на seed + лёгкая добавка вкуса (60% долгий
 /// + 25% недавний, без session), затем перестановка под правило «не больше
 /// 2 подряд одного исполнителя» (тот же merge-цикл, что в radio.go, без
@@ -109,6 +115,12 @@ List<String> orderOffline({
   for (final entry in candidateVecs.entries) {
     final v = entry.value;
     final sim = _cosine(seedVec, v);
+    // Тот же трек под другим id (перевыпуск/другие кредиты артиста —
+    // «Quintino» vs «ALOK, QUINTINO», Alex TG 14.09.2026), не «похожее».
+    // См. тот же порог в apps/server/internal/localdb/radio.go
+    // (duplicateSimThreshold) — 20 групп бит-в-бит одинаковых отпечатков
+    // найдено в реальном каталоге, cosine к себе самому там ровно 1.0.
+    if (sim >= _duplicateSimThreshold) continue;
     final affLong = _maxAffinity(centroidsLongTerm, v);
     final affRecent = _maxAffinity(centroidsRecent, v);
     final aff = 0.60 * affLong + 0.25 * affRecent;

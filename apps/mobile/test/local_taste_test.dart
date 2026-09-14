@@ -82,6 +82,24 @@ void main() {
       expect(result, ['zero']);
     });
 
+    test('бит-в-бит дубликат seed (другой id, тот же трек) — не топ похожего', () {
+      // Регрессия: Alex TG 14.09.2026, скрин — «Quintino — Party Never Ends»
+      // и «ALOK, QUINTINO — Party Never Ends», один и тот же трек под
+      // разными кредитами артиста играл дважды подряд как «похожее».
+      final seed = _vec([1, 0, 0]);
+      final duplicate = _vec([1, 0, 0]); // бит-в-бит тот же вектор
+      final realSimilar = _vec([0.9, 0.1, 0]);
+      final result = orderOffline(
+        seedVec: seed,
+        candidateVecs: {'duplicate': duplicate, 'real_similar': realSimilar},
+        candidateArtists: {'duplicate': 'Other Credit', 'real_similar': 'RealArtist'},
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+      );
+      expect(result, isNot(contains('duplicate')));
+      expect(result, ['real_similar']);
+    });
+
     test('не больше 2 подряд одного исполнителя', () {
       final seed = _vec([1, 0]);
       final vecs = {
