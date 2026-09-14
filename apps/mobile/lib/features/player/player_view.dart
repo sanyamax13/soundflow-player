@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -322,6 +323,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         }));
         await _p.setSimilarTail(tail);
         _toast('Сервера нет — собрал похожее из уже скачанного');
+        unawaited(_offlineRadioTopUp(sw));
         return;
       }
       unawaited(AppLog.event('radio_offline_failed', {'elapsed_ms': sw.elapsedMilliseconds}));
@@ -344,9 +346,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   /// Локальный фолбэк, когда сервер недоступен: сравнивает уже скачанные
   /// треки по кэшированным отпечаткам (docs/superpowers/specs/
   /// 2026-09-13-taste-layers-offline-design.md §4.5-4.6). Нет отпечатка у
-  /// seed или меньше 2 кандидатов с отпечатками — null (обычный тост
-  /// «радио не собралось» тогда и должен показаться — например, на очень
-  /// старых скачиваниях до бэкфилла).
+  /// seed — null (обычный тост «радио не собралось» тогда и должен
+  /// показаться). Возвращает только БЫСТРЫЙ первый кусок — дальше
+  /// [_offlineRadioTopUp] сам дозагружает остальное в фоне (см. его
+  /// комментарий).
   Future<List<NowPlaying>?> _offlineRadioFallback(
       NowPlaying now, List<DownloadedTrack> all, Stopwatch sw) async {
     final db = ref.read(dbProvider);
@@ -354,31 +357,52 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     final seedVec = seedBytes == null ? null : bytesToVec(seedBytes);
     if (seedVec == null) return null;
 
-    final allOthers = [for (final t in all) if (t.id != now.id) t];
-    // Изолят убирает подвисание ИНТЕРФЕЙСА, но не уменьшает саму РАБОТУ —
-    // на тысячах скачанных песен даже в фоне разбор BLOB'ов + косинусы
-    // занимали ~20-25 сек, и передача стольких BLOB'ов в изолят (там же
-    // копируются целиком) сама по себе не бесплатна (Alex TG 14.09.2026:
-    // «между нажатием и надписью секунд 20-25, печенька подзаикивается»).
-    // Радио не обязано перебрать АБСОЛЮТНО всё скачанное, чтобы набрать
-    // достаточно похожего — берём случайный кусок заранее, до тяжёлого
-    // счёта, а не после (после — уже поздно, вся работа уже сделана).
+    final allOthers = [for (final t in all) if (t.id != now.id) t]..shuffle();
+    // Кусками, а не всё за один поход в базу — Alex TG 14.09.2026: «подбирать
+    // кусочками, типа 10-15 песен, прослушал — дочитывает ещё». Журнал
+    // (elapsed_ms) на реальном телефоне показал: сам расчёт — единицы
+    // миллисекунд, а вот чтение 500 отпечатков из базы телефона — больше 8
+    // секунд молчания. Читаем сразу маленький кусок для быстрого старта,
+    // остальное — вторым походом в фоне, пока первый уже играет
+    // ([_offlineRadioTopUp]).
+    const firstBatch = 80;
     const maxOfflineCandidates = 500;
-    final others = allOthers.length > maxOfflineCandidates
-        ? ([...allOthers]..shuffle()).sublist(0, maxOfflineCandidates)
+    final capped = allOthers.length > maxOfflineCandidates
+        ? allOthers.sublist(0, maxOfflineCandidates)
         : allOthers;
-    final rawVecs = await db.trackVectorsFor([for (final t in others) t.id]);
-    unawaited(AppLog.event('radio_offline_fetch', {
+    final first = capped.length > firstBatch ? capped.sublist(0, firstBatch) : capped;
+    _offlineRadioRest = capped.length > firstBatch ? capped.sublist(firstBatch) : const [];
+
+    final centroidsJson = await db.kvGet('taste_centroids');
+    _offlineRadioCentroids = centroidsJson;
+    _offlineRadioSeedVec = seedVec;
+    return _offlineRank(db, seedVec, first, centroidsJson, sw, phase: 'first');
+  }
+
+  // Состояние между первым и вторым (фоновым) куском офлайн-радио — живёт
+  // только на время одного нажатия «радио», перечитывается в
+  // _offlineRadioTopUp сразу после того, как первый кусок уже показан.
+  List<DownloadedTrack> _offlineRadioRest = const [];
+  String? _offlineRadioCentroids;
+  Float32List? _offlineRadioSeedVec;
+
+  /// Общий расчёт для одного куска кандидатов (используется и первым, и
+  /// вторым походом) — читает отпечатки, считает похожесть в изоляте.
+  Future<List<NowPlaying>?> _offlineRank(Db db, Float32List seedVec,
+      List<DownloadedTrack> candidates, String? centroidsJson, Stopwatch sw,
+      {required String phase}) async {
+    if (candidates.isEmpty) return null;
+    final rawVecs = await db.trackVectorsFor([for (final t in candidates) t.id]);
+    unawaited(AppLog.event('radio_offline_fetch_$phase', {
       'elapsed_ms': sw.elapsedMilliseconds,
-      'candidates': others.length,
+      'candidates': candidates.length,
       'vectors': rawVecs.length,
     }));
     if (rawVecs.length < 2) return null;
 
-    final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
-
-    final byId = {for (final t in others) t.id: t};
-    final candidateArtists = {for (final t in others) t.id: t.artist};
+    final (longTerm, recent) = decodeCentroids(centroidsJson);
+    final byId = {for (final t in candidates) t.id: t};
+    final candidateArtists = {for (final t in candidates) t.id: t.artist};
     // Косинус к seed и к каждому центру вкуса на каждого кандидата — тяжёлый
     // счёт, синхронный сам по себе. Раньше выполнялся прямо тут, на UI-
     // изоляте — интерфейс замирал, кнопка «не отвечала», звук заикался
@@ -398,7 +422,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           centroidsLongTerm: longTerm,
           centroidsRecent: recent,
         ));
-    unawaited(AppLog.event('radio_offline_compute', {
+    unawaited(AppLog.event('radio_offline_compute_$phase', {
       'elapsed_ms': sw.elapsedMilliseconds,
       'ordered': orderedIds.length,
     }));
@@ -408,6 +432,25 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         if (byId[id] case final t?)
           NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
     ];
+  }
+
+  /// Вторая, фоновая порция офлайн-радио — досчитывает остаток кандидатов
+  /// (см. `_offlineRadioRest`, оставлен `_offlineRadioFallback`) и дозаписывает
+  /// в уже играющую очередь через `PlayerController.extendSimilarTail`. Не
+  /// await-ится вызывающим кодом — начинает работу молча, пока играет первый
+  /// кусок, ничего не блокирует.
+  Future<void> _offlineRadioTopUp(Stopwatch sw) async {
+    final rest = _offlineRadioRest;
+    final seedVec = _offlineRadioSeedVec;
+    if (rest.isEmpty || seedVec == null || !mounted) return;
+    final db = ref.read(dbProvider);
+    final more = await _offlineRank(db, seedVec, rest, _offlineRadioCentroids, sw, phase: 'more');
+    if (more == null || more.isEmpty || !mounted) return;
+    await _p.extendSimilarTail(more);
+    unawaited(AppLog.event('radio_offline_topup_done', {
+      'elapsed_ms': sw.elapsedMilliseconds,
+      'added': more.length,
+    }));
   }
 
   // ── подсказки/сообщения ───────────────────────────────────────────────

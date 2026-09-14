@@ -385,6 +385,23 @@ class PlayerController {
     radio.value = true;
   }
 
+  /// Дозаписать в хвост «Радио по этой» ещё похожих треков, не заменяя уже
+  /// поставленные — вторая, фоновая порция после быстрого первого куска
+  /// (Alex TG 14.09.2026: «подбирать кусочками... прослушал первые — ещё
+  /// подгружает» — вместо одного похода за всеми сразу, который на реальном
+  /// телефоне занимал 8+ секунд молчания, см. журнал). Не трогает
+  /// `_preRadioTail` — она снята один раз при входе в радио
+  /// (`setSimilarTail`), а не при каждой дозаписи. Если радио уже выключили,
+  /// пока фоновая порция считалась — не подмешиваем её в обычный Поток.
+  Future<void> extendSimilarTail(List<NowPlaying> more) async {
+    if (_player == null || !radio.value) return;
+    final have = {for (final t in _queue) t.id};
+    final fresh = [for (final t in more) if (!have.contains(t.id)) t];
+    if (fresh.isEmpty) return;
+    final tail = _capTail([..._queue.sublist(_index + 1), ...fresh]);
+    await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
+  }
+
   /// Добавить в хвост очереди новые скачанные треки (не прерывая текущий) —
   /// см. `newTracksToAppend` и stream_screen.dart _load (пункт 4). Через
   /// `_reloadFrom` (не точечный `addAll`) по той же причине, что и
