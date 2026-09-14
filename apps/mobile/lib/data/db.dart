@@ -18,12 +18,13 @@ class Db {
     final db = await f.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 6,
+        version: 7,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
           await _createRemoved(db);
           await _createTrackVectors(db);
+          await _createHiddenArtists(db);
         },
         onUpgrade: (db, from, _) async {
           if (from < 2) await _createSync(db);
@@ -37,6 +38,7 @@ class Db {
             await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN duration_sec INTEGER');
           }
           if (from < 6) await _createTrackVectors(db);
+          if (from < 7) await _createHiddenArtists(db);
         },
       ),
     );
@@ -84,6 +86,18 @@ class Db {
         CREATE TABLE IF NOT EXISTS track_vectors (
           id  TEXT PRIMARY KEY,
           vec BLOB NOT NULL
+        )
+      ''');
+
+  /// «Скрыть исполнителя» (долгое нажатие в плеере) раньше только слало
+  /// событие на сервер — на самом телефоне нигде не запоминалось, поэтому
+  /// Поток продолжал играть скрытого исполнителя как ни в чём не бывало
+  /// (Опус-ревью телефона 14.09.2026, пункт 6). Своя таблица — фильтруем
+  /// локально, без сети.
+  static Future<void> _createHiddenArtists(Database db) => db.execute('''
+        CREATE TABLE IF NOT EXISTS hidden_artists (
+          artist    TEXT PRIMARY KEY,
+          hidden_at INTEGER NOT NULL
         )
       ''');
 
@@ -288,6 +302,22 @@ class Db {
     return {
       for (final r in rows) r['id'] as String: r['vec'] as Uint8List,
     };
+  }
+
+  // --- Скрытые исполнители (Поток) ---
+
+  Future<void> hideArtist(String artist) => _db.insert(
+        'hidden_artists',
+        {'artist': artist, 'hidden_at': DateTime.now().millisecondsSinceEpoch},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+  Future<void> unhideArtist(String artist) =>
+      _db.delete('hidden_artists', where: 'artist = ?', whereArgs: [artist]);
+
+  Future<Set<String>> hiddenArtists() async {
+    final rows = await _db.query('hidden_artists');
+    return {for (final r in rows) r['artist'] as String};
   }
 
   Future<void> close() => _db.close();

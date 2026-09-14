@@ -12,6 +12,8 @@ import 'package:path_provider/path_provider.dart';
 import '../../app/providers.dart';
 import '../../core/config.dart';
 import '../../core/local_taste.dart';
+import '../../core/net_hint.dart';
+import '../../core/removal_reasons.dart';
 import '../../data/api.dart';
 import '../../data/db.dart';
 import '../../core/cover_thumb.dart';
@@ -25,13 +27,15 @@ import 'player_controller.dart';
 /// обложке, снизу — маленький ряд кнопок как подсказка/подстраховка.
 ///
 /// Жесты по обложке:
-///  • тап — пауза/играть;
-///  • двойной тап — «нравится» (сердце всплывает);
+///  • тап — пауза/играть (мгновенно — раньше делил жест с двойным тапом
+///    «нравится» и ждал ~300 мс, пока Flutter поймёт, один тап или два;
+///    сердечко теперь только кнопкой в ряду ниже, Опус-ревью телефона
+///    14.09.2026, пункт 10);
 ///  • смахнуть влево/вправо — следующая/предыдущая (обложка едет за пальцем);
 ///  • смахнуть вверх — очередь «Дальше»;
 ///  • смахнуть вниз — свернуть плеер (если открыт поверх);
-///  • долгое нажатие — меню действий (радио, не хочу эту версию, скрыть
-///    исполнителя, больше/меньше такого, почему это играет).
+///  • долгое нажатие — меню действий (радио, скрыть исполнителя,
+///    больше/меньше такого, почему это играет, убрать совсем).
 /// Волна внизу — перемотка (вести пальцем), зона касания на всю высоту.
 /// «?» вверху — та же инструкция внутри приложения; в первый раз
 /// показывается сама.
@@ -181,17 +185,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   // ── действия ──────────────────────────────────────────────────────────
   Future<void> _toggle() => _p.toggle();
 
-  Future<void> _like() async {
-    final cur = _p.now.value;
-    if (cur == null) return;
-    _heart.forward(from: 0);
-    if (!_fav) {
-      setState(() => _fav = true);
-      await ref.read(downloadsProvider).setFavorite(cur.id, true);
-      _toast('Добавил в любимое');
-    }
-  }
-
   Future<void> _toggleFavButton() async {
     final cur = _p.now.value;
     if (cur == null) return;
@@ -211,56 +204,14 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _p.prev();
   }
 
-  Future<void> _wrongVersion(NowPlaying now) async {
-    await ref.read(downloadsProvider).delete(now.id, reason: 'wrong_version');
-    if (!mounted) return;
-    await _p.next();
-    _toast('Убрал — сервер поищет версию получше');
-  }
-
-  // Причины удаления — чтобы потом различать объективно плохие песни
-  // (качество, не музыка) и просто не по вкусу (05.09.2026). «Не та версия»
-  // вынесена в отдельный пункт меню, здесь её нет.
-  static const _deleteReasons = <String, String>{
-    'dislike': 'Не нравится песня',
-    'bad_quality': 'Плохое качество звука',
-    'not_music': 'Это не музыка (подкаст, интервью)',
-    'tired': 'Просто надоела',
-    'other': 'Другая причина',
-  };
-
-  /// Спросить причину и убрать трек с телефона (и с сервера — обычным синком).
+  /// Спросить причину (список общий с «Моей музыкой», core/removal_reasons.dart)
+  /// и убрать трек с телефона (и с сервера — обычным синком). Раньше рядом
+  /// была ещё «не хочу эту версию» — она удаляла файл СРАЗУ, без вопроса о
+  /// причине вообще; теперь это просто один из трёх пунктов того же листа
+  /// (Опус-ревью телефона 14.09.2026, пункт 9 — было пять пересекающихся
+  /// действий «не нравится», осталось два: «меньше такого» и «убрать совсем»).
   Future<void> _confirmDelete(NowPlaying now) async {
-    final reason = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Afisha.surfaceHi,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Почему убираешь песню?',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
-              ),
-            ),
-            for (final e in _deleteReasons.entries)
-              ListTile(
-                title: Text(e.value,
-                    style: const TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx, e.key),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
+    final reason = await pickRemovalReason(context);
     if (reason == null || !mounted) return;
     await ref.read(downloadsProvider).delete(now.id, reason: reason);
     if (!mounted) return;
@@ -270,12 +221,19 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 
   Future<void> _hideArtist(NowPlaying now) async {
     final artist = now.artist;
+    // Раньше это только слало событие на сервер — на телефоне нигде не
+    // запоминалось, и Поток продолжал играть скрытого исполнителя как ни в
+    // чём не бывало (Опус-ревью телефона 14.09.2026, пункт 6). Теперь ещё и
+    // локальная таблица + чистка уже поставленной очереди.
+    await ref.read(dbProvider).hideArtist(artist);
     await ref
         .read(syncProvider)
         .record('hide_artist', payload: {'artist': artist});
     if (!mounted) return;
+    await _p.removeArtistFromQueue(artist);
     await _p.next();
     _undo('Скрыл «$artist» из Потока', () async {
+      await ref.read(dbProvider).unhideArtist(artist);
       await ref
           .read(syncProvider)
           .record('unhide_artist', payload: {'artist': artist});
@@ -302,7 +260,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       _toast('Радио выключил');
       return;
     }
-    final all = await ref.read(downloadsProvider).list();
+    final hidden = await ref.read(dbProvider).hiddenArtists();
+    final all = (await ref.read(downloadsProvider).list())
+        .where((t) => !hidden.contains(t.artist))
+        .toList();
     if (all.length < 2) return;
     final ids = [
       for (final t in all)
@@ -342,10 +303,19 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         _toast('Сервера нет — собрал похожее из уже скачанного');
         return;
       }
-      _toast('Сервер не ответил — радио не собралось');
+      _radioUnreachable();
     } catch (_) {
-      _toast('Сервер не ответил — радио не собралось');
+      _radioUnreachable();
     }
+  }
+
+  /// Радио не собралось из-за недоступного сервера (и офлайн-фолбэк не
+  /// помог) — обычный тост тут тупиковый, поэтому вместо него снэкбар с
+  /// подсказкой и кнопкой «Проверить связь» (Опус-ревью телефона 14.09.2026,
+  /// пункт 1).
+  void _radioUnreachable() {
+    if (!mounted) return;
+    showServerUnreachableSnackBar(context, ScaffoldMessenger.of(context), lead: 'Радио не собралось');
   }
 
   /// Локальный фолбэк, когда сервер недоступен: сравнивает уже скачанные
@@ -564,7 +534,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
-      onDoubleTap: _like,
       onLongPress: _openMenu,
       onHorizontalDragUpdate: (d) {
         _dragX.value = (_dragX.value + d.delta.dx).clamp(-150.0, 150.0);
@@ -797,12 +766,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       _p.radio.value
           ? (Icons.radio_button_checked, 'радио\nвыкл', () => _radio(now))
           : (Icons.radio, 'радио\nпо этой', () => _radio(now)),
-      (Icons.tune, 'не хочу\nэту версию', () => _wrongVersion(now)),
       (Icons.person_off, 'скрыть\nисполнителя', () => _hideArtist(now)),
       (Icons.trending_up, 'больше\nтакого', () => _weight(now, more: true)),
       (Icons.trending_down, 'меньше\nтакого', () => _weight(now, more: false)),
       (Icons.info_outline, 'почему\nиграет', () => _whySheet(now)),
-      (Icons.delete_outline, 'удалить', () => _confirmDelete(now)),
+      (Icons.delete_outline, 'убрать\nсовсем', () => _confirmDelete(now)),
     ];
 
     Widget action((IconData, String, VoidCallback) it) => GestureDetector(
@@ -902,9 +870,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 radioOn
                     ? 'Радио по песне: дальше идут вещи, похожие по звуку на ту, '
                         'с которой ты включил радио.'
-                    : 'Поток играет твою скачанную музыку вперемешку. Лайки, '
-                        '«больше/меньше такого» и скрытые исполнители со временем '
-                        'подстроят порядок под тебя.',
+                    : 'Поток играет твою скачанную музыку вперемешку. Скрытый '
+                        'исполнитель пропадает из Потока сразу. Лайки и '
+                        '«больше/меньше такого» пока сильнее всего влияют на '
+                        'Радио (кнопка ∞ сверху) — до самого Потока такая же '
+                        'подстройка доедет следующим шагом.',
                 style: const TextStyle(color: Colors.white70, height: 1.4),
               ),
             ],
@@ -1327,12 +1297,11 @@ class _HelpOverlay extends StatelessWidget {
                     style: TextStyle(color: Afisha.inkDim, fontSize: 12)),
                 const SizedBox(height: 14),
                 row(Icons.touch_app, 'Тап', 'пауза или играть'),
-                row(Icons.favorite, 'Двойной тап', 'нравится'),
                 row(Icons.swipe, 'Смахнуть вбок', 'следующая / предыдущая песня'),
                 row(Icons.keyboard_arrow_up, 'Смахнуть вверх', 'очередь «Дальше»'),
                 row(Icons.keyboard_arrow_down, 'Смахнуть вниз', 'свернуть плеер'),
                 row(Icons.more_horiz, 'Долгое нажатие',
-                    'меню: радио, не хочу эту версию, скрыть исполнителя, больше/меньше такого, удалить, почему играет'),
+                    'меню: радио, скрыть исполнителя, больше/меньше такого, почему играет, убрать совсем'),
                 row(Icons.graphic_eq, 'Вести по волне', 'перемотка'),
                 row(Icons.delete_outline, 'Урна внизу',
                     'убрать песню с телефона совсем (спросит причину)'),

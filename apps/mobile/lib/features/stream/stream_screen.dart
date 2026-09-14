@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
+import '../library/library_screen.dart';
 import '../player/player_controller.dart';
 import '../player/player_view.dart';
 
@@ -16,14 +17,17 @@ import '../player/player_view.dart';
 /// запускать?»), играть начинает по нажатию play. Порядок песен —
 /// вперемешку, переключается иконкой в самом плеере.
 class StreamScreen extends ConsumerStatefulWidget {
-  const StreamScreen({super.key, this.onOpenLibrary});
-
-  /// Перейти на вкладку «Моя музыка» (когда качать ещё нечего).
-  final VoidCallback? onOpenLibrary;
+  const StreamScreen({super.key});
 
   @override
   ConsumerState<StreamScreen> createState() => _StreamScreenState();
 }
+
+/// Скрытые исполнители — вон из Потока (Опус-ревью телефона 14.09.2026,
+/// пункт 6). Отдельная функция — проверяется без сборки экрана/плеера.
+@visibleForTesting
+List<DownloadedTrack> excludeHidden(List<DownloadedTrack> all, Set<String> hidden) =>
+    [for (final t in all) if (!hidden.contains(t.artist)) t];
 
 class _StreamScreenState extends ConsumerState<StreamScreen> {
   List<DownloadedTrack>? _items;
@@ -35,32 +39,47 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
   }
 
   Future<void> _load() async {
-    final items = await ref.read(downloadsProvider).list();
+    final db = ref.read(dbProvider);
+    final hidden = await db.hiddenArtists();
+    final all = await ref.read(downloadsProvider).list();
+    // Скрытые исполнители (долгое нажатие → «скрыть исполнителя») реально
+    // пропадают из Потока, а не просто продолжают играть с обещанием на
+    // словах (Опус-ревью телефона 14.09.2026, пункт 6).
+    final items = excludeHidden(all, hidden);
     if (!mounted) return;
     setState(() => _items = items);
-    // Уже что-то заряжено/играет (пришли из «Моей музыки») — не трогаем.
-    // Иначе заряжаем всю библиотеку вперемешку НА ПАУЗЕ, чтобы вкладка сразу
-    // была полноценным плеером (обложка, полоска, ⏮ ▶ ⏭), а не голой кнопкой
-    // play. Не ждём — если аудио вдруг недоступно, просто останемся без
-    // очереди, экран не залипнет.
+    if (items.isEmpty) return;
+
     final player = ref.read(playerProvider);
-    if (items.isNotEmpty && player.now.value == null) {
-      final queue = [
-        for (final t in items)
-          NowPlaying(
-              id: t.id,
-              title: t.title,
-              artist: t.artist,
-              path: t.path,
-              coverPath: t.coverPath),
-      ];
+    // Раньше очередь строилась только один раз за всё время работы
+    // приложения (player.now.value == null — становится не-null сразу же
+    // после первой зарядки очереди и остаётся таким навсегда) — новые
+    // скачанные песни не попадали в Поток без полного перезапуска
+    // приложения (пункт 4). Теперь сверяем количество: не менялось — вкладку
+    // просто открыли заново, трогать нечего; выросло — либо первая зарядка
+    // (плеер пуст), либо дозапись новых треков в хвост без остановки того,
+    // что уже играет.
+    if (player.streamQueueCount == items.length) return;
+    final queue = [
+      for (final t in items)
+        NowPlaying(
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            path: t.path,
+            coverPath: t.coverPath),
+    ];
+    if (player.now.value == null) {
       unawaited(player.playQueue(
         queue,
         startIndex: Random().nextInt(items.length),
         shuffle: true,
         autoplay: false,
       ));
+    } else {
+      unawaited(player.appendNewToQueue(queue));
     }
+    player.streamQueueCount = items.length;
   }
 
   @override
@@ -88,14 +107,16 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
                   style: TextStyle(fontSize: 18, color: Afisha.ink)),
               const SizedBox(height: 8),
               const Text(
-                'Скачай музыку во вкладке «Моя музыка» — Поток играет её без интернета.',
+                'Скачай музыку — Поток играет уже скачанное без интернета.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Afisha.inkDim),
               ),
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: widget.onOpenLibrary,
-                child: const Text('Открыть «Мою музыку»'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
+                ),
+                child: const Text('Скачать музыку'),
               ),
             ],
           ),

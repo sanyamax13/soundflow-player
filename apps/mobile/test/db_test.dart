@@ -59,4 +59,23 @@ void main() {
 
     await db.close();
   });
+
+  test('скрытые исполнители — прячутся и возвращаются', () async {
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+
+    expect(await db.hiddenArtists(), isEmpty);
+
+    await db.hideArtist('Кино');
+    await db.hideArtist('Земфира');
+    expect(await db.hiddenArtists(), {'Кино', 'Земфира'});
+
+    // повторное скрытие того же — не дублирует
+    await db.hideArtist('Кино');
+    expect(await db.hiddenArtists(), {'Кино', 'Земфира'});
+
+    await db.unhideArtist('Кино');
+    expect(await db.hiddenArtists(), {'Земфира'});
+
+    await db.close();
+  });
 }

@@ -5,7 +5,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
-import '../../core/crash_log.dart';
+import '../../core/player_issue_log.dart';
 
 /// [tracks] переставленные так: сперва элемент с индексом [startIndex],
 /// затем остальные — вперемешку. Используется вместо встроенного шаффла
@@ -20,6 +20,28 @@ List<NowPlaying> shufflePinned(List<NowPlaying> tracks, int startIndex, [Random?
   final start = tracks[startIndex.clamp(0, tracks.length - 1)];
   final rest = [for (final t in tracks) if (!identical(t, start)) t]..shuffle(rng);
   return [start, ...rest];
+}
+
+/// Чего из [all] ещё нет в [queue] (по id), вперемешку — для дозаписи новых
+/// скачанных треков в хвост очереди Потока без перезарядки уже играющего
+/// (Опус-ревью телефона 14.09.2026, пункт 4: раньше новые песни попадали в
+/// Поток только после полного перезапуска приложения).
+@visibleForTesting
+List<NowPlaying> newTracksToAppend(List<NowPlaying> queue, List<NowPlaying> all, [Random? rng]) {
+  final have = {for (final t in queue) t.id};
+  return [for (final t in all) if (!have.contains(t.id)) t]..shuffle(rng);
+}
+
+/// [queue] без ещё не сыгранных (индекс > [afterIndex]) треков исполнителя
+/// [artist] — «скрыть исполнителя» должно убрать его из очереди сразу, а не
+/// просто дать доиграть уже поставленные следующие треки (пункт 6 того же
+/// ревью).
+@visibleForTesting
+List<NowPlaying> withoutArtistAfter(List<NowPlaying> queue, int afterIndex, String artist) {
+  return [
+    for (var i = 0; i < queue.length; i++)
+      if (i <= afterIndex || queue[i].artist != artist) queue[i],
+  ];
 }
 
 /// Обёртка над проигрывателем. Держит очередь локальных файлов (офлайн),
@@ -94,6 +116,13 @@ class PlayerController {
   /// звучания к той песне, с которой радио запустили (06.09.2026).
   final ValueNotifier<bool> radio = ValueNotifier(false);
 
+  /// Сколько треков было в «Моей музыке», когда вкладка «Поток» в последний
+  /// раз строила/дополняла очередь — -1 значит ещё ни разу. Живёт здесь (не в
+  /// StreamScreen), потому что StreamScreen пересоздаётся при каждом
+  /// переключении вкладок, а очередь и то, что из неё уже сыграно —
+  /// состояние самого плеера (см. stream_screen.dart _load, пункт 4).
+  int streamQueueCount = -1;
+
   final _subs = <StreamSubscription<dynamic>>[];
 
   // Битый/недоступный файл в очереди раньше выбрасывал необработанную ошибку
@@ -105,7 +134,10 @@ class PlayerController {
   DateTime _lastErrorAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   void _onPlaybackError(Object e, StackTrace st) {
-    CrashLog.write(e, st, where: 'player');
+    // Это плеер САМ восстанавливается (перескок на следующий трек) — не
+    // настоящее падение приложения, поэтому в CrashLog не пишем (тот только
+    // для реальных крашей, main.dart). Отдельный тихий лог для диагностики.
+    PlayerIssueLog.write(e, st, where: 'player_skip');
     final now = DateTime.now();
     if (now.difference(_lastErrorAt) > const Duration(seconds: 10)) {
       _consecutiveErrors = 0;
@@ -220,9 +252,9 @@ class PlayerController {
       // currentIndexStream отдаст этот же индекс и запишет play — второй раз тут не зовём.
       if (autoplay) await p.play();
     } catch (e, st) {
-      // Не роняем экран, с которого запустили: пишем в чёрный ящик, дальше
-      // авто-перескок по битым разрулит _onPlaybackError.
-      CrashLog.write(e, st, where: 'playQueue');
+      // Не роняем экран, с которого запустили: не настоящий краш — только
+      // диагностика, дальше авто-перескок по битым разрулит _onPlaybackError.
+      PlayerIssueLog.write(e, st, where: 'playQueue');
     }
   }
 
@@ -270,6 +302,30 @@ class PlayerController {
     await p.seek(Duration.zero, index: i);
   }
 
+  /// Перестроить очередь целиком через `setAudioSource` (тот же путь, что
+  /// `playQueue`), сохранив позицию и не прерывая воспроизведение — вместо
+  /// точечных `removeRange`/`addAll` на уже играющем `ConcatenatingAudioSource`.
+  /// Правит баг: с `LoopMode.all` активным нативный плеер иногда уже
+  /// готовится зациклиться на индекс 0 к моменту точечной правки хвоста, и
+  /// добавленные через `addAll` треки не подхватывались — «радио»
+  /// зацикливалось на текущей песне, хотя `queueView`/«Дальше» в интерфейсе
+  /// уже показывали правильный порядок (Alex, голосовое 14.09.2026: «Дальше»
+  /// правильный, а по факту играет та же песня заново). `_index` не меняем —
+  /// текущий трек и его позиция в [newQueue] остаются на месте.
+  Future<void> _reloadFrom(List<NowPlaying> newQueue) async {
+    final p = _player;
+    if (p == null) return;
+    final wasPlaying = p.playing;
+    final pos = p.position;
+    final src = ConcatenatingAudioSource(
+      children: [for (final t in newQueue) AudioSource.uri(Uri.file(t.path))],
+    );
+    _source = src;
+    _queue = newQueue;
+    await p.setAudioSource(src, initialIndex: _index, initialPosition: pos);
+    if (wasPlaying) await p.play();
+  }
+
   /// Выключить «Радио по этой»: вернуть перемешивание Потока — сам
   /// перемешиваем хвост очереди (см. `playQueue`, встроенный шаффл
   /// just_audio не используем, чтобы «Дальше» не расходилось с реальным
@@ -277,12 +333,9 @@ class PlayerController {
   /// потому что второе нажатие на кнопку раньше просто пересобирало радио
   /// и выключить его было нечем (Alex, 06.09.2026).
   Future<void> stopRadio() async {
-    final src = _source;
-    if (src != null && _index + 1 < _queue.length) {
+    if (_index + 1 < _queue.length) {
       final tail = _queue.sublist(_index + 1)..shuffle();
-      await src.removeRange(_index + 1, src.length);
-      await src.addAll([for (final t in tail) AudioSource.uri(Uri.file(t.path))]);
-      _queue = [..._queue.sublist(0, _index + 1), ...tail];
+      await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
     }
     shuffle.value = true;
     radio.value = false;
@@ -292,17 +345,31 @@ class PlayerController {
   /// [tail] — уже упорядоченный по близости звучания список. Текущая песня
   /// не прерывается. Перемешивание выключаем — порядок теперь осмысленный.
   Future<void> setSimilarTail(List<NowPlaying> tail) async {
-    final p = _player;
-    final src = _source;
-    if (p == null || src == null) return;
-    await p.setShuffleModeEnabled(false);
+    if (_player == null) return;
+    await _player!.setShuffleModeEnabled(false);
     shuffle.value = false;
-    if (_index + 1 < src.length) {
-      await src.removeRange(_index + 1, src.length);
-    }
-    await src.addAll([for (final t in tail) AudioSource.uri(Uri.file(t.path))]);
-    _queue = [..._queue.sublist(0, _index + 1), ...tail];
+    await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
     radio.value = true;
+  }
+
+  /// Добавить в хвост очереди новые скачанные треки (не прерывая текущий) —
+  /// см. `newTracksToAppend` и stream_screen.dart _load (пункт 4). Через
+  /// `_reloadFrom` (не точечный `addAll`) по той же причине, что и
+  /// `stopRadio`/`setSimilarTail` — не рискуем тем же классом бага зацикливания.
+  Future<void> appendNewToQueue(List<NowPlaying> all) async {
+    if (_source == null) return;
+    final fresh = newTracksToAppend(_queue, all);
+    if (fresh.isEmpty) return;
+    await _reloadFrom([..._queue, ...fresh]);
+  }
+
+  /// Убрать из очереди все ещё не сыгранные треки исполнителя [artist] —
+  /// см. `withoutArtistAfter` и player_view.dart _hideArtist (пункт 6).
+  Future<void> removeArtistFromQueue(String artist) async {
+    if (_source == null) return;
+    final newQueue = withoutArtistAfter(_queue, _index, artist);
+    if (newQueue.length == _queue.length) return;
+    await _reloadFrom(newQueue);
   }
 
   /// Переставить трек в очереди (лист «Дальше»). Оба индекса — только

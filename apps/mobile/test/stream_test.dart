@@ -39,6 +39,7 @@ Future<Widget> _app({List<DownloadedTrack> downloaded = const []}) async {
   return ProviderScope(
     overrides: [
       apiProvider.overrideWithValue(api),
+      dbProvider.overrideWithValue(db),
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(PlayerController()),
       syncProvider.overrideWithValue(sync),
@@ -55,17 +56,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('В Потоке пока пусто'), findsOneWidget);
-    expect(find.text('Открыть «Мою музыку»'), findsOneWidget);
+    expect(find.text('Скачать музыку'), findsOneWidget);
   });
 
-  testWidgets('кнопка из пустого Потока ведёт в «Мою музыку»', (tester) async {
+  // Раньше кнопка вела на вкладку «Моя музыка», которая сама по себе тоже
+  // пустая и отправляла в несуществующую «Библиотеку» — тупик (Опус-ревью
+  // телефона 14.09.2026, пункт 3). Теперь ведёт прямо на настоящий экран
+  // скачивания.
+  testWidgets('кнопка из пустого Потока ведёт прямо на экран скачивания', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Открыть «Мою музыку»'));
+    await tester.tap(find.text('Скачать музыку'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Пока ничего не скачано'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Скачать музыку'), findsOneWidget);
   });
 
   testWidgets(
