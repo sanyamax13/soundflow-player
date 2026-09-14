@@ -15,6 +15,7 @@ import (
 
 	"soundflow/server/internal/localdb"
 	"soundflow/server/internal/quality"
+	"soundflow/server/internal/tagfix"
 	"soundflow/server/internal/waveform"
 )
 
@@ -292,7 +293,7 @@ func readTags(path string) (artist, title, album string) {
 	if err != nil {
 		return
 	}
-	return strings.TrimSpace(m.Artist()), strings.TrimSpace(m.Title()), strings.TrimSpace(m.Album())
+	return tagfix.Sanitize(m.Artist()), tagfix.Sanitize(m.Title()), tagfix.Sanitize(m.Album())
 }
 
 func fromFilename(path string) (artist, title string) {

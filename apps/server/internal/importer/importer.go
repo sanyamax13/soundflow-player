@@ -14,14 +14,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/dhowden/tag"
-	"golang.org/x/text/encoding/charmap"
 
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/pathmap"
 	"soundflow/server/internal/quality"
+	"soundflow/server/internal/tagfix"
 )
 
 var audioExt = map[string]string{
@@ -177,14 +176,7 @@ func readTags(path string) (artist, title, album string) {
 // Пробуем перекодировать как cp1251; не вышло — вырезаем некорректные байты,
 // чтобы трек не потерялся совсем.
 func sanitizeTag(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" || utf8.ValidString(s) {
-		return s
-	}
-	if fixed, err := charmap.Windows1251.NewDecoder().String(s); err == nil && utf8.ValidString(fixed) {
-		return strings.TrimSpace(fixed)
-	}
-	return strings.TrimSpace(strings.ToValidUTF8(s, ""))
+	return tagfix.Sanitize(s)
 }
 
 // fromFilename разбирает «Артист - Название.ext» — самый частый вид имён в
