@@ -462,17 +462,26 @@ let _catAlbums = [];         // все альбомы (плитки верхне
 let _catOpenKey = null;      // ключ открытого альбома — null = сетка плиток
 
 function _wordTrack(n){ return plural(n,"трек","трека","треков"); }
-function _albumKey(t){ return (t.artist||"")+" "+(t.album || (""+t.id)); }
+// Группируем ПО НАЗВАНИЮ АЛЬБОМА, без артиста в ключе — у сборников
+// («Поп-хиты зимы» и т.п.) на каждом треке свой исполнитель, и с артистом
+// в ключе такой сборник разваливался на кучу отдельных плиток, по одной на трек
+// (Alex TG 14.09.2026, скриншот). У трека без тега альбом — своя
+// плитка-сингл, как в iTunes.
+function _albumKey(t){ return t.album ? "album:"+t.album : "single:"+t.id; }
 
 function buildAlbums(tracks){
   const map = new Map();
   for(const t of tracks){
     const key = _albumKey(t);
     let g = map.get(key);
-    if(!g){ g = {key, artist: t.artist||"", album: t.album || t.title || "Без названия", tracks: []}; map.set(key, g); }
+    if(!g){ g = {key, album: t.album || t.title || "Без названия", artists: new Set(), tracks: []}; map.set(key, g); }
     g.tracks.push(t);
+    g.artists.add(t.artist || "");
   }
-  const out = [...map.values()];
+  const out = [...map.values()].map(g => ({
+    ...g,
+    artist: g.artists.size > 1 ? "Разные исполнители" : ([...g.artists][0] || ""),
+  }));
   out.sort((a,b) => (a.artist+a.album).toLowerCase().localeCompare((b.artist+b.album).toLowerCase(), "ru"));
   return out;
 }
