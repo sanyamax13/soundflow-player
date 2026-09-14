@@ -93,11 +93,12 @@ List<String> _limitConsecutiveArtist(List<String> orderedByScore, Map<String, St
   return ordered;
 }
 
-// Порог у самой границы 1.0 (не 0.9-0.99) НАРОЧНО: доказан только точный
-// битовый дубликат (см. radio.go duplicateSimThreshold), не «очень похоже» —
-// более низкий порог ловил бы реально похожие-но-разные вещи как ложные
-// срабатывания.
-const _duplicateSimThreshold = 0.99999;
+// Калибровано на реальных данных — см. duplicateSimThreshold в
+// apps/server/internal/localdb/radio.go (тот же порог, та же причина):
+// реальный дубликат «Quintino/ALOK, QUINTINO — Party Never Ends» дал
+// cosine 0.9962 (НЕ бит-в-бит — разный мастеринг), реально похожие-но-
+// разные треки того же каталога не поднимались выше ~0.91.
+const _duplicateSimThreshold = 0.98;
 
 /// Порядок кандидатов: похожесть на seed + лёгкая добавка вкуса (60% долгий
 /// + 25% недавний, без session), затем перестановка под правило «не больше

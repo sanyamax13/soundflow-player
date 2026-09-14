@@ -67,7 +67,7 @@ func TestOrderRadioSkipsExactDuplicateOfSeed(t *testing.T) {
 		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
 	}
 	radioTrack(t, d, "duplicate", "Other Credit", 0, 0) // бит-в-бит тот же вектор, что seed
-	radioTrack(t, d, "real_similar", "RealArtist", 0, 0.02)
+	radioTrack(t, d, "real_similar", "RealArtist", 0, 0.3) // ~17°, cosine≈0.96 — ниже duplicateSimThreshold
 
 	var evs []SyncEvent
 	for i := 0; i < 8; i++ {
@@ -95,7 +95,7 @@ func TestOrderRadioSkipsExactDuplicateOfSeed(t *testing.T) {
 func TestOrderRadioFallbackNoTaste(t *testing.T) {
 	d := open(t)
 	radioTrack(t, d, "seed", "S", 0, 0)
-	radioTrack(t, d, "a", "A", 0, 0.02)
+	radioTrack(t, d, "a", "A", 0, 0.3) // ~17°, cosine≈0.96 — ниже duplicateSimThreshold
 	radioTrack(t, d, "b", "B", 500, 0.0)
 	// центров вкуса нет → OrderRadio должен вести себя как OrderBySimilarity
 	got, reordered, err := d.OrderRadio("seed", []string{"b", "a"})
@@ -116,27 +116,29 @@ func TestOrderRadioFallbackNoTaste(t *testing.T) {
 
 func TestOrderRadioTasteAware(t *testing.T) {
 	d := open(t)
-	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700. jitter fav начинается
-	// с 0.01, НЕ с 0 — иначе fav0 бит-в-бит совпал бы с seed (jitter тоже 0) и
-	// после фикса duplicateSimThreshold (14.09.2026) законно ушёл бы в хвост
-	// как «тот же трек», а тест здесь проверяет совсем другое — что вкус
-	// поднимает реально похожий, но ОТЛИЧНЫЙ от seed трек.
+	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700. Углы fav/n_*/hated
+	// — 15-21° (jitter 0.27-0.39), НЕ доли градуса как раньше (jitter
+	// 0.005-0.04, cosine>0.98): после калибровки duplicateSimThreshold на
+	// реальном дубликате (14.09.2026, «Quintino»/«ALOK, QUINTINO») те бы
+	// уходили в хвост как «тот же трек, что seed» — тест здесь проверяет
+	// совсем другое (что вкус/штрафы решают среди РЕАЛЬНО похожих, но
+	// ОТЛИЧНЫХ от seed треков).
 	radioTrack(t, d, "seed", "Seed", 0, 0)
 	for i := 0; i < 4; i++ {
-		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i+1)*0.01)
+		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, 0.27+float32(i)*0.04)
 	}
 	// «filler» — ещё 4 лайкнутых трека той же оси, НЕ участвующие в cands
 	// ниже: только чтобы добрать minClusterTracks (Task 2), не меняя набор
 	// и относительный расклад очков реальных кандидатов теста.
 	for i := 0; i < 4; i++ {
-		radioTrack(t, d, "filler"+itoa(i), "Filler"+itoa(i), 0, 0.05+float32(i)*0.01)
+		radioTrack(t, d, "filler"+itoa(i), "Filler"+itoa(i), 0, 0.45+float32(i)*0.04)
 	}
 	// три трека одного нейтрального артиста, близкие по звуку: обычный,
 	// недавно пропущенный, и нелюбимого артиста рядом — чтобы правило
 	// «≤2 одного артиста подряд» не решало за нас, сравнение по оценке.
-	radioTrack(t, d, "n_plain", "Neutral", 0, 0.006)
-	radioTrack(t, d, "n_skipped", "Neutral", 0, 0.007)
-	radioTrack(t, d, "hated", "HatedArtist", 0, 0.005)
+	radioTrack(t, d, "n_plain", "Neutral", 0, 0.30)
+	radioTrack(t, d, "n_skipped", "Neutral", 0, 0.31)
+	radioTrack(t, d, "hated", "HatedArtist", 0, 0.29)
 	for i := 0; i < 4; i++ {
 		radioTrack(t, d, "far"+itoa(i), "FarArtist"+itoa(i), 700, float32(i)*0.01)
 	}

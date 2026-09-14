@@ -64,9 +64,12 @@ func TestParsePgVector(t *testing.T) {
 
 func TestOrderBySimilarity_ByCosine(t *testing.T) {
 	d := open(t)
-	// seed вдоль оси X; кандидаты под разными углами
+	// seed вдоль оси X; кандидаты под разными углами. «near» — 20°, не 8°:
+	// на 8° cosine≈0.99, выше duplicateSimThreshold (0.98, калибровано
+	// 14.09.2026 на реальном дубликате «Quintino»/«ALOK, QUINTINO» — Party
+	// Never Ends, см. radio.go) — «near» ушёл бы в хвост как «тот же трек».
 	addTrack(t, d, "seed", "S", []float32{1, 0, 0})
-	addTrack(t, d, "near", "A", []float32{0.99, 0.14, 0}) // ~8°
+	addTrack(t, d, "near", "A", []float32{0.94, 0.34, 0}) // ~20°
 	addTrack(t, d, "mid", "B", []float32{0.7, 0.7, 0})    // 45°
 	addTrack(t, d, "far", "C", []float32{0, 1, 0})        // 90°
 	addTrack(t, d, "novec", "D", nil)                     // без отпечатка -> в хвост
@@ -93,11 +96,14 @@ func TestOrderBySimilarity_ByCosine(t *testing.T) {
 func TestOrderBySimilarity_ArtistSpread(t *testing.T) {
 	d := open(t)
 	addTrack(t, d, "seed", "S", []float32{1, 0, 0})
-	// три самых близких — один артист; четвёртый (другой артист) чуть дальше
-	addTrack(t, d, "a1", "SameGuy", []float32{0.999, 0.045, 0})
-	addTrack(t, d, "a2", "SameGuy", []float32{0.998, 0.063, 0})
-	addTrack(t, d, "a3", "SameGuy", []float32{0.997, 0.077, 0})
-	addTrack(t, d, "b1", "OtherGuy", []float32{0.99, 0.141, 0})
+	// три самых близких — один артист; четвёртый (другой артист) чуть дальше.
+	// Углы 15-22°, не 2.6-8° как раньше: те давали cosine>0.98 —
+	// duplicateSimThreshold (см. TestOrderBySimilarity_ByCosine) уводил бы их
+	// в хвост как «тот же трек», ломая саму проверку «≤2 одного артиста».
+	addTrack(t, d, "a1", "SameGuy", []float32{0.966, 0.259, 0})  // 15°
+	addTrack(t, d, "a2", "SameGuy", []float32{0.956, 0.292, 0})  // 17°
+	addTrack(t, d, "a3", "SameGuy", []float32{0.946, 0.326, 0})  // 19°
+	addTrack(t, d, "b1", "OtherGuy", []float32{0.927, 0.375, 0}) // 22°
 
 	got, _, err := d.OrderBySimilarity("seed", []string{"a1", "a2", "a3", "b1"})
 	if err != nil {
