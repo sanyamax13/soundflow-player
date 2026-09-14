@@ -302,6 +302,20 @@ class PlayerController {
     await p.seek(Duration.zero, index: i);
   }
 
+  /// Максимум треков в «хвосте» живой очереди за один присест. Построение
+  /// `ConcatenatingAudioSource` на уже играющем плеере (`_reloadFrom`) нативно
+  /// стоит ощутимо дороже с ростом числа элементов — на большой библиотеке
+  /// (тысячи скачанных) весь хвост целиком тормозил интерфейс и вызывал
+  /// заикание звука на 10-20 секунд (Alex 14.09.2026, сразу после включения
+  /// радио — до этого фикса зацикливания хвост так большим никогда не был).
+  /// `LoopMode.all` зациклит и такой урезанный хвост, когда он кончится —
+  /// не бесконечное разнообразие за один присест, но без тормозов; догрузка
+  /// по приближении к концу — отдельная задача, если этого будет мало.
+  static const int _kMaxLiveTail = 150;
+
+  List<NowPlaying> _capTail(List<NowPlaying> tail) =>
+      tail.length > _kMaxLiveTail ? tail.sublist(0, _kMaxLiveTail) : tail;
+
   /// Перестроить очередь целиком через `setAudioSource` (тот же путь, что
   /// `playQueue`), сохранив позицию и не прерывая воспроизведение — вместо
   /// точечных `removeRange`/`addAll` на уже играющем `ConcatenatingAudioSource`.
@@ -334,7 +348,7 @@ class PlayerController {
   /// и выключить его было нечем (Alex, 06.09.2026).
   Future<void> stopRadio() async {
     if (_index + 1 < _queue.length) {
-      final tail = _queue.sublist(_index + 1)..shuffle();
+      final tail = _capTail(_queue.sublist(_index + 1)..shuffle());
       await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
     }
     shuffle.value = true;
@@ -348,7 +362,7 @@ class PlayerController {
     if (_player == null) return;
     await _player!.setShuffleModeEnabled(false);
     shuffle.value = false;
-    await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
+    await _reloadFrom([..._queue.sublist(0, _index + 1), ..._capTail(tail)]);
     radio.value = true;
   }
 
