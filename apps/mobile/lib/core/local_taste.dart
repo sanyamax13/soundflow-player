@@ -122,6 +122,37 @@ List<String> orderOffline({
   return _limitConsecutiveArtist([for (final e in scored) e.key], candidateArtists);
 }
 
+/// `orderOffline`, но разбор BLOB→Float32List (см. `bytesToVec`) — тоже
+/// ВНУТРИ этой функции, не до неё. Раньше вызывающий код (player_view.dart
+/// _offlineRadioFallback) разбирал тысячи BLOB'ов сам, ДО того, как отдать
+/// счёт в изолят (`offlineComputeRunner`) — разбор байтов на тысячи
+/// кандидатов (~2048 float каждый) сам по себе тяжёлый синхронный цикл,
+/// оставался на UI-потоке и тормозил, хотя сам `orderOffline` уже считался
+/// в фоне (Alex TG 14.09.2026: «обновил и всё равно задержка есть»). Теперь
+/// весь тяжёлый счёт — разбор И ранжирование — за одним вызовом
+/// `offlineComputeRunner`, целиком в фоновом изоляте.
+List<String> orderOfflineFromBlobs({
+  required Float32List seedVec,
+  required Map<String, Uint8List> candidateBlobs,
+  required Map<String, String> candidateArtists,
+  required List<Float32List> centroidsLongTerm,
+  required List<Float32List> centroidsRecent,
+}) {
+  final candidateVecs = <String, Float32List>{};
+  for (final entry in candidateBlobs.entries) {
+    final v = bytesToVec(entry.value);
+    if (v != null) candidateVecs[entry.key] = v;
+  }
+  if (candidateVecs.length < 2) return const [];
+  return orderOffline(
+    seedVec: seedVec,
+    candidateVecs: candidateVecs,
+    candidateArtists: candidateArtists,
+    centroidsLongTerm: centroidsLongTerm,
+    centroidsRecent: centroidsRecent,
+  );
+}
+
 /// Разобрать сохранённые центры вкуса (kv `taste_centroids`, JSON строкой,
 /// пишет сервер — см. `cmd/soundflow/taste.go`) на списки векторов
 /// long_term и recent. Нет записи ещё/битый JSON — оба слоя пустые (тот же

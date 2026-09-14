@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -332,12 +331,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 
     final others = [for (final t in all) if (t.id != now.id) t];
     final rawVecs = await db.trackVectorsFor([for (final t in others) t.id]);
-    final candidateVecs = <String, Float32List>{};
-    for (final entry in rawVecs.entries) {
-      final v = bytesToVec(entry.value);
-      if (v != null) candidateVecs[entry.key] = v;
-    }
-    if (candidateVecs.length < 2) return null;
+    if (rawVecs.length < 2) return null;
 
     final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
 
@@ -350,16 +344,20 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     // — оказалось, дело не в сервере, он был не дома, а именно в этом
     // расчёте). Спека это и требовала с самого начала (§4.6: «в изоляте, не
     // на UI-потоке») — здесь этого не было. `offlineComputeRunner` — по
-    // умолчанию `Isolate.run` (копирует Float32List/Map в отдельный изолят,
+    // умолчанию `Isolate.run` (копирует Uint8List/Map в отдельный изолят,
     // считает там, интерфейс не блокирует); тесты подменяют его синхронным
-    // вызовом (см. local_taste.dart).
-    final orderedIds = await offlineComputeRunner(() => orderOffline(
+    // вызовом (см. local_taste.dart). Разбор BLOB→вектор — тоже ВНУТРИ
+    // изолята (`orderOfflineFromBlobs`, не `orderOffline` напрямую): сам
+    // разбор тысяч BLOB'ов не легче ранжирования, а раньше оставался
+    // снаружи (Alex TG 14.09.2026: «обновил и всё равно задержка есть»).
+    final orderedIds = await offlineComputeRunner(() => orderOfflineFromBlobs(
           seedVec: seedVec,
-          candidateVecs: candidateVecs,
+          candidateBlobs: rawVecs,
           candidateArtists: candidateArtists,
           centroidsLongTerm: longTerm,
           centroidsRecent: recent,
         ));
+    if (orderedIds.isEmpty) return null;
     return [
       for (final id in orderedIds)
         if (byId[id] case final t?)

@@ -238,6 +238,7 @@ class PlayerController {
     _lastPlayId = null;
     _consecutiveErrors = 0;
     radio.value = false;
+    _preRadioTail = null;
     final p = _ensure();
     final src = ConcatenatingAudioSource(
       children: [for (final t in _queue) AudioSource.uri(Uri.file(t.path))],
@@ -340,17 +341,30 @@ class PlayerController {
     if (wasPlaying) await p.play();
   }
 
-  /// Выключить «Радио по этой»: вернуть перемешивание Потока — сам
-  /// перемешиваем хвост очереди (см. `playQueue`, встроенный шаффл
-  /// just_audio не используем, чтобы «Дальше» не расходилось с реальным
-  /// порядком). Уже сыгранное не трогаем. Кнопка радио гаснет. Нужно,
-  /// потому что второе нажатие на кнопку раньше просто пересобирало радио
-  /// и выключить его было нечем (Alex, 06.09.2026).
+  /// Хвост очереди КАК ОН БЫЛ до включения радио (снимок из `setSimilarTail`)
+  /// — чтобы `stopRadio` мог вернуть настоящий широкий Поток, а не просто
+  /// перемешать местами тот же узкий список «похожего» (баг: Alex TG
+  /// 14.09.2026 — «когда я уже убрал радио, всё равно играли похожие
+  /// песни» — раньше `stopRadio` тасовал ИМЕННО отобранные радио треки,
+  /// набор при этом не менялся, только порядок внутри него).
+  List<NowPlaying>? _preRadioTail;
+
+  /// Выключить «Радио по этой»: вернуть широкий Поток (см. `_preRadioTail`)
+  /// в перемешанном виде — сам перемешиваем (см. `playQueue`, встроенный
+  /// шаффл just_audio не используем, чтобы «Дальше» не расходилось с
+  /// реальным порядком). Уже сыгранное не трогаем. Кнопка радио гаснет.
+  /// Нужно, потому что второе нажатие на кнопку раньше просто пересобирало
+  /// радио и выключить его было нечем (Alex, 06.09.2026).
   Future<void> stopRadio() async {
-    if (_index + 1 < _queue.length) {
+    final saved = _preRadioTail;
+    if (saved != null && saved.isNotEmpty) {
+      final tail = _capTail([...saved]..shuffle());
+      await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
+    } else if (_index + 1 < _queue.length) {
       final tail = _capTail(_queue.sublist(_index + 1)..shuffle());
       await _reloadFrom([..._queue.sublist(0, _index + 1), ...tail]);
     }
+    _preRadioTail = null;
     shuffle.value = true;
     radio.value = false;
   }
@@ -362,6 +376,11 @@ class PlayerController {
     if (_player == null) return;
     await _player!.setShuffleModeEnabled(false);
     shuffle.value = false;
+    // Снимок ДО замены — только пока радио ещё не было включено (кнопка
+    // радио при повторном нажатии всегда сперва выключает его, см.
+    // player_view.dart _radio — так что setSimilarTail не вызывается
+    // повторно поверх уже идущего радио, снимок не затрётся похожим же).
+    _preRadioTail = _queue.sublist(_index + 1);
     await _reloadFrom([..._queue.sublist(0, _index + 1), ..._capTail(tail)]);
     radio.value = true;
   }

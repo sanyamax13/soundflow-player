@@ -111,6 +111,56 @@ void main() {
     });
   });
 
+  group('orderOfflineFromBlobs', () {
+    test('разбирает BLOB и ранжирует так же, как orderOffline на готовых векторах', () {
+      final seed = _vec([1, 0]);
+      final close = <double>[0.9, 0.1];
+      final far = <double>[0, 1];
+      final byBlobs = orderOfflineFromBlobs(
+        seedVec: seed,
+        candidateBlobs: {'close': _vecBytes(close), 'far': _vecBytes(far)},
+        candidateArtists: {'close': 'A', 'far': 'B'},
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+      );
+      final byVecs = orderOffline(
+        seedVec: seed,
+        candidateVecs: {'close': _vec(close), 'far': _vec(far)},
+        candidateArtists: {'close': 'A', 'far': 'B'},
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+      );
+      expect(byBlobs, byVecs);
+      expect(byBlobs.first, 'close');
+    });
+
+    test('меньше 2 разобранных векторов — пустой список, не падает', () {
+      final result = orderOfflineFromBlobs(
+        seedVec: _vec([1, 0]),
+        candidateBlobs: {'only': _vecBytes([0.9, 0.1])},
+        candidateArtists: {'only': 'A'},
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+      );
+      expect(result, isEmpty);
+    });
+
+    test('битый BLOB среди кандидатов просто пропускается', () {
+      final result = orderOfflineFromBlobs(
+        seedVec: _vec([1, 0]),
+        candidateBlobs: {
+          'good1': _vecBytes([0.9, 0.1]),
+          'good2': _vecBytes([0.8, 0.2]),
+          'bad': Uint8List.fromList([1, 2, 3]), // длина не кратна 4
+        },
+        candidateArtists: {'good1': 'A', 'good2': 'B', 'bad': 'C'},
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+      );
+      expect(result.toSet(), {'good1', 'good2'});
+    });
+  });
+
   group('decodeCentroids', () {
     test('null — оба слоя пустые', () {
       final (longTerm, recent) = decodeCentroids(null);
