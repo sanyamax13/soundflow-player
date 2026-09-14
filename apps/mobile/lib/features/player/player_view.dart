@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -340,19 +339,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     }
     if (candidateVecs.length < 2) return null;
 
-    final centroidsJson = await db.kvGet('taste_centroids');
-    var longTerm = const <Float32List>[];
-    var recent = const <Float32List>[];
-    if (centroidsJson != null) {
-      final data = jsonDecode(centroidsJson) as Map<String, dynamic>;
-      Float32List? decode(String b64) => bytesToVec(base64Decode(b64));
-      longTerm = [
-        for (final b in (data['long_term'] as List? ?? const [])) ?decode('$b'),
-      ];
-      recent = [
-        for (final b in (data['recent'] as List? ?? const [])) ?decode('$b'),
-      ];
-    }
+    final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
 
     final byId = {for (final t in others) t.id: t};
     final orderedIds = orderOffline(
@@ -498,30 +485,42 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               icon: Icon(Icons.help_outline,
                   color: Colors.white.withValues(alpha: 0.75), size: 20),
             ),
-            GestureDetector(
-              onTap: () => _radio(now),
-              child: ValueListenableBuilder<bool>(
-                valueListenable: _p.radio,
-                builder: (_, on, _) => Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('∞',
-                          style: TextStyle(
-                              color: on ? Afisha.lime : Colors.white70,
-                              fontSize: 15,
-                              height: 1)),
-                      const SizedBox(width: 6),
-                      const Text('радио',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 12)),
-                    ],
+            // Раньше был GestureDetector впритык к тексту — тап-зона выходила
+            // мельче, чем сам значок рядом («?»), и Alex не мог понять, вся
+            // ли «таблетка» кликабельна (TG 14.09.2026). Material+InkWell —
+            // явная зона минимум 44×44 (стандарт доступного размера тапа) +
+            // видимый эффект нажатия, чтобы попадание было понятно на глаз.
+            Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                onTap: () => _radio(now),
+                borderRadius: BorderRadius.circular(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _p.radio,
+                    builder: (_, on, _) => Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('∞',
+                              style: TextStyle(
+                                  color: on ? Afisha.lime : Colors.white70,
+                                  fontSize: 15,
+                                  height: 1)),
+                          const SizedBox(width: 6),
+                          const Text('радио',
+                              style:
+                                  TextStyle(color: Colors.white70, fontSize: 12)),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),

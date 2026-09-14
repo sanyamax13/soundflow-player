@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/local_taste.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
 import '../library/library_screen.dart';
@@ -14,8 +15,9 @@ import '../player/player_view.dart';
 /// Поток — простое офлайн-радио по скачанной музыке. Открыл вкладку — сразу
 /// полноэкранный плеер: обложка, название, полоска-волна и кнопки
 /// ⏮ ▶ ⏭ — но на паузе. Музыка НЕ заводится сама (Alex 06.09.2026: «зачем её
-/// запускать?»), играть начинает по нажатию play. Порядок песен —
-/// вперемешку, переключается иконкой в самом плеере.
+/// запускать?»), играть начинает по нажатию play. Порядок песен — под вкус
+/// (`weightedShuffleByTaste`, доделано 14.09.2026 по слову Alex — раньше
+/// была просто перетасовка), переключается иконкой в самом плеере.
 class StreamScreen extends ConsumerStatefulWidget {
   const StreamScreen({super.key});
 
@@ -28,6 +30,31 @@ class StreamScreen extends ConsumerStatefulWidget {
 @visibleForTesting
 List<DownloadedTrack> excludeHidden(List<DownloadedTrack> all, Set<String> hidden) =>
     [for (final t in all) if (!hidden.contains(t.artist)) t];
+
+/// Порядок «Потока» под вкус — читает векторы уже скачанных треков и
+/// сохранённые центры вкуса (`taste_centroids`, тот же kv, что офлайн-радио)
+/// прямо с телефона, без сети. Векторов/центров ещё нет — вернёт `items`,
+/// просто перетасованный (`weightedShuffleByTaste` вырождается в обычную
+/// перетасовку при равных весах, отдельный путь не нужен).
+@visibleForTesting
+Future<List<DownloadedTrack>> orderByTaste(Db db, List<DownloadedTrack> items) async {
+  final rawVecs = await db.trackVectorsFor([for (final t in items) t.id]);
+  final vecs = <String, Float32List>{};
+  for (final e in rawVecs.entries) {
+    final v = bytesToVec(e.value);
+    if (v != null) vecs[e.key] = v;
+  }
+  final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
+  final orderedIds = weightedShuffleByTaste(
+    ids: [for (final t in items) t.id],
+    vecs: vecs,
+    artists: {for (final t in items) t.id: t.artist},
+    centroidsLongTerm: longTerm,
+    centroidsRecent: recent,
+  );
+  final byId = {for (final t in items) t.id: t};
+  return [for (final id in orderedIds) if (byId[id] case final t?) t];
+}
 
 class _StreamScreenState extends ConsumerState<StreamScreen> {
   List<DownloadedTrack>? _items;
@@ -60,8 +87,13 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     // (плеер пуст), либо дозапись новых треков в хвост без остановки того,
     // что уже играет.
     if (player.streamQueueCount == items.length) return;
+    // Порядок — под вкус, не просто вперемешку (Alex TG 14.09.2026: «доделай»
+    // урезанный пункт 6 — раньше учитывались только скрытые исполнители).
+    // Нет ещё вкуса/отпечатков — orderByTaste сама выродится в обычную
+    // перетасовку, отдельного «если вкуса нет» пути тут не нужно.
+    final ordered = await orderByTaste(db, items);
     final queue = [
-      for (final t in items)
+      for (final t in ordered)
         NowPlaying(
             id: t.id,
             title: t.title,
@@ -72,8 +104,8 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     if (player.now.value == null) {
       unawaited(player.playQueue(
         queue,
-        startIndex: Random().nextInt(items.length),
-        shuffle: true,
+        startIndex: 0,
+        shuffle: false,
         autoplay: false,
       ));
     } else {

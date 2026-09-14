@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -93,6 +95,99 @@ void main() {
         candidateArtists: artists,
         centroidsLongTerm: const [],
         centroidsRecent: const [],
+      );
+      var run = 0;
+      String? last;
+      for (final id in result) {
+        final artist = artists[id];
+        if (artist == last) {
+          run++;
+        } else {
+          run = 1;
+          last = artist;
+        }
+        expect(run, lessThanOrEqualTo(2), reason: 'result=$result');
+      }
+    });
+  });
+
+  group('decodeCentroids', () {
+    test('null — оба слоя пустые', () {
+      final (longTerm, recent) = decodeCentroids(null);
+      expect(longTerm, isEmpty);
+      expect(recent, isEmpty);
+    });
+
+    test('битый JSON — не падает, оба слоя пустые', () {
+      final (longTerm, recent) = decodeCentroids('не json{');
+      expect(longTerm, isEmpty);
+      expect(recent, isEmpty);
+    });
+
+    test('разбирает base64 long_term/recent', () {
+      final v = _vecBytes([1, 0]);
+      final json = jsonEncode({
+        'long_term': [base64Encode(v)],
+        'recent': [base64Encode(v)],
+      });
+      final (longTerm, recent) = decodeCentroids(json);
+      expect(longTerm, hasLength(1));
+      expect(recent, hasLength(1));
+      expect(longTerm.first[0], closeTo(1.0, 1e-6));
+    });
+  });
+
+  group('weightedShuffleByTaste', () {
+    test('нет векторов/центров — всё равно вернёт все id (равномерная перетасовка)', () {
+      final result = weightedShuffleByTaste(
+        ids: ['a', 'b', 'c'],
+        vecs: const {},
+        artists: {'a': 'A', 'b': 'B', 'c': 'C'},
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+        rng: Random(1),
+      );
+      expect(result.toSet(), {'a', 'b', 'c'});
+    });
+
+    test('явный вкус — трек рядом с центром чаще оказывается раньше', () {
+      final centroid = _vec([1, 0]);
+      final close = _vec([0.95, 0.05]);
+      final far = _vec([0, 1]);
+      var closeFirstCount = 0;
+      const trials = 200;
+      for (var seed = 0; seed < trials; seed++) {
+        final result = weightedShuffleByTaste(
+          ids: ['close', 'far'],
+          vecs: {'close': close, 'far': far},
+          artists: {'close': 'A', 'far': 'B'},
+          centroidsLongTerm: [centroid],
+          centroidsRecent: const [],
+          rng: Random(seed),
+        );
+        if (result.first == 'close') closeFirstCount++;
+      }
+      // Не строгий порядок (это всё ещё «перетасовка»), но заметный перекос.
+      expect(closeFirstCount, greaterThan(trials * 0.7));
+    });
+
+    test('не больше 2 подряд одного исполнителя (соотношение 1:1, выполнимо при любом порядке)', () {
+      // При случайном (взвешенном) порядке единственный «запасной» другой
+      // исполнитель может достаться слишком рано и не хватить на хвост
+      // (в отличие от orderOffline выше, где порядок задан score, а не
+      // случайностью) — поэтому тут баланс 1:1, не 3:1.
+      final vecs = {
+        'a1': _vec([1, 0]), 'a2': _vec([1, 0]), 'a3': _vec([1, 0]),
+        'b1': _vec([1, 0]), 'b2': _vec([1, 0]), 'b3': _vec([1, 0]),
+      };
+      final artists = {'a1': 'A', 'a2': 'A', 'a3': 'A', 'b1': 'B', 'b2': 'B', 'b3': 'B'};
+      final result = weightedShuffleByTaste(
+        ids: vecs.keys.toList(),
+        vecs: vecs,
+        artists: artists,
+        centroidsLongTerm: const [],
+        centroidsRecent: const [],
+        rng: Random(2),
       );
       var run = 0;
       String? last;

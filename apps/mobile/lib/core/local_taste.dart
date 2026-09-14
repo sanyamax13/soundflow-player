@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -47,6 +48,34 @@ double _maxAffinity(List<Float32List> centroids, Float32List v) {
   return best;
 }
 
+/// «Не больше 2 подряд одного исполнителя» — общий проход по уже
+/// отсортированному пулу id, тот же merge-приём, что в radio.go (Go-версия
+/// не делится кодом с Dart, но приём один и тот же, вынесен один раз здесь
+/// для двух функций ниже).
+List<String> _limitConsecutiveArtist(List<String> orderedByScore, Map<String, String> artists) {
+  final pool = [...orderedByScore];
+  final ordered = <String>[];
+  String? lastArtist;
+  var run = 0;
+  while (pool.isNotEmpty) {
+    var pick = 0;
+    if (run >= 2) {
+      final alt = pool.indexWhere((id) => artists[id] != lastArtist);
+      if (alt != -1) pick = alt;
+    }
+    final id = pool.removeAt(pick);
+    ordered.add(id);
+    final artist = artists[id];
+    if (artist == lastArtist) {
+      run++;
+    } else {
+      lastArtist = artist;
+      run = 1;
+    }
+  }
+  return ordered;
+}
+
 /// Порядок кандидатов: похожесть на seed + лёгкая добавка вкуса (60% долгий
 /// + 25% недавний, без session), затем перестановка под правило «не больше
 /// 2 подряд одного исполнителя» (тот же merge-цикл, что в radio.go, без
@@ -73,26 +102,64 @@ List<String> orderOffline({
     final c = b.value.compareTo(a.value);
     return c != 0 ? c : a.key.compareTo(b.key);
   });
+  return _limitConsecutiveArtist([for (final e in scored) e.key], candidateArtists);
+}
 
-  final pool = [for (final e in scored) e.key];
-  final ordered = <String>[];
-  String? lastArtist;
-  var run = 0;
-  while (pool.isNotEmpty) {
-    var pick = 0;
-    if (run >= 2) {
-      final alt = pool.indexWhere((id) => candidateArtists[id] != lastArtist);
-      if (alt != -1) pick = alt;
-    }
-    final id = pool.removeAt(pick);
-    ordered.add(id);
-    final artist = candidateArtists[id];
-    if (artist == lastArtist) {
-      run++;
-    } else {
-      lastArtist = artist;
-      run = 1;
-    }
+/// Разобрать сохранённые центры вкуса (kv `taste_centroids`, JSON строкой,
+/// пишет сервер — см. `cmd/soundflow/taste.go`) на списки векторов
+/// long_term и recent. Нет записи ещё/битый JSON — оба слоя пустые (тот же
+/// эффект, что «вкуса ещё нет», не крэш) — раньше это разбиралось инлайном
+/// в player_view.dart _offlineRadioFallback без try/catch; вынесено сюда,
+/// чтобы «Поток» (ниже) не дублировал тот же разбор второй раз.
+(List<Float32List>, List<Float32List>) decodeCentroids(String? json) {
+  if (json == null) return (const [], const []);
+  try {
+    final data = jsonDecode(json) as Map<String, dynamic>;
+    Float32List? decode(String b64) => bytesToVec(base64Decode(b64));
+    final longTerm = [
+      for (final b in (data['long_term'] as List? ?? const [])) ?decode('$b'),
+    ];
+    final recent = [
+      for (final b in (data['recent'] as List? ?? const [])) ?decode('$b'),
+    ];
+    return (longTerm, recent);
+  } catch (_) {
+    return (const [], const []);
   }
-  return ordered;
+}
+
+/// Взвешенная перетасовка «Потока» под вкус (Alex TG 14.09.2026: доделать
+/// урезанный пункт 6 Опус-ревью — раньше учитывались только скрытые
+/// исполнители, не сам вкус). Не строгая сортировка по affinity — тогда
+/// каждый раз сверху были бы одни и те же фавориты, скучно — а взвешенная
+/// выборка без повторов (Efraimidis–Spirakis): каждому треку ключ
+/// rand()^(1/(aff+eps)), сортировка по убыванию ключа. Выше вкус — выше
+/// шанс оказаться раньше, но не гарантия. Нет вкуса/отпечатков ещё — веса
+/// у всех одинаковые, при равных весах приём математически вырождается в
+/// обычную равномерную перетасовку — отдельный код на этот случай не нужен.
+List<String> weightedShuffleByTaste({
+  required List<String> ids,
+  required Map<String, Float32List> vecs,
+  required Map<String, String> artists,
+  required List<Float32List> centroidsLongTerm,
+  required List<Float32List> centroidsRecent,
+  math.Random? rng,
+}) {
+  final r = rng ?? math.Random();
+  const eps = 0.05;
+  final keyed = <MapEntry<String, double>>[];
+  for (final id in ids) {
+    final v = vecs[id];
+    var aff = 0.0;
+    if (v != null) {
+      final affLong = _maxAffinity(centroidsLongTerm, v);
+      final affRecent = _maxAffinity(centroidsRecent, v);
+      aff = 0.60 * affLong + 0.25 * affRecent;
+    }
+    final weight = aff + eps;
+    final u = r.nextDouble().clamp(1e-9, 1.0);
+    keyed.add(MapEntry(id, math.pow(u, 1 / weight).toDouble()));
+  }
+  keyed.sort((a, b) => b.value.compareTo(a.value));
+  return _limitConsecutiveArtist([for (final e in keyed) e.key], artists);
 }
