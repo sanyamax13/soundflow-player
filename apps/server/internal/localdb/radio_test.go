@@ -18,6 +18,42 @@ func radioTrack(t *testing.T, d *DB, id, artist string, axis int, jitter float32
 	}
 }
 
+// TestFetchTracksByIDChunking — регрессия на переход с «SELECT по одному id»
+// на «SELECT ... WHERE id IN (...)» чанками по 400 (Alex TG 14.09.2026:
+// кнопка радио ждала ~10 сек на большой библиотеке — это и был N+1). Больше
+// одного чанка (450 id) — граница чанка не должна терять/дублировать записи.
+func TestFetchTracksByIDChunking(t *testing.T) {
+	d := open(t)
+	const n = 450
+	ids := make([]string, n)
+	for i := 0; i < n; i++ {
+		id := "t" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+		ids[i] = id
+		radioTrack(t, d, id, "artist", i%VecDim, 0)
+	}
+	// один id без отпечатка (пустой feature_vector) — не должен попасть в out
+	if _, err := d.sql.Exec(
+		`INSERT INTO tracks (id, artist, title, normalized_key) VALUES (?,?,?,?)`,
+		"no-vec", "artist", "no-vec", "no-vec"); err != nil {
+		t.Fatal(err)
+	}
+	out := fetchTracksByID(d.sql, append(append([]string{}, ids...), "no-vec", "missing-entirely"))
+	if len(out) != n {
+		t.Fatalf("got %d tracks, want %d", len(out), n)
+	}
+	for _, id := range ids {
+		if _, ok := out[id]; !ok {
+			t.Errorf("missing id %s across chunk boundary", id)
+		}
+	}
+	if _, ok := out["no-vec"]; ok {
+		t.Error("track without fingerprint should be excluded, not just empty vec")
+	}
+	if _, ok := out["missing-entirely"]; ok {
+		t.Error("id absent from table should be excluded")
+	}
+}
+
 func TestOrderRadioFallbackNoTaste(t *testing.T) {
 	d := open(t)
 	radioTrack(t, d, "seed", "S", 0, 0)

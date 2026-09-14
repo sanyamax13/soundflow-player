@@ -1,6 +1,7 @@
 package localdb
 
 import (
+	"database/sql"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +44,52 @@ func farThreshold(cs []radioCand) float64 {
 		idx = len(affs) - 1
 	}
 	return affs[idx]
+}
+
+type trackVec struct {
+	artist string
+	vec    []float32
+}
+
+// fetchTracksByID — артист + звуковой отпечаток для набора id ОДНИМ (или
+// несколькими, чанками) запросом вместо одного SELECT на каждый id по
+// отдельности. Id без отпечатка (пустой feature_vector) или вовсе не
+// найденные в таблице — просто отсутствуют в результате, вызывающий код и
+// раньше трактовал такое как «нет отпечатка» (continue). Чанки по 400 —
+// с запасом внутри лимита SQLite на число плейсхолдеров в одном запросе.
+func fetchTracksByID(db *sql.DB, ids []string) map[string]trackVec {
+	out := make(map[string]trackVec, len(ids))
+	const chunkSize = 400
+	for i := 0; i < len(ids); i += chunkSize {
+		end := i + chunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[i:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+		args := make([]any, len(chunk))
+		for j, id := range chunk {
+			args[j] = id
+		}
+		rows, e := db.Query(`SELECT id, artist, feature_vector FROM tracks WHERE id IN (`+placeholders+`)`, args...)
+		if e != nil {
+			continue
+		}
+		for rows.Next() {
+			var id, artist string
+			var b []byte
+			if rows.Scan(&id, &artist, &b) != nil {
+				continue
+			}
+			v := blobToVec(b)
+			if len(v) == 0 {
+				continue
+			}
+			out[id] = trackVec{artist: artist, vec: v}
+		}
+		rows.Close()
+	}
+	return out
 }
 
 type radioCand struct {
@@ -103,21 +150,26 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 	}
 
 	seen := map[string]bool{seedID: true}
+	// Раньше был SELECT ПО ОДНОМУ id за раз — на живой библиотеке в тысячи
+	// скачанных треков это тысячи последовательных запросов к SQLite, и
+	// именно это (не сборка очереди на телефоне, та уже почищена) держало
+	// кнопку «радио» ~10 секунд (Alex TG 14.09.2026: «нажимаю между секунд
+	// 10, чтобы подобрало»). Один запрос с IN(...) вместо N — та же выборка,
+	// на порядки быстрее. Чанками по 400 id — с запасом внутри лимита
+	// SQLite на число плейсхолдеров в одном запросе.
+	tracksByID := fetchTracksByID(d.sql, candidateIDs)
 	var cs []radioCand
 	for _, id := range candidateIDs {
 		if id == seedID || seen[id] {
 			continue
 		}
-		var artist string
-		var b []byte
-		if e := d.sql.QueryRow(`SELECT artist, feature_vector FROM tracks WHERE id = ?`, id).Scan(&artist, &b); e != nil {
-			continue
-		}
-		v := blobToVec(b)
-		if len(v) == 0 {
+		tr, ok := tracksByID[id]
+		if !ok {
 			continue
 		}
 		seen[id] = true
+		v := tr.vec
+		artist := tr.artist
 		sim := cosine(seedVec, v)
 		affLong := tasteAffinity(centsLong, v)
 		affRecent := tasteAffinity(centsRecent, v)
