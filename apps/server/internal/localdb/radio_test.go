@@ -54,6 +54,44 @@ func TestFetchTracksByIDChunking(t *testing.T) {
 	}
 }
 
+// TestOrderRadioSkipsExactDuplicateOfSeed — регрессия на «одна и та же песня
+// попала в очередь как похожая» (Alex TG 14.09.2026, скрин: «Quintino —
+// Party Never Ends» / «ALOK, QUINTINO — Party Never Ends», один и тот же
+// трек под двумя разными кредитами артиста — проверено на реальном каталоге,
+// 20 таких групп с бит-в-бит одинаковым отпечатком). Косинус к себе самому
+// (~1.0) не должен попадать в топ «похожего».
+func TestOrderRadioSkipsExactDuplicateOfSeed(t *testing.T) {
+	d := open(t)
+	radioTrack(t, d, "seed", "Seed", 0, 0)
+	for i := 0; i < 8; i++ { // minClusterTracks — строим long_term слой
+		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
+	}
+	radioTrack(t, d, "duplicate", "Other Credit", 0, 0) // бит-в-бит тот же вектор, что seed
+	radioTrack(t, d, "real_similar", "RealArtist", 0, 0.02)
+
+	var evs []SyncEvent
+	for i := 0; i < 8; i++ {
+		evs = append(evs, SyncEvent{UUID: "l" + itoa(i), Kind: "like", TrackID: "fav" + itoa(i), Payload: json.RawMessage(``), ClientTS: 1})
+	}
+	if _, err := d.SaveSync(Device{ID: "d"}, evs); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.RecomputeTasteClusters("long_term", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	got, reordered, err := d.OrderRadio("seed", []string{"duplicate", "real_similar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reordered {
+		t.Fatal("expected reordered=true")
+	}
+	if got[0] != "real_similar" {
+		t.Errorf("дубликат seed не должен быть топ-похожим, got order %v", got)
+	}
+}
+
 func TestOrderRadioFallbackNoTaste(t *testing.T) {
 	d := open(t)
 	radioTrack(t, d, "seed", "S", 0, 0)
@@ -78,10 +116,14 @@ func TestOrderRadioFallbackNoTaste(t *testing.T) {
 
 func TestOrderRadioTasteAware(t *testing.T) {
 	d := open(t)
-	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700.
+	// seed и «жанр вкуса» — ось 0; далёкий шум — ось 700. jitter fav начинается
+	// с 0.01, НЕ с 0 — иначе fav0 бит-в-бит совпал бы с seed (jitter тоже 0) и
+	// после фикса duplicateSimThreshold (14.09.2026) законно ушёл бы в хвост
+	// как «тот же трек», а тест здесь проверяет совсем другое — что вкус
+	// поднимает реально похожий, но ОТЛИЧНЫЙ от seed трек.
 	radioTrack(t, d, "seed", "Seed", 0, 0)
 	for i := 0; i < 4; i++ {
-		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i)*0.01)
+		radioTrack(t, d, "fav"+itoa(i), "Fav"+itoa(i), 0, float32(i+1)*0.01)
 	}
 	// «filler» — ещё 4 лайкнутых трека той же оси, НЕ участвующие в cands
 	// ниже: только чтобы добрать minClusterTracks (Task 2), не меняя набор

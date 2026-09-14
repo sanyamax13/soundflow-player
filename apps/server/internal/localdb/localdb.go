@@ -221,7 +221,13 @@ func (d *DB) OrderBySimilarity(seedID string, candidateIDs []string) (ordered []
 			if len(v) == 0 {
 				continue
 			}
-			byVec = append(byVec, cand{id: id, artist: artist, cos: cosine(seedVec, v)})
+			cos := cosine(seedVec, v)
+			// Тот же трек под другим id (см. duplicateSimThreshold в radio.go)
+			// — не показываем как «похожее» самого себя.
+			if cos >= duplicateSimThreshold {
+				continue
+			}
+			byVec = append(byVec, cand{id: id, artist: artist, cos: cos})
 			seen[id] = true
 		}
 		// ближе (больше косинус) — раньше; тай-брейк по id для устойчивости
