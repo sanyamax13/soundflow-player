@@ -45,6 +45,13 @@ Future<List<DownloadedTrack>> orderByTaste(Db db, List<DownloadedTrack> items) a
     if (v != null) vecs[e.key] = v;
   }
   final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
+  // Не в изоляте (в отличие от офлайн-радио, player_view.dart
+  // _offlineRadioFallback): «Поток» строится один раз при открытии вкладки,
+  // пока на экране уже спиннер загрузки — задержка тут не подвешивает
+  // интерфейс поверх уже играющей музыки так, как подвешивало радио.
+  // Заворачивать в Isolate.run здесь ломало виджет-тесты (boot стрима не
+  // успевает дождаться реального изолята за фиксированные pump()) без
+  // реальной пользы — Alex жаловался на радио, не на открытие «Потока».
   final orderedIds = weightedShuffleByTaste(
     ids: [for (final t in items) t.id],
     vecs: vecs,

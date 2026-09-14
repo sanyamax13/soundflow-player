@@ -342,13 +342,24 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
 
     final byId = {for (final t in others) t.id: t};
-    final orderedIds = orderOffline(
-      seedVec: seedVec,
-      candidateVecs: candidateVecs,
-      candidateArtists: {for (final t in others) t.id: t.artist},
-      centroidsLongTerm: longTerm,
-      centroidsRecent: recent,
-    );
+    final candidateArtists = {for (final t in others) t.id: t.artist};
+    // Тысячи кандидатов × косинус к seed и к каждому центру вкуса — тяжёлый
+    // счёт, синхронный сам по себе. Раньше выполнялся прямо тут, на UI-
+    // изоляте — интерфейс замирал на несколько секунд, кнопка «не отвечала»,
+    // звук заикался (Alex TG 14.09.2026: «тормозит... кнопка радио отмирает»
+    // — оказалось, дело не в сервере, он был не дома, а именно в этом
+    // расчёте). Спека это и требовала с самого начала (§4.6: «в изоляте, не
+    // на UI-потоке») — здесь этого не было. `offlineComputeRunner` — по
+    // умолчанию `Isolate.run` (копирует Float32List/Map в отдельный изолят,
+    // считает там, интерфейс не блокирует); тесты подменяют его синхронным
+    // вызовом (см. local_taste.dart).
+    final orderedIds = await offlineComputeRunner(() => orderOffline(
+          seedVec: seedVec,
+          candidateVecs: candidateVecs,
+          candidateArtists: candidateArtists,
+          centroidsLongTerm: longTerm,
+          centroidsRecent: recent,
+        ));
     return [
       for (final id in orderedIds)
         if (byId[id] case final t?)

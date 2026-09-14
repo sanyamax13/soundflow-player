@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:soundflow/app/providers.dart';
+import 'package:soundflow/core/local_taste.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
@@ -70,6 +72,12 @@ Future<Widget> _appWith(Api api, Db db, {PlayerController? player}) async {
 
 void main() {
   setUpAll(sqfliteFfiInit);
+  // `Isolate.run` (см. local_taste.dart offlineComputeRunner) не завершается
+  // под `flutter test` — проверено отдельным пробным тестом
+  // (Isolate.run(() => 1 + 1) не отвечает за 30 сек, это ограничение
+  // тестового раннера, не баг счёта) — здесь считаем прямо, синхронно.
+  setUp(() => offlineComputeRunner = <T>(body) async => body());
+  tearDown(() => offlineComputeRunner = <T>(body) => Isolate.run(body));
 
   testWidgets('сеть недоступна + есть локальные отпечатки — фолбэк собирает похожее', (tester) async {
     final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);

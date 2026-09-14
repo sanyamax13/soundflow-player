@@ -1,6 +1,23 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
+
+/// Как считать тяжёлые офлайн-сравнения (см. `orderOffline` ниже,
+/// вызывается из player_view.dart _offlineRadioFallback) — по умолчанию в
+/// отдельном изоляте (`Isolate.run`), не на UI-потоке: на большой
+/// библиотеке (тысячи кандидатов × центры вкуса) синхронный счёт на
+/// главном изоляте подвешивал интерфейс на секунды, кнопка «не отвечала»,
+/// звук заикался (Alex TG 14.09.2026). Виджет-тесты (`flutter test`)
+/// зависают на настоящем `Isolate.run` НАВСЕГДА (проверено отдельным
+/// пробным тестом — `Isolate.run(() => 1 + 1)` не завершается за 30 сек,
+/// это ограничение самого тестового раннера, не баг в счёте) — поэтому
+/// тесты подменяют этот раннер на прямой синхронный вызов (см.
+/// player_radio_offline_test.dart) — не помечено `@visibleForTesting`,
+/// чтобы не тянуть Flutter-зависимость в этот иначе чисто-Dart файл.
+// ignore: prefer_function_declarations_over_variables
+Future<T> Function<T>(T Function() body) offlineComputeRunner =
+    <T>(body) => Isolate.run(body);
 
 /// Офлайн-версия OrderRadio (apps/server/internal/localdb/radio.go) — без
 /// сети, только среди уже скачанных треков. Без слоя session и без штрафов
