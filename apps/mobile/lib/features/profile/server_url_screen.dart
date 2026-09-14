@@ -17,6 +17,13 @@ class ServerUrlScreen extends ConsumerStatefulWidget {
   ConsumerState<ServerUrlScreen> createState() => _ServerUrlScreenState();
 }
 
+/// Последний адрес, который реально подтвердил себя рабочим (сохранён рукой
+/// через «Сохранить» или найден автосканом) — НЕ хардкод из config.dart.
+/// «Вернуть обычный адрес» раньше сбрасывал сюда 127.0.0.1:8090 (USB по
+/// умолчанию) даже когда реальный сервер — адрес в Wi-Fi на другом порте,
+/// без предупреждения (Опус-ревью телефона 14.09.2026, пункт 5).
+const _kLastGoodUrl = 'last_reachable_server_url';
+
 class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
   late final TextEditingController _ctrl;
   bool _checking = false;
@@ -68,21 +75,55 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     }
     _ctrl.text = found;
     await _check();
+    if (!mounted || _reachable != true) return;
+    // Нашёл и подтвердил сам — запоминаем сразу, без отдельного «Сохранить»
+    // (Опус-ревью телефона 14.09.2026, пункт 5: раньше найденный адрес
+    // терялся, если забыл нажать «Сохранить»).
+    await _persist(found);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Нашёл и сохранил: $found')),
+    );
+  }
+
+  Future<void> _persist(String raw) async {
+    final api = ref.read(apiProvider);
+    final db = ref.read(dbProvider);
+    api.setBaseUrl(raw);
+    await db.kvSet('server_url', api.baseUrl);
+    await db.kvSet(_kLastGoodUrl, api.baseUrl);
   }
 
   Future<void> _save() async {
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
-    final api = ref.read(apiProvider);
-    final db = ref.read(dbProvider);
-    api.setBaseUrl(_ctrl.text);
-    await db.kvSet('server_url', api.baseUrl);
+    await _persist(_ctrl.text);
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Адрес сохранён: ${api.baseUrl}')),
+      SnackBar(content: Text('Адрес сохранён: ${ref.read(apiProvider).baseUrl}')),
     );
     Navigator.of(context).pop();
+  }
+
+  /// Раньше называлась «Вернуть обычный адрес» и молча подставляла хардкод
+  /// 127.0.0.1:8090 (USB по умолчанию) — если реальный сервер жил на другом
+  /// Wi-Fi адресе, это тихо ломало связь без пути назад (пункт 5). Теперь
+  /// возвращает последний АДРЕС, КОТОРЫЙ РЕАЛЬНО РАБОТАЛ; обычный USB-адрес —
+  /// только если рабочего ещё ни разу не было.
+  Future<void> _restoreLastGood() async {
+    final db = ref.read(dbProvider);
+    final last = await db.kvGet(_kLastGoodUrl);
+    if (!mounted) return;
+    setState(() {
+      _ctrl.text = last ?? kDefaultApiBase;
+      _reachable = null;
+    });
+    if (last == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Рабочий адрес ещё не запоминали — подставил обычный (USB)'),
+      ));
+    }
   }
 
   @override
@@ -167,13 +208,8 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton(
-              onPressed: _checking || _saving || _scanning
-                  ? null
-                  : () => setState(() {
-                        _ctrl.text = kDefaultApiBase;
-                        _reachable = null;
-                      }),
-              child: const Text('Вернуть обычный адрес'),
+              onPressed: _checking || _saving || _scanning ? null : _restoreLastGood,
+              child: const Text('Вернуть последний рабочий адрес'),
             ),
           ),
         ],
