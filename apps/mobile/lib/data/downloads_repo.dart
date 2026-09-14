@@ -8,6 +8,16 @@ import 'api.dart';
 import 'db.dart';
 import 'sync_repo.dart';
 
+/// Флажок «остановить скачивание» для [DownloadsRepo.downloadMore] — кнопка
+/// «Стоп» на экране (Опус-ревью телефона 14.09.2026, пункт 7: раньше
+/// начатую порцию было нельзя прервать). Проверяется между треками — текущий
+/// докачивается до конца, следующий уже не начинается.
+class DownloadCancelToken {
+  bool _cancelled = false;
+  void cancel() => _cancelled = true;
+  bool get isCancelled => _cancelled;
+}
+
 /// Скачивание треков с сервера в память телефона и учёт скачанного —
 /// список «Моя музыка». Правила 50 ГБ, автоподкачка по Wi-Fi — потом.
 ///
@@ -300,8 +310,9 @@ class DownloadsRepo {
   /// сколько всего в порции, название текущего). Останавливаем скачивание
   /// без сети или другой ошибки — то, что успело, уже в «Моей музыке».
   Future<({int downloaded, int bytes, int failed})> downloadMore({
-    int budgetBytes = 20 * 1024 * 1024 * 1024,
+    int budgetBytes = 10 * 1024 * 1024 * 1024,
     void Function(int done, int total, String title)? onProgress,
+    DownloadCancelToken? cancelToken,
   }) async {
     final excludeIds = (await _db.allDownloaded()).map((t) => t.id).toList();
     final batch = await _api.nextLibraryBatch(excludeIds: excludeIds, budgetBytes: budgetBytes);
@@ -313,6 +324,10 @@ class DownloadsRepo {
     var bytes = 0;
     var failed = 0;
     for (final track in batch.tracks) {
+      // Кнопка «Стоп» (пункт 7) — проверяем между треками: текущий уже
+      // докачан, следующий не начинаем. Недокачанное подберётся в другой
+      // раз (id уже скачанных остаётся в excludeIds).
+      if (cancelToken?.isCancelled ?? false) break;
       final label = '${track['artist'] ?? ''} — ${track['title'] ?? ''}';
       onProgress?.call(done, total, label);
       if (devId != null) {

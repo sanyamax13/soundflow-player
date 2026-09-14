@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/device_info.dart';
+import '../../core/net_hint.dart';
 import '../../core/theme.dart';
+import '../../data/downloads_repo.dart';
 
 /// «Библиотека»: сколько уже скачано, кнопка «докачать ещё» — сервер сам
 /// подбирает следующую порцию (избранное вперёд) под заданный объём,
@@ -38,12 +41,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int _done = 0;
   int _total = 0;
   String _current = '';
-  _BatchGB _batch = _BatchGB.gb20;
+  _BatchGB _batch = _BatchGB.gb10;
+  DownloadCancelToken? _cancelToken;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_count == null) _load();
+  }
+
+  @override
+  void dispose() {
+    // Ушёл с экрана посреди скачивания — раньше порция продолжала качаться
+    // фоном без возможности остановить (Опус-ревью телефона 14.09.2026,
+    // пункт 7). Текущий трек докачается, следующий уже нет.
+    _cancelToken?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -56,17 +69,43 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _downloadMore() async {
-    final downloads = ref.read(downloadsProvider);
     final messenger = ScaffoldMessenger.of(context);
+
+    // Проверка места на телефоне ПЕРЕД стартом (пункт 7) — раньше порция
+    // могла остановиться на середине без объяснений, если места не хватало.
+    final free = await DeviceInfo.freeSpaceBytes();
+    if (free != null && free < _batch.bytes) {
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Мало места'),
+          content: Text(
+              'На телефоне свободно только ${_fmtBytes(free)}, а порция — ${_batch.label}. '
+              'Скачивание может остановиться на середине. Всё равно начать?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Начать')),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
+    if (!mounted) return;
+
+    final downloads = ref.read(downloadsProvider);
+    final token = DownloadCancelToken();
     setState(() {
       _busy = true;
       _done = 0;
       _total = 0;
       _current = '';
+      _cancelToken = token;
     });
     try {
       final r = await downloads.downloadMore(
         budgetBytes: _batch.bytes,
+        cancelToken: token,
         onProgress: (done, total, title) {
           if (!mounted) return;
           setState(() {
@@ -76,21 +115,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           });
         },
       );
-      if (r.downloaded == 0 && r.failed == 0) {
+      final stopped = token.isCancelled;
+      if (r.downloaded == 0 && r.failed == 0 && !stopped) {
         messenger.showSnackBar(const SnackBar(content: Text('Новых песен на сервере не осталось')));
       } else {
         final failedNote = r.failed > 0 ? ', не вышло — ${r.failed}' : '';
+        final lead = stopped ? 'Остановлено. Скачано' : 'Докачано';
         messenger.showSnackBar(SnackBar(
-          content: Text('Докачано: ${r.downloaded}$failedNote (${_fmtBytes(r.bytes)})'),
+          content: Text('$lead: ${r.downloaded}$failedNote (${_fmtBytes(r.bytes)})'),
         ));
       }
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('Сервер не ответил — попробуй ещё раз')));
+      if (mounted) showServerUnreachableSnackBar(context, messenger);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _cancelToken = null;
+        });
+      }
       await _load();
     }
   }
+
+  void _stop() => _cancelToken?.cancel();
 
   String _fmtBytes(int b) {
     if (b >= 1024 * 1024 * 1024) return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(1)} ГБ';
@@ -103,7 +151,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final count = _count;
     final bytes = _bytes;
     return Scaffold(
-      appBar: AppBar(title: const Text('Библиотека')),
+      appBar: AppBar(title: const Text('Скачать музыку')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -133,9 +181,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             const SizedBox(height: 16),
             LinearProgressIndicator(value: _total == 0 ? null : _done / _total),
             const SizedBox(height: 8),
-            Text(
-              _total == 0 ? 'Спрашиваю сервер…' : 'Скачано $_done из $_total',
-              style: const TextStyle(color: Afisha.inkDim),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _total == 0 ? 'Спрашиваю сервер…' : 'Скачано $_done из $_total',
+                    style: const TextStyle(color: Afisha.inkDim),
+                  ),
+                ),
+                TextButton(onPressed: _stop, child: const Text('Стоп')),
+              ],
             ),
             if (_current.isNotEmpty)
               Text(_current, maxLines: 1, overflow: TextOverflow.ellipsis,
