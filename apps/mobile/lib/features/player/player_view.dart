@@ -308,6 +308,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       // фолбэк по уже скачанным трекам; reordered:false (ветка выше) сюда
       // не попадает — источник отпечатка у seed один и тот же, что для
       // сервера, что локально, так что фолбэк там всё равно не поможет.
+      // mounted-проверка ОБЯЗАТЕЛЬНА до вызова — пока streamOrder висел
+      // (сетевой таймаут), пользователь мог уйти с этого экрана, и
+      // _offlineRadioFallback тут же трогает ref.read(dbProvider) на первой
+      // строке (упало на боевом телефоне Alex, «Cannot use "ref" after the
+      // widget was disposed», 14.09.2026, журнал сбоев в Профиле).
+      if (!mounted) return;
       final tail = await _offlineRadioFallback(now, all, sw);
       if (tail != null && mounted) {
         unawaited(AppLog.event('radio_offline_ok', {
