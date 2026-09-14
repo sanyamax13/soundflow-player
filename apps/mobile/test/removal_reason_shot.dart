@@ -35,7 +35,7 @@ void main() {
     }
   });
 
-  testWidgets('лист причин «Убрать совсем» — три пункта, не пять', (t) async {
+  testWidgets('лист причин «Убрать совсем» — четыре пункта, не пять', (t) async {
     await t.binding.setSurfaceSize(const Size(400, 860));
     await t.pumpWidget(MaterialApp(
       debugShowCheckedModeBanner: false,
