@@ -13,6 +13,7 @@ import (
 
 	"github.com/dhowden/tag"
 
+	"soundflow/server/internal/cuesplit"
 	"soundflow/server/internal/localdb"
 	"soundflow/server/internal/quality"
 	"soundflow/server/internal/tagfix"
@@ -160,6 +161,14 @@ func (jr *JobRunner) StartScan(dir string) string {
 			if !isAudio {
 				return nil
 			}
+			if cuePath, cue, ok := cuesplit.FindFor(path); ok {
+				n, f := splitByCue(s, path, cuePath, cue)
+				added += n
+				failed += f
+				j.Total += n + f
+				j.Done += n + f
+				return nil
+			}
 			j.Total++
 			ar, ti, al := readTags(path)
 			if ar == "" || ti == "" {
@@ -222,6 +231,87 @@ func (jr *JobRunner) StartScan(dir string) string {
 		jr.finish(note)
 	}()
 	return j.ID
+}
+
+// splitByCue — альбом скачан/лежит ОДНИМ файлом, но рядом есть .cue-
+// разметка (обычно так рипует Exact Audio Copy) — режем по её точным
+// меткам вместо того, чтобы добавить весь альбом как одну «песню» (см.
+// Alex TG 14.09.2026 — «Градусы», 3 альбома по 140-385 МБ одним файлом,
+// отпечаток/обложка на них не считались, играть невозможно было по
+// отдельной песне). Не трогаем исходный файл, если хоть что-то пошло не
+// так — прячем (переименовываем расширение) только при полном успехе.
+func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue) (added, failed int) {
+	cover := findCoverImage(filepath.Dir(audioPath))
+	results, err := cuesplit.Split("ffmpeg", audioPath, cue, cover)
+	if err != nil {
+		_ = s.db.AddServerLog("error", "", "", "разрезка по cue не удалась ("+audioPath+"): "+err.Error(), 0)
+		return 0, 1
+	}
+	mime := audioExt[strings.ToLower(filepath.Ext(audioPath))]
+	for _, r := range results {
+		ar := r.Track.Artist
+		if ar == "" {
+			ar = cue.AlbumArtist
+		}
+		ti := r.Track.Title
+		al := cue.Album
+		if v := quality.Screen(ar, ti, ""); !v.OK {
+			continue
+		}
+		key := quality.NormalizedKey(ar, ti)
+		if exists, _ := s.db.TrackExistsByKey(key); exists {
+			continue
+		}
+		fi, _ := os.Stat(r.Path)
+		var size int64
+		if fi != nil {
+			size = fi.Size()
+		}
+		tid := "t_" + randHex()
+		nt := localdb.NewTrack{
+			ID: tid, Artist: ar, Title: ti, Album: al,
+			ReleaseKind: quality.ReleaseKind(ti, al), NormalizedKey: key,
+		}
+		nf := localdb.NewTrackFile{
+			ID: "f_" + randHex(), NormalizedKey: key, FilePath: r.Path,
+			MimeType: mime, SizeBytes: size, Source: "scan",
+		}
+		if err := s.db.InsertTrackWithFile(nt, nf); err != nil {
+			failed++
+			continue
+		}
+		added++
+		if s.eng != nil {
+			if emb, e := s.eng.EmbedFile(r.Path); e == nil {
+				_ = s.db.SetFeatureVector(tid, emb)
+			}
+		}
+	}
+	if added > 0 {
+		// прячем исходный слитый файл от будущих сканов — НЕ удаляем.
+		_ = os.Rename(audioPath, audioPath+".orig")
+	}
+	_ = s.db.AddServerLog("info", "", "", fmt.Sprintf(
+		"разрезано по cue: %s -> %d песен (%s)", filepath.Base(audioPath), added, filepath.Base(cuePath)), 0)
+	return added, failed
+}
+
+var coverFileNames = map[string]bool{
+	"folder.jpg": true, "folder.jpeg": true, "folder.png": true,
+	"cover.jpg": true, "cover.jpeg": true, "cover.png": true,
+}
+
+func findCoverImage(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() && coverFileNames[strings.ToLower(e.Name())] {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+	return ""
 }
 
 // ---------------- пересчёт отпечатков ----------------

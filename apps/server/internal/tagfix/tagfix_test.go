@@ -32,6 +32,17 @@ func TestSanitize_DoesNotMangleRealAccentedNames(t *testing.T) {
 	}
 }
 
+func TestSanitize_MixedCyrillicAndEnglishRemixSuffix(t *testing.T) {
+	// «Семь морей (New Energy mix)» — доля кириллицы в целой строке ниже
+	// 50% из-за длинной англоязычной приписки, но кириллица тут есть и
+	// её надо починить (Alex TG 14.09.2026, сборник «100 HITS REMIX»).
+	in := "Ñåìü ìîðåé (New Energy mix)"
+	want := "Семь морей (New Energy mix)"
+	if got := Sanitize(in); got != want {
+		t.Errorf("Sanitize(%q) = %q, хотел %q", in, got, want)
+	}
+}
+
 func TestSanitize_InvalidUTF8CP1251Bytes(t *testing.T) {
 	// Старый вид порчи (пункт 1) — сырые байты cp1251, невалидный UTF-8 сам
 	// по себе. 0xCD 0xFE 0xF8 0xE0 = "Нюша" в Windows-1251.

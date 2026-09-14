@@ -46,10 +46,18 @@ func Sanitize(s string) string {
 // unscrambleLatin1AsCP1251 — см. пункт 2 выше. Отказывается гадать (ok=false),
 // если в строке уже есть кириллица (значит, всё в порядке — трогать нечего),
 // если в ней встретился символ вне диапазона Latin-1 (это не наш случай
-// порчи), или если после раскодирования кириллицы получилось меньше
-// половины букв — вероятно, это настоящее имя с акцентами (Beyoncé,
-// Mötley Crüe), а не сломанная кодировка, и превращать в них кириллицу
-// было бы неправильным угадыванием.
+// порчи), или если ни одно «слово» целиком не состоит из non-ASCII букв —
+// вероятно, это настоящее имя с одним акцентом (Beyoncé, Mötley Crüe), а
+// не сломанная кодировка, и превращать его в кириллицу было бы неправильным
+// угадыванием.
+//
+// Порог раньше считался долей кириллицы во всей строке (кириллица >= 50%
+// букв), но у сборников с торрентов названия часто содержат длинную
+// англоязычную ремикс-приписку («Семь морей (New Energy mix)») — она
+// перевешивала долю и настоящая порча не чинилась. Слово целиком из
+// non-ASCII букв — куда надёжнее сигнал порчи: каждая испорченная
+// кириллическая буква ВСЕГДА > 0x7F, а у настоящего акцента (é, ö, ü)
+// не-ASCII буква только одна внутри иначе ASCII-слова.
 func unscrambleLatin1AsCP1251(s string) (string, bool) {
 	buf := make([]byte, 0, len(s))
 	for _, r := range s {
@@ -61,7 +69,7 @@ func unscrambleLatin1AsCP1251(s string) (string, bool) {
 		}
 		buf = append(buf, byte(r))
 	}
-	if len(buf) == 0 {
+	if len(buf) == 0 || !hasFullyNonASCIIWord(s) {
 		return "", false
 	}
 	fixed, err := charmap.Windows1251.NewDecoder().Bytes(buf)
@@ -69,17 +77,33 @@ func unscrambleLatin1AsCP1251(s string) (string, bool) {
 		return "", false
 	}
 	out := string(fixed)
-	cyr, total := 0, 0
-	for _, r := range out {
-		if unicode.IsLetter(r) {
-			total++
-			if r >= 0x0400 && r <= 0x04FF {
-				cyr++
-			}
-		}
-	}
-	if total == 0 || cyr*2 < total {
+	if !strings.ContainsFunc(out, func(r rune) bool { return r >= 0x0400 && r <= 0x04FF }) {
 		return "", false
 	}
 	return strings.TrimSpace(out), true
+}
+
+// hasFullyNonASCIIWord — есть ли в строке буквенное «слово» (подряд идущие
+// буквы), где КАЖДАЯ буква > 0x7F. Слово короче двух букв не считается —
+// это может быть просто инициал («Ä.»).
+func hasFullyNonASCIIWord(s string) bool {
+	runLen, allNonASCII, found := 0, true, false
+	flush := func() {
+		if runLen >= 2 && allNonASCII {
+			found = true
+		}
+		runLen, allNonASCII = 0, true
+	}
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			runLen++
+			if r <= 0x7F {
+				allNonASCII = false
+			}
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return found
 }
