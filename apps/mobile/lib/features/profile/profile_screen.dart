@@ -27,7 +27,7 @@ class ProfileScreen extends StatelessWidget {
           const _CrashCard(),
           _Row(
             icon: Icons.download_outlined,
-            title: 'Библиотека',
+            title: 'Скачать музыку',
             subtitle: 'докачать музыку с сервера',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
@@ -132,13 +132,15 @@ class _CrashCardState extends ConsumerState<_CrashCard> {
   Widget build(BuildContext context) {
     final text = _text;
     if (text == null) return const SizedBox.shrink();
-    final firstLines = text.split('\n').take(3).join('\n');
     return Container(
       color: const Color(0x33FF5252),
       child: ListTile(
         leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF5252)),
         title: const Text('Приложение падало'),
-        subtitle: Text(firstLines, style: const TextStyle(color: Afisha.inkDim)),
+        // Человеческая строка вместо сырого стека (Опус-ревью телефона
+        // 14.09.2026, пункт 2) — сам текст сбоя всё ещё доступен по тапу.
+        subtitle: const Text('Есть запись о сбое — тапни, чтобы посмотреть или отправить',
+            style: TextStyle(color: Afisha.inkDim)),
         trailing: const Icon(Icons.chevron_right, color: Afisha.line),
         onTap: _open,
       ),

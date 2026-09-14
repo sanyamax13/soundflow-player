@@ -7,7 +7,9 @@ import '../../app/providers.dart';
 import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
+import '../../core/removal_reasons.dart';
 import '../../data/db.dart';
+import '../library/library_screen.dart';
 import '../player/player_controller.dart';
 import 'artist_grouping.dart';
 
@@ -132,26 +134,27 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     return yes == true;
   }
 
-  Future<void> _deleteTrack(DownloadedTrack t) async {
-    final d = ref.read(downloadsProvider);
-    if (!await _confirm('Удалить «${t.title}»?',
-        'Файл сотрётся с телефона. Скачать заново можно будет с сервера.',
-        'Удалить')) {
-      return;
-    }
-    await d.delete(t.id);
+  /// Раньше рядом лежали два похожих пункта — «Не та версия» (удаляла файл
+  /// СРАЗУ, без вопроса) и «Удалить песню» (спрашивала да/нет, но не
+  /// причину) — Alex не мог понять разницу (Опус-ревью телефона 14.09.2026,
+  /// пункт 9). Теперь один и тот же лист причин, что и в плеере
+  /// (core/removal_reasons.dart) — выбор причины и есть подтверждение.
+  Future<void> _removeCompletely(DownloadedTrack t) async {
+    final reason = await pickRemovalReason(context);
+    if (reason == null || !mounted) return;
+    await ref.read(downloadsProvider).delete(t.id, reason: reason);
     await _refresh();
   }
 
-  Future<void> _wrongVersion(DownloadedTrack t) async {
-    final d = ref.read(downloadsProvider);
-    if (!await _confirm('Не та версия?',
-        '«${t.title}» удалится, сервер потом подтянет другую версию.',
-        'Убрать')) {
-      return;
-    }
-    await d.delete(t.id, reason: 'wrong_version');
-    await _refresh();
+  /// Мягкий сигнал «не по вкусу» — файл не трогает, только влияет на будущий
+  /// подбор (тот же принцип, что и «меньше такого» в плеере). Раньше на этом
+  /// экране такого действия не было вообще — только жёсткое удаление.
+  Future<void> _lessLike(DownloadedTrack t) async {
+    await ref.read(syncProvider).record('less_like', trackId: t.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Буду реже ставить похожее')),
+    );
   }
 
   Future<void> _deleteArtist(ArtistFolder folder) async {
@@ -349,10 +352,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                 switch (v) {
                   case 'fav':
                     _toggleFav(t);
-                  case 'wrong':
-                    _wrongVersion(t);
+                  case 'less':
+                    _lessLike(t);
                   case 'delete':
-                    _deleteTrack(t);
+                    _removeCompletely(t);
                 }
               },
               itemBuilder: (_) => [
@@ -361,8 +364,8 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                   child: Text(
                       t.favorite ? 'Убрать из избранного' : 'В избранное'),
                 ),
-                const PopupMenuItem(value: 'wrong', child: Text('Не та версия')),
-                const PopupMenuItem(value: 'delete', child: Text('Удалить песню')),
+                const PopupMenuItem(value: 'less', child: Text('Меньше такого')),
+                const PopupMenuItem(value: 'delete', child: Text('Убрать совсем')),
               ],
             ),
           ],
@@ -550,10 +553,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
               switch (v) {
                 case 'fav':
                   _toggleFav(t);
-                case 'wrong':
-                  _wrongVersion(t);
+                case 'less':
+                  _lessLike(t);
                 case 'delete':
-                  _deleteTrack(t);
+                  _removeCompletely(t);
               }
             },
             itemBuilder: (_) => [
@@ -564,9 +567,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                     : 'В избранное'),
               ),
               const PopupMenuItem(
-                  value: 'wrong', child: Text('Не та версия')),
+                  value: 'less', child: Text('Меньше такого')),
               const PopupMenuItem(
-                  value: 'delete', child: Text('Удалить песню')),
+                  value: 'delete', child: Text('Убрать совсем')),
             ],
           ),
         ],
@@ -586,12 +589,24 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   Widget _empty() => Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
-              _onlyFav
-                  ? 'В избранном пока пусто'
-                  : 'Пока ничего не скачано.\nОткрой «Библиотеку» и нажми «Докачать ещё».',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Afisha.inkDim, height: 1.5)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                  _onlyFav ? 'В избранном пока пусто' : 'Пока ничего не скачано',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Afisha.inkDim, height: 1.5)),
+              if (!_onlyFav) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
+                  ),
+                  child: const Text('Скачать музыку'),
+                ),
+              ],
+            ],
+          ),
         ),
       );
 }

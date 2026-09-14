@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/net_hint.dart';
 import '../../core/theme.dart';
 
 /// «Убранные» — что удалено из «Моей музыки»: сколько песен, сколько места
@@ -84,8 +85,7 @@ class _RemovedScreenState extends ConsumerState<RemovedScreen> {
           SnackBar(content: Text('Скачал заново «${r['title']}»')));
       await _load();
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Не вышло — нужна домашняя сеть, попробуй там')));
+      if (mounted) showServerUnreachableSnackBar(context, messenger, lead: 'Не вышло скачать заново');
     } finally {
       if (mounted) setState(() => _busy.remove(id));
     }

@@ -28,7 +28,7 @@ class _ShellState extends ConsumerState<Shell> {
   Widget _screen(int i) => switch (i) {
         1 => const MyMusicScreen(),
         2 => const ProfileScreen(),
-        _ => StreamScreen(onOpenLibrary: () => setState(() => _tab = 1)),
+        _ => const StreamScreen(),
       };
 
   @override

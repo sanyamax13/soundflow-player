@@ -47,6 +47,7 @@ Future<Widget> _app() async {
   return ProviderScope(
     overrides: [
       apiProvider.overrideWithValue(api),
+      dbProvider.overrideWithValue(db),
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(PlayerController()),
       syncProvider.overrideWithValue(sync),
@@ -103,6 +104,9 @@ void main() {
     expect(find.text('Синхронизировать сейчас'), findsOneWidget);
   });
 
+  // Экран «Сервер» упрощён (Опус-ревью телефона 14.09.2026, пункт 8): вместо
+  // версий/миграций/устройств/сырого лога — связь, синхронизация, «больше не
+  // качать».
   testWidgets('в Профиле есть «Сервер», экран показывает состояние', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
@@ -114,27 +118,23 @@ void main() {
     await tester.tap(find.text('Сервер'));
     await tester.pumpAndSettle();
     expect(find.text('СИНХРОНИЗАЦИЯ'), findsOneWidget);
-    expect(find.text('СЕРВЕР'), findsOneWidget);
-
-    await tester.scrollUntilVisible(
-      find.text('пока никто не синхронизировался'),
-      240,
-    );
-    expect(find.text('пока никто не синхронизировался'), findsOneWidget);
+    expect(find.text('СВЯЗЬ С КОМПЬЮТЕРОМ'), findsOneWidget);
+    expect(find.text('БОЛЬШЕ НЕ КАЧАТЬ'), findsOneWidget);
+    expect(find.text('Компьютер на связи'), findsOneWidget);
   });
 
-  testWidgets('в Профиле есть «Библиотека», кнопка «докачать ещё» на месте', (tester) async {
+  testWidgets('в Профиле есть «Скачать музыку», кнопка «докачать ещё» на месте', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Библиотека'), findsOneWidget);
+    expect(find.text('Скачать музыку'), findsOneWidget);
 
-    await tester.tap(find.text('Библиотека'));
+    await tester.tap(find.text('Скачать музыку'));
     await tester.pumpAndSettle();
     expect(find.text('Скачано: 0 песен, 0 Б'), findsOneWidget);
-    expect(find.text('Докачать ещё 20 ГБ'), findsOneWidget);
+    expect(find.text('Докачать ещё 10 ГБ'), findsOneWidget);
   });
 
   testWidgets('в Профиле есть «Убранные», пустая — понятная надпись', (tester) async {
