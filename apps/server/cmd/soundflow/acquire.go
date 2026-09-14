@@ -70,7 +70,7 @@ func (s *Service) acq() *acqTracker {
 // acquireService — собрать acquire.Service поверх текущей качалки. nil — качалка
 // ещё не готова.
 func (s *Service) acquireService() *acquire.Service {
-	url := s.dl.URL()
+	url := s.sidecarURL()
 	if url == "" || s.store == nil {
 		return nil
 	}
@@ -154,7 +154,7 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/acquire/log — последние попытки «Найти трек» для окна.
 func (s *Service) hAcquireLog(w http.ResponseWriter, r *http.Request) {
-	ready := s.dl.URL() != "" && s.store != nil
+	ready := s.sidecarURL() != "" && s.store != nil
 	_, permanent, reason := s.downloaderState()
 	writeJSON(w, map[string]any{
 		"ready":     ready,

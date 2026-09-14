@@ -83,7 +83,7 @@ func (s *Service) tor() *torTracker {
 
 // dlPost — POST json на ручку качалки, вернуть тело. "" url → качалка не готова.
 func (s *Service) dlPost(ctx context.Context, path string, body any, timeout time.Duration) ([]byte, error) {
-	url := s.dl.URL()
+	url := s.sidecarURL()
 	if url == "" {
 		_, _, reason := s.downloaderState()
 		if reason == "" {
@@ -137,7 +137,7 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "нужен выбранный релиз", 400)
 		return
 	}
-	if s.dl.URL() == "" || s.store == nil {
+	if s.sidecarURL() == "" || s.store == nil {
 		_, _, reason := s.downloaderState()
 		if reason == "" {
 			reason = "качалка ещё запускается"
@@ -206,7 +206,7 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 func (s *Service) hTorrentLog(w http.ResponseWriter, r *http.Request) {
 	_, permanent, reason := s.downloaderState()
 	writeJSON(w, map[string]any{
-		"ready":       s.dl.URL() != "" && s.store != nil,
+		"ready":       s.sidecarURL() != "" && s.store != nil,
 		"available":   s.dl != nil,
 		"permanent":   permanent,
 		"reason":      reason,

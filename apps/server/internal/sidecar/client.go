@@ -51,6 +51,26 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	return json.Unmarshal(data, out)
 }
 
+func (c *Client) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("sidecar %s: %d %s", path, resp.StatusCode, bytes.TrimSpace(data))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(data, out)
+}
+
 // Health — жив ли сайдкар.
 func (c *Client) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/health", nil)
@@ -152,4 +172,50 @@ func (c *Client) YandexTrackCover(ctx context.Context, artist, title string) (st
 		return "", err
 	}
 	return out.CoverURL, nil
+}
+
+// YandexLikeItem — трек «Мне нравится» личного аккаунта (Alex TG 14.09.2026).
+type YandexLikeItem struct {
+	YandexID    string `json:"yandex_id"`
+	Artist      string `json:"artist"`
+	Title       string `json:"title"`
+	Album       string `json:"album"`
+	CoverURL    string `json:"cover_url"`
+	DurationSec int    `json:"duration_sec"`
+}
+
+// YandexLikes — все треки «Мне нравится». Ошибка сети/сайдкара — err; "нет
+// токена" сайдкар возвращает как error-строку в теле, тоже приходит через err.
+func (c *Client) YandexLikes(ctx context.Context) ([]YandexLikeItem, error) {
+	var out struct {
+		Items []YandexLikeItem `json:"items"`
+		Error string           `json:"error"`
+	}
+	if err := c.get(ctx, "/yandex/likes", &out); err != nil {
+		return nil, err
+	}
+	if out.Error != "" {
+		return nil, fmt.Errorf("sidecar yandex/likes: %s", out.Error)
+	}
+	return out.Items, nil
+}
+
+// YandexDislikeItem — трек «Не рекомендовать» (для чёрного списка).
+type YandexDislikeItem struct {
+	Artist string `json:"artist"`
+	Title  string `json:"title"`
+}
+
+func (c *Client) YandexDislikes(ctx context.Context) ([]YandexDislikeItem, error) {
+	var out struct {
+		Items []YandexDislikeItem `json:"items"`
+		Error string              `json:"error"`
+	}
+	if err := c.get(ctx, "/yandex/dislikes", &out); err != nil {
+		return nil, err
+	}
+	if out.Error != "" {
+		return nil, fmt.Errorf("sidecar yandex/dislikes: %s", out.Error)
+	}
+	return out.Items, nil
 }

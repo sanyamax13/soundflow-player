@@ -187,11 +187,11 @@ func (d *downloaderProc) waitHealth(port int, timeout time.Duration) bool {
 // появится за этот запуск; permanent=false — есть, но ещё поднимается или
 // перезапускается после сбоя (сообщение может стать неактуальным само).
 func (s *Service) downloaderState() (ready, permanent bool, reason string) {
+	if url := s.sidecarURL(); url != "" {
+		return true, false, ""
+	}
 	if s.dl == nil {
 		return false, true, "качалка не входит в эту копию программы — скачивание одного трека и через торренты недоступно"
-	}
-	if url := s.dl.URL(); url != "" {
-		return true, false, ""
 	}
 	return false, false, "качалка ещё запускается — попробуй через минуту"
 }

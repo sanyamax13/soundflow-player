@@ -248,6 +248,7 @@
       <a data-v="find">Найти и скачать</a>
       <a data-v="devices">Устройства</a>
       <a data-v="taste">Вкус</a>
+      <a data-v="discover">Открытия</a>
       <a data-v="settings">Настройки</a>
       <div class="gap"></div>
       <div class="ver">SoundFlow.exe<br>v0.1 · sqlite</div>
@@ -332,6 +333,19 @@
         <div id="tasteBody"><div class="muted">загрузка…</div></div>
       </section>
 
+      <!-- Открытия: лайки/дизлайки из Яндекс.Музыки (Alex TG 14.09.2026 —
+           «возьмём моё избранное из Яндекса», шаг 1). Полные песни, без
+           превью — по прямой просьбе Alex. -->
+      <section class="view" id="v-discover">
+        <div class="bar">
+          <h2 style="margin:0;flex:1">Открытия — твои лайки из Яндекс.Музыки</h2>
+          <button class="btn" id="discRefresh">Обновить</button>
+          <button class="btn primary" id="discDlAll">Скачать выбранные</button>
+        </div>
+        <div class="hint" id="discHint">загрузка…</div>
+        <div class="dsongs" id="discBody"></div>
+      </section>
+
       <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
            из главной навигации в «Настройки» — Alex она нужна редко, для
            диагностики, а не для повседневной работы) -->
@@ -408,7 +422,7 @@ function friendlyError(raw){
 }
 
 /* ---------- навигация по разделам ---------- */
-const VIEWS = ["catalog","find","devices","taste","log","settings"];
+const VIEWS = ["catalog","find","devices","taste","discover","log","settings"];
 function showView(name){
   name = (name||"").split("?")[0];               // #find?tq=... → find
   if(!VIEWS.includes(name)) name = "catalog";
@@ -425,6 +439,7 @@ function showView(name){
   if(name==="taste") loadTaste();
   if(name==="log") loadLog();
   if(name==="settings") loadSettings();
+  if(name==="discover") loadDiscover();
 }
 document.querySelectorAll(".nav a").forEach(a => a.onclick = () => showView(a.dataset.v));
 window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
@@ -1210,6 +1225,73 @@ async function loadTaste(){
 }
 
 /* ---------- Настройки ---------- */
+/* ---------- Открытия: лайки/дизлайки из Яндекс.Музыки ----------
+   Alex TG 14.09.2026: «возьмём моё избранное из Яндекса... нужно это в
+   программе как-то разместить, может отдельную вкладку». Шаг 1 —
+   полные песни без превью (Alex явно попросил не делать превью), сама
+   закачка — тем же /api/acquire, что и «Найти и скачать» (ищет по
+   Яндексу/торрентам, проверяет качество — код не дублируем). Дизлайки —
+   молча в чёрный список при первом открытии вкладки за сессию. */
+let _discItems = [];
+let _discDislikesDone = false;
+
+async function loadDiscover(){
+  const hint = $("#discHint"), box = $("#discBody");
+  hint.textContent = "загрузка твоих лайков из Яндекса…";
+  box.innerHTML = "";
+  if(!_discDislikesDone){
+    _discDislikesDone = true;
+    fetch("/api/yandex/dislikes/import",{method:"POST"}).catch(()=>{});
+  }
+  try{
+    _discItems = await jget("/api/yandex/likes");
+  }catch(e){
+    hint.textContent = "Не вышло получить лайки: "+friendlyError(e);
+    return;
+  }
+  const left = _discItems.filter(t=>!t.already_have).length;
+  hint.innerHTML = `<b>${nfmt(_discItems.length)}</b> лайкнутых песен в Яндексе, `+
+    `из них уже в каталоге — <b>${nfmt(_discItems.length-left)}</b>, можно докачать — <b>${nfmt(left)}</b>. `+
+    `Отметь галочками, что хочешь, или сразу «Скачать выбранные».`;
+  box.innerHTML = _discItems.map((t,i) => _discRow(t,i)).join("");
+}
+
+function _discRow(t,i){
+  const have = t.already_have;
+  return `<div class="drow${have?" busy":""}" data-i="${i}">`+
+    `<span class="dcv" style="background:${_devColor(t.artist)}">`+
+      (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : `<span>${esc(_devInitials(t.artist))}</span>`)+
+    `</span>`+
+    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span></span>`+
+    (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
+    (have
+      ? `<span class="ds" title="уже в каталоге">✓ есть</span>`
+      : `<input type="checkbox" class="discPick" data-i="${i}" style="margin:0 6px">`+
+        `<button class="dx" title="скачать эту песню" onclick="_discOne(${i})">⬇</button>`)+
+    `</div>`;
+}
+
+async function _discOne(i){
+  const t = _discItems[i];
+  if(!t || t.already_have) return;
+  const row = document.querySelector('#discBody .drow[data-i="'+i+'"]');
+  if(row) row.classList.add("busy");
+  try{
+    await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
+  }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
+}
+
+$("#discRefresh").onclick = loadDiscover;
+$("#discDlAll").onclick = async () => {
+  const picked = [...document.querySelectorAll(".discPick:checked")].map(el => Number(el.dataset.i));
+  const list = picked.length ? picked : _discItems.map((t,i)=>i).filter(i=>!_discItems[i].already_have);
+  if(!list.length){ alert("Нечего качать — все уже в каталоге."); return; }
+  if(!picked.length && !confirm(`Скачать все ${list.length} песен, которых ещё нет в каталоге?`)) return;
+  $("#discDlAll").disabled = true;
+  for(const i of list){ await _discOne(i); }
+  $("#discDlAll").disabled = false;
+};
+
 async function loadSettings(){
   if(!window._info){ try{ await loadInfo(); }catch(e){} }
   const d = window._info;
