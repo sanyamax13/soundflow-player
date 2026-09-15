@@ -447,7 +447,7 @@ function showView(name){
   // прокручивает к нему и шапка уезжает за верх окна (body overflow:hidden,
   // вернуть нечем). Сбрасываем прокрутку документа (Alex 08.09.2026).
   document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
-  if(name==="catalog") loadCatalog();   // вернулся на вкладку после скана — показать свежий каталог
+  if(name==="catalog"){ loadCatalog(); _catStartPoll(); } else { _catStopPoll(); }
   if(name==="find") loadAcqLog();
   if(name==="devices") loadDevices();
   if(name==="taste") loadTaste();
@@ -539,10 +539,25 @@ async function _markNewAlbums(albums){
   _lsSet("catalogLastVisit", new Date().toISOString().replace(/\.\d+Z$/, "Z"));
 }
 
-async function loadCatalog(){
+// Alex TG 15.09.2026: «хочу что бы окно каталога обновлялось в реальном
+// времени» — раз в 5с проверяем, не изменился ли каталог (новая песня,
+// докачалась и т.п.), пока вкладка открыта; перерисовываем ТОЛЬКО если
+// правда что-то изменилось (иначе сбивало бы прокрутку зря).
+let _catLastSig = null;
+let _catPollTimer = null;
+async function loadCatalog(opts){
+  opts = opts || {};
   try{
     const tracks = await jget("/api/catalog/flat");
+    if(opts.skipIfUnchanged){
+      const sig = tracks.length + "|" + tracks.map(t=>t.id+":"+(t.has_fp?1:0)).join(",");
+      if(sig === _catLastSig) return;
+      _catLastSig = sig;
+    } else {
+      _catLastSig = tracks.length + "|" + tracks.map(t=>t.id+":"+(t.has_fp?1:0)).join(",");
+    }
     const box = $("#tree");
+    const savedScroll = opts.preserveScroll ? box.scrollTop : 0;
     if(!tracks.length){
       box.innerHTML =
         '<div class="empty"><div class="big">Каталог пуст</div>'+
@@ -560,7 +575,23 @@ async function loadCatalog(){
       `<span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(withFp)}</b></span>`;
     if(_catOpenKey && !_catAlbums.find(a=>a.key===_catOpenKey)) _catOpenKey = null;
     renderCatalogBody();
+    if(opts.preserveScroll) box.scrollTop = savedScroll;
   }catch(e){ $("#tree").innerHTML = '<div class="muted">ошибка: '+esc(e.message)+'</div>'; }
+}
+
+// Пока вкладка «Каталог» открыта и в поиске пусто — раз в 5с тихо проверяем
+// изменения. searchbox непустой = сейчас показаны результаты поиска, не
+// каталог — не мешаем.
+function _catStartPoll(){
+  if(_catPollTimer) return;
+  _catPollTimer = setInterval(() => {
+    if(!document.getElementById("v-catalog").classList.contains("on")) return;
+    if($("#q").value.trim()) return;
+    loadCatalog({skipIfUnchanged:true, preserveScroll:true});
+  }, 5000);
+}
+function _catStopPoll(){
+  if(_catPollTimer){ clearInterval(_catPollTimer); _catPollTimer = null; }
 }
 
 function renderCatalogBody(){
