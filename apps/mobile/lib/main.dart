@@ -63,7 +63,11 @@ Future<void> _boot() async {
   final api = Api(baseUrl: apiBase);
   final sync = SyncRepo(api, db);
   final downloads = DownloadsRepo(api, db, sync);
-  final player = PlayerController(
+  // late — onMissingFile ссылается на player, чтобы вернуть трек в очередь
+  // после докачки (см. PlayerController.requeueTrack); замыкание просто
+  // держит ссылку, вызовется уже после присвоения ниже.
+  late final PlayerController player;
+  player = PlayerController(
     onPlay: (m) => sync.record('play', trackId: m.id),
     onSkip: (m, pos, total) => sync.record('skip', trackId: m.id, payload: {
       'position_ms': pos.inMilliseconds,
@@ -71,6 +75,16 @@ Future<void> _boot() async {
     }),
     onComplete: (m) => sync.record('complete', trackId: m.id),
     onDuration: (id, total) => downloads.noteFileMeta(id, total),
+    // Файл трека пропал, плеер его пропустил (не падает, но и не играет) —
+    // Alex TG 15.09.2026 «давай чинить, а не пропускать»: докачиваем заново
+    // и возвращаем в очередь. Не вышло (сеть моргнула / трек правда стёрли
+    // на сервере) — молча оставляем пропущенным, как раньше.
+    onMissingFile: (m) async {
+      try {
+        await downloads.redownloadMissingFile(m.id);
+        await player.requeueTrack(m);
+      } catch (_) {}
+    },
   );
   // Медиа-сессия Android — чтобы кнопки на Bluetooth-магнитоле в машине,
   // наушниках, руле и экране блокировки управляли плеером (05.09.2026,

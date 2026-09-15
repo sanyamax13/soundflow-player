@@ -435,6 +435,21 @@ class DownloadsRepo {
     return (added: added, removed: removed, failed: failed);
   }
 
+  /// Файл трека пропал с диска, а запись о нём в базе — цела (см.
+  /// `PlayerController.onMissingFile` — плеер словил недостающий файл в
+  /// очереди, Alex TG 15.09.2026: «давай чинить, а не пропускать»).
+  /// Перекачивает файл заново по уже известному пути; теги/битрейт/обложка
+  /// в базе не трогаем — там всё верно, пропал только сам файл. Трека нет
+  /// в базе вовсе (по-настоящему удалили) — бросаем исключение, вызывающий
+  /// код (см. main.dart) просто оставит трек пропущенным.
+  Future<void> redownloadMissingFile(String id) async {
+    final row = await _db.downloadedById(id);
+    if (row == null) {
+      throw StateError('трек не найден в базе: $id');
+    }
+    await _api.downloadTrack(id, row.path);
+  }
+
   /// Заказать трек на сервере. Возвращает ответ каталога:
   /// {track_id, created, source, quality_tier}. Бросает [AcquireException].
   Future<Map<String, dynamic>> acquireOnServer({

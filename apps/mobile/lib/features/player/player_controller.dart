@@ -50,7 +50,13 @@ List<NowPlaying> withoutArtistAfter(List<NowPlaying> queue, int afterIndex, Stri
 /// `audio_service` (см. audio_handler.dart). Гэплесс, нормализация —
 /// следующими шагами.
 class PlayerController {
-  PlayerController({this.onPlay, this.onSkip, this.onComplete, this.onDuration}) {
+  PlayerController({
+    this.onPlay,
+    this.onSkip,
+    this.onComplete,
+    this.onDuration,
+    this.onMissingFile,
+  }) {
     _initSession();
   }
 
@@ -101,11 +107,21 @@ class PlayerController {
   /// битрейта) в «Мою музыку», если там ещё нет (Alex TG 18704).
   final void Function(String trackId, Duration total)? onDuration;
 
+  /// Файл трека пропал с телефона между тем, как он попал в очередь, и этим
+  /// её пересбором (`_reloadFrom`) — трек молча пропускается, чтобы не
+  /// повалить весь плеер (см. крэш `_reloadFrom`/«Source error»). Alex TG
+  /// 15.09.2026, увидев «пропускается»: «давай чинить, а не пропускать» —
+  /// сюда вешаем фоновую перекачку файла заново + `requeueTrack` по итогу.
+  /// Зовётся один раз на трек (пока файл снова не появится через
+  /// `requeueTrack` — тогда гейт снимается).
+  final void Function(NowPlaying meta)? onMissingFile;
+
   AudioPlayer? _player;
   ConcatenatingAudioSource? _source;
   List<NowPlaying> _queue = const [];
   int _index = 0;
   String? _lastPlayId;
+  final Set<String> _missingNotified = {};
 
   final ValueNotifier<NowPlaying?> now = ValueNotifier(null);
   final ValueNotifier<bool> playing = ValueNotifier(false);
@@ -338,10 +354,18 @@ class PlayerController {
     // setAudioSource целиком (Alex TG 15.09.2026, крэш «Source error» в
     // AudioPlayer._load через appendNewToQueue). Пропускаем такие точечно;
     // 0.._index не трогаем — это уже игравшая часть, заведомо цела.
-    final valid = <NowPlaying>[
-      for (var i = 0; i < newQueue.length; i++)
-        if (i <= _index || File(newQueue[i].path).existsSync()) newQueue[i],
-    ];
+    final valid = <NowPlaying>[];
+    for (var i = 0; i < newQueue.length; i++) {
+      final t = newQueue[i];
+      if (i <= _index || File(t.path).existsSync()) {
+        valid.add(t);
+      } else if (_missingNotified.add(t.id)) {
+        // Не просто пропускаем — просим докачать заново (Alex TG 15.09.2026:
+        // «давай чинить, а не пропускать»). Один раз на трек, пока он не
+        // вернётся через requeueTrack.
+        onMissingFile?.call(t);
+      }
+    }
     final src = ConcatenatingAudioSource(
       children: [for (final t in valid) AudioSource.uri(Uri.file(t.path))],
     );
@@ -421,6 +445,16 @@ class PlayerController {
     final fresh = newTracksToAppend(_queue, all);
     if (fresh.isEmpty) return;
     await _reloadFrom([..._queue, ...fresh]);
+  }
+
+  /// Файл трека [t] докачали заново после `onMissingFile` (см.
+  /// `DownloadsRepo.redownloadMissingFile`) — вернуть его в конец очереди.
+  /// Уже играющее не трогаем; если трека и так уже нет в очереди (плеер тем
+  /// временем ушёл дальше без него) — просто снимаем гейт на повтор.
+  Future<void> requeueTrack(NowPlaying t) async {
+    _missingNotified.remove(t.id);
+    if (_source == null || _queue.any((x) => x.id == t.id)) return;
+    await _reloadFrom([..._queue, t]);
   }
 
   /// Убрать из очереди все ещё не сыгранные треки исполнителя [artist] —
