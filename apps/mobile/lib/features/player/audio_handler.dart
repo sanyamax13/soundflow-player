@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 
+import '../../core/app_log.dart';
 import 'player_controller.dart';
 
 /// Мост между [PlayerController] и системой Android — чтобы кнопки play/
@@ -17,6 +18,19 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
     _player.now.addListener(_syncMediaItem);
     _player.playing.addListener(_syncPlaybackState);
     _player.duration.addListener(_syncPlaybackState);
+    // Пересборка очереди (радио, дозапись, докачка пропавшего файла) может
+    // сбросить системную медиа-сессию под капотом just_audio — а playing/
+    // duration после такой пересборки часто НЕ меняются, значит слушатели
+    // выше не сработают и Android останется без переотправленного списка
+    // кнопок. Alex TG 15.09.2026: «сломалось блютуз управление, не
+    // переключается» (в самом приложении работает). reloadSeq растёт на
+    // КАЖДОЙ пересборке гарантированно — переотправляем и то, и то.
+    _player.reloadSeq.addListener(_onReload);
+    _syncMediaItem();
+    _syncPlaybackState();
+  }
+
+  void _onReload() {
     _syncMediaItem();
     _syncPlaybackState();
   }
@@ -62,11 +76,23 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
   @override
   Future<void> pause() => _player.pause();
 
+  // Alex TG 15.09.2026: «сломалось блютуз управление, не переключается» (в
+  // приложении кнопки вперёд/назад работают, значит дело либо в том, что
+  // Android не доносит нажатие с гарнитуры досюда, либо в чём-то именно
+  // на этом пути). Лога раньше не было — событие тут же в AppLog покажет,
+  // дошло ли нажатие вообще: если после жалобы Alex в журнале НЕТ такой
+  // строки — Android/гарнитура не доносят команду, дело не в SoundFlow.
   @override
-  Future<void> skipToNext() => _player.next();
+  Future<void> skipToNext() {
+    AppLog.event('bt_skip_next');
+    return _player.next();
+  }
 
   @override
-  Future<void> skipToPrevious() => _player.prev();
+  Future<void> skipToPrevious() {
+    AppLog.event('bt_skip_prev');
+    return _player.prev();
+  }
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);

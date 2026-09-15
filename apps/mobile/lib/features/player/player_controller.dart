@@ -133,6 +133,19 @@ class PlayerController {
   /// звучания к той песне, с которой радио запустили (06.09.2026).
   final ValueNotifier<bool> radio = ValueNotifier(false);
 
+  /// Растёт на каждый успешный `_reloadFrom` (радио, дозапись новых треков,
+  /// докачка пропавшего файла и т.п.) — `SoundFlowAudioHandler` слушает это,
+  /// чтобы заново отдать Android список кнопок (вперёд/назад) через
+  /// `playbackState.add`. Alex TG 15.09.2026: «сломалось блютуз управление,
+  /// не переключается» (кнопки в самом приложении работают — подтвердил).
+  /// Подозрение: `setAudioSource` внутри `_reloadFrom` может сбрасывать
+  /// системную медиа-сессию, а `playing`/`duration` при этом часто НЕ
+  /// меняются (значит слушатели на них в audio_handler не сработают и не
+  /// переотправят системе список кнопок) — растущий счётчик гарантированно
+  /// шлёт notifyListeners при каждой перезагрузке очереди, что бы ни было
+  /// со значениями playing/duration.
+  final ValueNotifier<int> reloadSeq = ValueNotifier(0);
+
   /// Сколько треков было в «Моей музыке», когда вкладка «Поток» в последний
   /// раз строила/дополняла очередь — -1 значит ещё ни разу. Живёт здесь (не в
   /// StreamScreen), потому что StreamScreen пересоздаётся при каждом
@@ -373,6 +386,7 @@ class PlayerController {
     _queue = valid;
     await p.setAudioSource(src, initialIndex: _index, initialPosition: pos);
     if (wasPlaying) await p.play();
+    reloadSeq.value++;
   }
 
   /// Хвост очереди КАК ОН БЫЛ до включения радио (снимок из `setSimilarTail`)
