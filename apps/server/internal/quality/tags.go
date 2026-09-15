@@ -26,7 +26,32 @@ var (
 
 	tagMultiSpace = regexp.MustCompile(`\s{2,}`)
 	tagSpaceParen = regexp.MustCompile(`\s+([)\]}])`)
+
+	// Старые рипы сборников иногда пишут В ТЕГ артиста номер трека, налипший
+	// из имени файла: тег артиста "04. DJ Vertigo", тег названия — болванка
+	// "Track 4" (Alex TG 15.09.2026, скриншот плиток каталога "Track 7",
+	// "Track 8"…). Оба тега НЕ пустые, поэтому обычное «тег пуст → берём из
+	// имени файла» (importer.go/jobs.go fromFilename) не срабатывало — мусор
+	// так и попадал в каталог как есть.
+	tagLeadingTrackNum   = regexp.MustCompile(`^\s*\d{1,3}[.)]\s+`)
+	tagGenericTrackTitle = regexp.MustCompile(`(?i)^\s*(?:track|трек)[\s._-]*0*\d{1,3}\s*$`)
 )
+
+// StripLeadingTrackNumber срезает налипший номер трека из тега артиста
+// ("04. DJ Vertigo" → "DJ Vertigo"). Пусто после срезки быть не должно —
+// возвращаем исходную строку, если вдруг весь тег состоял из номера.
+func StripLeadingTrackNumber(artist string) string {
+	if s := tagLeadingTrackNum.ReplaceAllString(artist, ""); s != "" {
+		return s
+	}
+	return artist
+}
+
+// IsGenericTrackTitle — тег названия оказался болванкой вида "Track 7"/
+// "Трек 07" вместо настоящего имени песни.
+func IsGenericTrackTitle(title string) bool {
+	return tagGenericTrackTitle.MatchString(title)
+}
 
 // CleanTag убирает рекламные ссылки на сайты/мессенджеры из одного поля.
 // isTitleish=true — поле обязано остаться непустым (название/исполнитель):

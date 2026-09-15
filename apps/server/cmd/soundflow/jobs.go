@@ -175,12 +175,13 @@ func (jr *JobRunner) StartScan(dir string) string {
 			}
 			j.Total++
 			ar, ti, al := readTags(path)
-			if ar == "" || ti == "" {
+			ar = quality.StripLeadingTrackNumber(ar)
+			if ar == "" || ti == "" || quality.IsGenericTrackTitle(ti) {
 				a2, t2 := fromFilename(path)
 				if ar == "" {
 					ar = a2
 				}
-				if ti == "" {
+				if (ti == "" || quality.IsGenericTrackTitle(ti)) && t2 != "" {
 					ti = t2
 				}
 			}

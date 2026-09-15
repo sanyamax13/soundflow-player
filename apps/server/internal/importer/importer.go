@@ -94,16 +94,22 @@ func Scan(ctx context.Context, p Store, pm pathmap.Mapper, roots []string) (Resu
 
 func importOne(ctx context.Context, p Store, pm pathmap.Mapper, localPath, mime string) error {
 	artist, title, album := readTags(localPath)
-	if artist == "" || title == "" {
+	artist = quality.StripLeadingTrackNumber(artist)
+	if artist == "" || title == "" || quality.IsGenericTrackTitle(title) {
 		a2, t2, ok := fromFilename(localPath)
 		if !ok {
-			return errSkip
-		}
-		if artist == "" {
-			artist = a2
-		}
-		if title == "" {
-			title = t2
+			if artist == "" || title == "" {
+				return errSkip
+			}
+			// Название — болванка "Track N", а разобрать имя файла не вышло:
+			// оставляем как есть, дальше Screen сам решит, годится ли трек.
+		} else {
+			if artist == "" {
+				artist = a2
+			}
+			if (title == "" || quality.IsGenericTrackTitle(title)) && t2 != "" {
+				title = t2
+			}
 		}
 	}
 	// Правило (Alex 08.09.2026): срезать рекламные хвосты качалок из тегов

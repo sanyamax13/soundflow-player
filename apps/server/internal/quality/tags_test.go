@@ -46,3 +46,35 @@ func TestCleanTagsTriple(t *testing.T) {
 		t.Errorf("CleanTags = %q / %q / %q", a, ti, al)
 	}
 }
+
+func TestStripLeadingTrackNumber(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"04. DJ Vertigo", "DJ Vertigo"},
+		{"12) Adriano Celentano", "Adriano Celentano"},
+		{"21 Savage", "21 Savage"},     // без точки/скобки — не трогаем
+		{"50 Cent", "50 Cent"},         // не трогаем
+		{"3 Doors Down", "3 Doors Down"},
+		{"DJ Dave", "DJ Dave"},
+		{"04.", "04."}, // после срезки пусто — возвращаем исходное
+	}
+	for _, c := range cases {
+		if got := StripLeadingTrackNumber(c.in); got != c.want {
+			t.Errorf("StripLeadingTrackNumber(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestIsGenericTrackTitle(t *testing.T) {
+	yes := []string{"Track 4", "Track 04", "track4", "Трек 7", "ТРЕК 07", "Track_12"}
+	no := []string{"Trackin'", "Track of my Tears", "Oxygene", "", "Track"}
+	for _, s := range yes {
+		if !IsGenericTrackTitle(s) {
+			t.Errorf("IsGenericTrackTitle(%q) = false, want true", s)
+		}
+	}
+	for _, s := range no {
+		if IsGenericTrackTitle(s) {
+			t.Errorf("IsGenericTrackTitle(%q) = true, want false", s)
+		}
+	}
+}
