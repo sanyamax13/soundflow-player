@@ -186,6 +186,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/yandex/likes", s.hYandexLikes)
 	r.Post("/api/yandex/dislikes/import", s.hYandexDislikesImport)
 	r.Get("/api/yandex/wave", s.hYandexWave)
+	r.Post("/api/phone/favorites", s.hPhoneFavoritesReport)
+	r.Get("/api/phone/missing-favorites", s.hPhoneFavoritesMissing)
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
 	r.Get("/api/devices", s.hDevices)

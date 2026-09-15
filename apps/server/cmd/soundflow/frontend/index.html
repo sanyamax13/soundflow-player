@@ -362,6 +362,19 @@
         </div>
         <div class="hint" id="discHint">загрузка…</div>
         <div class="dsongs" id="discBody"></div>
+
+        <!-- Старые лайки с телефона (Alex TG 15.09.2026): библиотеку стёрли,
+             а на телефоне остались лайки песен, которых больше нет в
+             каталоге — сами файлы на телефоне тоже не сохранились, только
+             название. Телефон присылает список сам (см. AutoSync на
+             телефоне), тут только докачка тем же /api/acquire. -->
+        <div class="bar" style="margin-top:24px">
+          <h2 style="margin:0;flex:1">Старые лайки с телефона</h2>
+          <button class="btn" id="phoneFavRefresh">Обновить</button>
+          <button class="btn primary" id="phoneFavDlAll">Скачать выбранные</button>
+        </div>
+        <div class="hint" id="phoneFavHint">загрузка…</div>
+        <div class="dsongs" id="phoneFavBody"></div>
       </section>
 
       <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
@@ -457,7 +470,7 @@ function showView(name){
   if(name==="taste") loadTaste();
   if(name==="log") loadLog();
   if(name==="settings") loadSettings();
-  if(name==="discover"){ loadDiscover(); loadWave(); }
+  if(name==="discover"){ loadDiscover(); loadWave(); loadPhoneFavorites(); }
 }
 document.querySelectorAll(".nav a").forEach(a => a.onclick = () => showView(a.dataset.v));
 window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
@@ -1412,6 +1425,61 @@ $("#waveDlAll").onclick = async () => {
   $("#waveDlAll").disabled = true;
   for(const i of list){ await _waveOne(i); }
   $("#waveDlAll").disabled = false;
+};
+
+/* ---------- Старые лайки с телефона ----------
+   Телефон сам присылает список (см. AutoSync на телефоне), тут только
+   показ и докачка тем же /api/acquire, что и везде в этой вкладке. */
+let _phoneFavItems = [];
+
+async function loadPhoneFavorites(){
+  const hint = $("#phoneFavHint"), box = $("#phoneFavBody");
+  hint.textContent = "загрузка…";
+  box.innerHTML = "";
+  try{
+    _phoneFavItems = await jget("/api/phone/missing-favorites");
+  }catch(e){
+    hint.textContent = "Не вышло получить список: "+friendlyError(e);
+    return;
+  }
+  if(!_phoneFavItems.length){
+    hint.textContent = "Пусто — либо телефон ещё не присылал лайки, либо всё уже в каталоге.";
+    box.innerHTML = "";
+    return;
+  }
+  hint.innerHTML = `<b>${nfmt(_phoneFavItems.length)}</b> песен были лайкнуты на телефоне, но их нет в каталоге. `+
+    `Отметь галочками, что хочешь докачать, или сразу «Скачать выбранные».`;
+  box.innerHTML = _phoneFavItems.map((t,i) => _phoneFavRow(t,i)).join("");
+}
+
+function _phoneFavRow(t,i){
+  return `<div class="drow" data-i="${i}">`+
+    `<span class="dcv" style="background:${_devColor(t.artist)}"><span>${esc(_devInitials(t.artist))}</span></span>`+
+    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}</span></span>`+
+    `<input type="checkbox" class="phoneFavPick" data-i="${i}" style="margin:0 6px">`+
+    `<button class="dx" title="скачать эту песню" onclick="_phoneFavOne(${i})">⬇</button>`+
+    `</div>`;
+}
+
+async function _phoneFavOne(i){
+  const t = _phoneFavItems[i];
+  if(!t) return;
+  const row = document.querySelector('#phoneFavBody .drow[data-i="'+i+'"]');
+  if(row) row.classList.add("busy");
+  try{
+    await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
+  }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
+}
+
+$("#phoneFavRefresh").onclick = loadPhoneFavorites;
+$("#phoneFavDlAll").onclick = async () => {
+  const picked = [...document.querySelectorAll(".phoneFavPick:checked")].map(el => Number(el.dataset.i));
+  const list = picked.length ? picked : _phoneFavItems.map((t,i)=>i);
+  if(!list.length){ alert("Список пуст."); return; }
+  if(!picked.length && !confirm(`Скачать все ${list.length} песен?`)) return;
+  $("#phoneFavDlAll").disabled = true;
+  for(const i of list){ await _phoneFavOne(i); }
+  $("#phoneFavDlAll").disabled = false;
 };
 
 async function loadSettings(){

@@ -70,6 +70,13 @@ func Open(path string) (*DB, error) {
 		// фокуса окна (Alex TG: «опрашивать папку, которую я указал»).
 		`CREATE TABLE IF NOT EXISTS app_settings (
 			key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
+		// Старые лайки с телефона, которых больше нет в каталоге (Alex TG
+		// 15.09.2026 — «библиотеку стёрли, а в избранном на телефоне есть
+		// песни, хочу что бы программа их увидела и скачала»). Телефон
+		// присылает имена, сервер отсеивает то, что уже в каталоге.
+		`CREATE TABLE IF NOT EXISTS phone_missing_favorites (
+			normalized_key TEXT PRIMARY KEY, artist TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL DEFAULT '', reported_at TEXT NOT NULL DEFAULT '')`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()
