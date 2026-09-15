@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
@@ -332,11 +333,20 @@ class PlayerController {
     if (p == null) return;
     final wasPlaying = p.playing;
     final pos = p.position;
+    // Файл трека мог не докачаться/пропасть между тем как он попал в
+    // очередь и этим её пересбором — один битый путь раньше валил ВЕСЬ
+    // setAudioSource целиком (Alex TG 15.09.2026, крэш «Source error» в
+    // AudioPlayer._load через appendNewToQueue). Пропускаем такие точечно;
+    // 0.._index не трогаем — это уже игравшая часть, заведомо цела.
+    final valid = <NowPlaying>[
+      for (var i = 0; i < newQueue.length; i++)
+        if (i <= _index || File(newQueue[i].path).existsSync()) newQueue[i],
+    ];
     final src = ConcatenatingAudioSource(
-      children: [for (final t in newQueue) AudioSource.uri(Uri.file(t.path))],
+      children: [for (final t in valid) AudioSource.uri(Uri.file(t.path))],
     );
     _source = src;
-    _queue = newQueue;
+    _queue = valid;
     await p.setAudioSource(src, initialIndex: _index, initialPosition: pos);
     if (wasPlaying) await p.play();
   }
