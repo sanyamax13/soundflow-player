@@ -189,6 +189,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
 	r.Get("/api/devices", s.hDevices)
+	r.Delete("/api/devices/{id}", s.hDeviceDelete)
 	r.Get("/api/devices/{id}/sync-preview", s.hSyncPreview)
 	r.Post("/api/devices/{id}/sync-plan", s.hSyncPlanCommit)
 	r.Post("/api/devices/{id}/track/delete", s.hDevTrackDelete)
@@ -403,6 +404,19 @@ func (s *Service) hDevices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, out)
+}
+
+// hDeviceDelete — убрать запись устройства из списка (Alex TG 15.09.2026:
+// «зачем старые вообще нужны? может удалить?» — старая запись копится при
+// переустановке приложения на телефоне, новый внутренний id каждый раз).
+// Музыку/данные на самом телефоне не трогает — только запись в этой БД.
+func (s *Service) hDeviceDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.db.DeleteDevice(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 func (s *Service) hLog(w http.ResponseWriter, r *http.Request) {

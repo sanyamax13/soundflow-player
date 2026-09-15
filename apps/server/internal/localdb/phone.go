@@ -67,6 +67,14 @@ type Device struct {
 	Transport  string // wifi | ethernet | mobile | vpn | ""
 }
 
+// DeleteDevice — убрать запись устройства из списка (Alex TG 15.09.2026).
+// Только запись здесь — файлы/данные на самом телефоне не трогает; если
+// телефон снова синхронизируется под тем же id, запись появится заново.
+func (d *DB) DeleteDevice(id string) error {
+	_, err := d.sql.Exec(`DELETE FROM devices WHERE id = ?`, id)
+	return err
+}
+
 // SaveSync — обновить устройство + вставить новые события (дедуп по uuid).
 // Возвращает uuid действительно новых.
 func (d *DB) SaveSync(dev Device, events []SyncEvent) ([]string, error) {
