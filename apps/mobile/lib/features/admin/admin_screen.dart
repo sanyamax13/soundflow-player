@@ -202,9 +202,78 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             MaterialPageRoute<void>(builder: (_) => const BlocklistScreen()),
           ),
         ),
+        _section('Опасно'),
+        _resetBlock(),
         const SizedBox(height: 24),
       ],
     );
+  }
+
+  // Alex TG 15.09.2026: «сделай кнопку полный сброс, что бы как первый раз
+  // установил и без музыки». Стирает музыку/лайки/историю на ЭТОМ телефоне;
+  // адрес сервера и id телефона не трогает (иначе на компе появится ещё одна
+  // запись-«призрак» устройства — та самая проблема, что только что чинили).
+  bool _resetBusy = false;
+
+  Widget _resetBlock() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Сотрёт всю музыку, лайки и историю на ЭТОМ телефоне — будет как '
+            'после первой установки. На сервере (комп) и на других '
+            'устройствах ничего не меняется. Отменить нельзя.',
+            style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 12.5),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+            onPressed: _resetBusy ? null : _confirmReset,
+            child: _resetBusy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Полный сброс'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmReset() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Полный сброс?'),
+        content: const Text(
+          'Удалит всю скачанную музыку, лайки и историю на этом телефоне. '
+          'Отменить нельзя.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Стереть всё', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final downloads = ref.read(downloadsProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _resetBusy = true);
+    try {
+      await downloads.fullReset();
+      messenger.showSnackBar(const SnackBar(content: Text('Готово — телефон как новый')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не вышло: $e')));
+    } finally {
+      if (mounted) setState(() => _resetBusy = false);
+      await _load();
+    }
   }
 
   Widget _section(String title) => Padding(

@@ -46,6 +46,25 @@ class DownloadsRepo {
 
   Future<String> localPath(String id) async => '${(await _musicDir()).path}/$id';
 
+  /// Залайканные на телефоне песни, для отправки на сервер (Alex TG
+  /// 15.09.2026) — сервер сам сверит со своим каталогом.
+  Future<List<Map<String, String>>> favoritesForReport() async {
+    final rows = await _db.allDownloaded(onlyFavorite: true);
+    return [for (final r in rows) {'artist': r.artist, 'title': r.title}];
+  }
+
+  /// Полный сброс — «как первый раз установил» (Alex TG 15.09.2026): стирает
+  /// все скачанные файлы и обложки на телефоне + всю базу (лайки, историю,
+  /// очередь событий). Адрес сервера и id телефона сохраняются — см.
+  /// Db.fullReset(). Необратимо, вызывающий экран должен спросить подтверждение.
+  Future<void> fullReset() async {
+    final music = await _musicDir();
+    if (music.existsSync()) music.deleteSync(recursive: true);
+    final covers = await _coversDir();
+    if (covers.existsSync()) covers.deleteSync(recursive: true);
+    await _db.fullReset();
+  }
+
   Future<bool> isDownloaded(String id) async {
     final row = await _db.downloadedById(id);
     return row != null && File(row.path).existsSync();

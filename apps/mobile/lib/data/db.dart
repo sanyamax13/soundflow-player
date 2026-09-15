@@ -152,6 +152,23 @@ class Db {
   Future<void> deleteDownloaded(String id) =>
       _db.delete('downloaded_tracks', where: 'id = ?', whereArgs: [id]);
 
+  /// Полный сброс — «как первый раз установил» (Alex TG 15.09.2026): чистит
+  /// всю музыку/историю на телефоне. Специально НЕ трогает kv-ключи
+  /// server_url/device_id — иначе на сервере появится ещё одна запись
+  /// устройства-«призрака» (та самая проблема с дублями, что чинили в
+  /// этом же разговоре). Файлы на диске удаляет вызывающий (DownloadsRepo) —
+  /// здесь только база.
+  Future<void> fullReset() async {
+    final b = _db.batch();
+    b.delete('downloaded_tracks');
+    b.delete('removed_tracks');
+    b.delete('track_vectors');
+    b.delete('hidden_artists');
+    b.delete('events_queue');
+    b.delete('kv', where: 'k NOT IN (?, ?)', whereArgs: ['server_url', 'device_id']);
+    await b.commit(noResult: true);
+  }
+
   /// Поправить теги уже скачанной песни (кнопка «Исправить имя» для
   /// нечитаемых названий, Alex TG 18693).
   Future<void> updateTags(String id, {required String artist, required String title}) =>
