@@ -236,7 +236,7 @@
     <div class="brand">SoundFlow</div>
     <div class="sp"></div>
     <div class="pill" id="status"><span class="dot"></span>Сервер работает</div>
-    <div class="pill off" id="staleWarn" hidden title="Телефон долго не выходил на связь с этим компом — проверь, что он подключён и открыт"><span class="dot"></span><span id="staleWarnTxt"></span></div>
+    <div class="pill" id="phoneStatus" hidden title="Когда и как в последний раз выходил на связь телефон"><span class="dot"></span><span id="phoneStatusTxt"></span></div>
     <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
     <div class="pill busy" id="jobPill" hidden title="Открыть Каталог"><span class="dot"></span><span id="jobPillTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
@@ -467,7 +467,7 @@ async function loadInfo(){
   try{
     const d = await jget("/api/info");
     $("#addr").textContent = d.addr;
-    $("#disk").textContent = "свободно " + fmtGB(d.disk_free);
+    $("#disk").textContent = "свободно " + fmtGB(d.disk_free) + (d.data_drive ? " на "+d.data_drive : "");
     const st = $("#status");
     if(d.has_model){ st.className="pill"; st.innerHTML='<span class="dot"></span>Сервер работает'; }
     else { st.className="pill off"; st.innerHTML='<span class="dot"></span>без модели отпечатков'; }
@@ -1455,7 +1455,7 @@ async function loadSettings(){
 
     `<h3>Ещё</h3>`+
     `<div class="f"><b>Файлов музыки</b><span>${nfmt(d.files)}</span></div>`+
-    `<div class="f"><b>Свободно на диске</b><span>${fmtGB(d.disk_free)}</span></div>`+
+    `<div class="f"><b>Свободно на диске${d.data_drive?" ("+esc(d.data_drive)+")":""}</b><span>${fmtGB(d.disk_free)}</span></div>`+
     `<div class="f"><b>Работает</b><span>${Math.round((d.uptime_sec||0)/60)} мин</span></div>`+
     `<div style="margin-top:12px"><button class="btn" onclick="showView('log')">Журнал сервера (для диагностики)</button></div>`;
 
@@ -1523,29 +1523,37 @@ $("#tasteRebuild").onclick = () => {
     .finally(()=>{ b.disabled = false; b.textContent = "Пересобрать"; });
 };
 
-/* ---------- телефон давно не выходил на связь (Опус-ревью 14.09.2026, пункт 4) ----------
-   Раньше окно молчало, даже если телефон не синхронился 1.5 суток (этап 69 —
-   TorrServer тихо занял порт, а никто этого не заметил). Проверяем самое
-   свежее из известных устройств: если последняя связь была больше суток
-   назад — честно показать баннер, а не изображать «всё в порядке». */
+/* ---------- статус телефона в шапке ----------
+   Было два бага сразу (Alex TG 15.09.2026): (1) отдельный баннер «телефон
+   давно не на связи» иногда показывался пустым текстом — убрал по прямой
+   просьбе; (2) не было видно, что телефон СЕЙЧАС на связи и по какому
+   каналу (вайфай/VPN/мобильный) — просили строку «подключено по вайфаю».
+   Объединил в одну строку: показывает способ связи и когда была связь в
+   последний раз; если больше суток — тем же цветом-предупреждением, что
+   раньше был у отдельного баннера. */
 const STALE_PHONE_MS = 24 * 3600 * 1000;
-async function checkStalePhone(){
+const _transportLabel = {wifi:"Wi-Fi", ethernet:"кабель", mobile:"мобильный интернет", vpn:"VPN", "":"неизвестно как"};
+function _fmtAgo(ms){
+  if(ms < 60000) return "только что";
+  if(ms < 3600000) return Math.round(ms/60000)+" мин назад";
+  if(ms < 86400000) return Math.round(ms/3600000)+" ч назад";
+  return (ms/86400000).toFixed(1)+" дн назад";
+}
+async function checkPhoneStatus(){
   try{
     const devs = await jget("/api/devices");
-    const w = $("#staleWarn");
+    const w = $("#phoneStatus");
     const last = devs.length && devs[0].last_sync_at ? new Date(devs[0].last_sync_at) : null;
     if(!last){ w.hidden = true; return; }
     const ageMs = Date.now() - last.getTime();
-    if(ageMs > STALE_PHONE_MS){
-      $("#staleWarnTxt").textContent = "телефон не на связи " + (ageMs/86400000).toFixed(1) + " дн.";
-      w.hidden = false;
-    } else {
-      w.hidden = true;
-    }
+    const label = _transportLabel[devs[0].transport] || _transportLabel[""];
+    w.classList.toggle("off", ageMs > STALE_PHONE_MS);
+    $("#phoneStatusTxt").textContent = "телефон: "+label+" · "+_fmtAgo(ageMs);
+    w.hidden = false;
   }catch(e){}
 }
-checkStalePhone();
-setInterval(checkStalePhone, 60000);
+checkPhoneStatus();
+setInterval(checkPhoneStatus, 60000);
 
 /* ---------- обновление ---------- */
 function tick(){

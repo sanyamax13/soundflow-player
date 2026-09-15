@@ -237,7 +237,13 @@ func (s *Service) currentAddr() (addr string, fellBack bool) {
 
 func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 	c, _ := s.db.Counts()
-	free, _, _ := diskspace.Free(s.dataDir)
+	// Alex TG 15.09.2026: «на каком диске 35? синхронизируешь на диск С?» —
+	// раньше свободное место всегда мерили от dataDir() (%LocalAppData%,
+	// системный C:), даже когда SOUNDFLOW_DB/SOUNDFLOW_AUDIO_ROOT указывают
+	// на другой диск (у Alex — E:). Теперь меряем диск, где реально лежит
+	// база — s.dbPath, а не фиксированный dataDir.
+	dataDrive := filepath.VolumeName(s.dbPath)
+	free, _, _ := diskspace.Free(filepath.Dir(s.dbPath))
 	s.mu.Lock()
 	listening, listenErr := s.phoneListening, s.phoneListenErr
 	s.mu.Unlock()
@@ -254,6 +260,7 @@ func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 		"albums":          c.AlbumsGuess,
 		"files":           c.TrackFiles,
 		"disk_free":       free,
+		"data_drive":      dataDrive,
 		"db_path":         s.dbPath,
 		"uptime_sec":      int(time.Since(s.startedAt).Seconds()),
 		"usb":             usb.Status(),
