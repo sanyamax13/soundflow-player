@@ -27,6 +27,7 @@ from urllib.parse import quote_plus, urljoin
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
 
+from ._fsutil import artist_subdir, make_filename
 from ._validators import duration_off, is_alternate_version
 
 log = logging.getLogger(__name__)
@@ -181,13 +182,7 @@ async def find_track(artist: str, title: str,
 def _download_match_sync(match: MusifyMatch, cache_dir: Path) -> tuple[str, MusifyMatch] | None:
     """Скачивает уже найденный MusifyMatch (без повторного поиска)."""
     cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    # Имя файла: musify-<id>.mp3 (id из URL /pl/{id}/ или /dl/{id}/)
-    m = re.search(r"/(?:pl|dl)/(\d+)/", match.download_url)
-    if not m:
-        m = re.search(r"-(\d+)$", match.track_url)
-    file_id = m.group(1) if m else "unknown"
-    out_path = cache_dir / f"musify-{file_id}.mp3"
+    out_path = artist_subdir(cache_dir, match.artist) / make_filename(match.artist, match.title)
 
     session = cffi.Session(headers={**EXTRA_HEADERS, "referer": match.track_url})
     try:

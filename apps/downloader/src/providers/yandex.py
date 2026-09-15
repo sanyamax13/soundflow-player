@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from ._fsutil import artist_subdir, make_filename
 from ._validators import duration_off, is_alternate_version
 
 log = logging.getLogger(__name__)
@@ -146,8 +147,7 @@ def _download_sync(artist: str, title: str, cache_dir, expected_duration_sec: in
         return None
     track, bitrate, match = found
     cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    out = cache_dir / f"yandex-{match.track_id}.mp3"
+    out = artist_subdir(cache_dir, match.artist) / make_filename(match.artist, match.title)
     try:
         track.download(str(out), codec="mp3", bitrate_in_kbps=bitrate)
     except Exception as e:  # noqa: BLE001

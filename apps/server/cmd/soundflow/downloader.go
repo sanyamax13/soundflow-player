@@ -34,6 +34,14 @@ type downloaderProc struct {
 	stop chan struct{}
 }
 
+// trackCacheDir — куда качалка сохраняет одиночные найденные треки.
+func trackCacheDir() string {
+	if v := os.Getenv("SOUNDFLOW_TRACK_CACHE_DIR"); v != "" {
+		return v
+	}
+	return `G:\Музыка`
+}
+
 // findDownloaderDir — где лежит качалка. env SOUNDFLOW_DOWNLOADER → рядом с exe
 // (downloader/) → apps/downloader от рабочей папки (dev). "" — не нашли.
 func findDownloaderDir() string {
@@ -122,6 +130,14 @@ func (d *downloaderProc) startOnce() error {
 		"SIDECAR_PORT="+strconv.Itoa(port),
 		"SIDECAR_HOST=127.0.0.1",
 		"PYTHONIOENCODING=utf-8",
+		// Куда качалка кладёт найденные по одному треки (Яндекс/musify/
+		// mp3party — «Найти и скачать», авто-докачка лайков). Раньше — свой
+		// внутренний E:\soundflow-data\cache плоским списком «yandex-12345.
+		// mp3» без имени. Alex TG 15.09.2026: хочет как остальную музыку —
+		// на диск G, по папкам исполнителей, не мешать с диском C (там и так
+		// места мало). Дефолт — под переопределение своим SOUNDFLOW_TRACK_
+		// CACHE_DIR, если у кого-то G: не диск с музыкой.
+		"TRACK_CACHE_DIR=" + trackCacheDir(),
 	)
 	// Лог качалки — рядом с ней, перезаписываем при старте. Нужен, когда
 	// что-то не качается: окно консоли скрыто, иначе диагностики нет.

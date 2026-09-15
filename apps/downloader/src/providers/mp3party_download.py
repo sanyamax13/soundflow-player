@@ -29,7 +29,7 @@ from ._validators import (
     validate_id3_match,
 )
 from .rutracker_album import _simplify_artist
-from ._fsutil import _FORBIDDEN_FS_CHARS, _file_matches, make_filename, normalize_key
+from ._fsutil import _FORBIDDEN_FS_CHARS, _file_matches, artist_subdir, make_filename, normalize_key
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +186,6 @@ def _do_find_and_download(artist: str, title: str) -> Mp3partyDownloadResult | N
         queries.append(simple_q)
 
     cache_dir = config.track_cache_dir
-    cache_dir.mkdir(parents=True, exist_ok=True)
 
     with _client() as client:
         track_ids: list[str] = []
@@ -219,7 +218,7 @@ def _do_find_and_download(artist: str, title: str) -> Mp3partyDownloadResult | N
                 continue
 
             final_name = make_filename(artist, title, ext=".mp3")
-            final_path = cache_dir / final_name
+            final_path = artist_subdir(cache_dir, artist) / final_name
             if final_path.exists():
                 try:
                     final_path.unlink()

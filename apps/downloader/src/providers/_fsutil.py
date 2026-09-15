@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from pathlib import Path
 
 _FORBIDDEN_FS_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -25,6 +26,17 @@ def make_filename(artist: str, title: str, ext: str = ".mp3") -> str:
     artist_clean = _FORBIDDEN_FS_CHARS.sub("_", artist).strip()
     title_clean = _FORBIDDEN_FS_CHARS.sub("_", title).strip()
     return f"{artist_clean} - {title_clean}{ext}"
+
+
+def artist_subdir(cache_dir: Path, artist: str) -> Path:
+    """Папка исполнителя внутри cache_dir — качалка кладёт найденные треки
+    туда, а не плоским списком (Alex TG 15.09.2026: хочет как остальная его
+    музыка на диске — разложено по папкам, не «yandex-12345.mp3» в одной
+    куче). Создаёт папку, если её ещё нет."""
+    artist_clean = _FORBIDDEN_FS_CHARS.sub("_", artist).strip() or "Unknown"
+    d = cache_dir / artist_clean
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _file_matches(filename: str, artist_key: str, title_key: str) -> bool:
