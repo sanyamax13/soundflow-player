@@ -81,12 +81,13 @@ class SyncRepo {
 
   Future<({int sent, int pending})> _syncOnce(int musicBytes) async {
     final pending = await _db.pendingEvents();
-    if (pending.isEmpty) {
-      await _db.kvSet(_kLastSync, DateTime.now().toIso8601String());
-      await _pullTasteCentroidsIfChanged();
-      return (sent: 0, pending: 0);
-    }
-
+    // Раньше при пустой очереди сервер вообще не дёргали — значит запись
+    // устройства (когда/как на связи, для шапки на компе) не обновлялась,
+    // пока не появится хоть одно новое событие. Alex TG 15.09.2026: «телефон
+    // по вайфаю подключён, а в шапке программы это нигде не отображается» —
+    // именно поэтому. Теперь шлём пустой батч событий (дёшево, sync/events
+    // всё равно обновляет запись устройства первым делом) просто чтобы
+    // сервер знал текущий способ связи и что телефон жив.
     final events = [
       for (final e in pending)
         {

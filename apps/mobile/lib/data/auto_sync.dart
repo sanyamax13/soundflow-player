@@ -60,10 +60,14 @@ class AutoSync with WidgetsBindingObserver {
 
   Future<void> _trySync() async {
     try {
-      if (await _sync.pendingCount() > 0) {
-        final bytes = (await _downloads.summary()).bytes;
-        await _sync.sync(musicBytes: bytes);
-      }
+      // Раньше дёргали сервер, только когда pendingCount()>0 — из-за этого
+      // запись устройства (когда/как на связи) на компе не обновлялась
+      // просто от того, что телефон открыт и на связи (Alex TG 15.09.2026:
+      // «телефон по вайфаю подключён, а в шапке программы не видно»).
+      // sync() теперь сам решает внутри, слать ли реальные события или
+      // просто «я живой» — вызываем всегда.
+      final bytes = (await _downloads.summary()).bytes;
+      await _sync.sync(musicBytes: bytes);
     } catch (_) {
       // Нет связи с сервером — не страшно, события в очереди, попробуем позже.
     }
