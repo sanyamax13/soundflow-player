@@ -42,7 +42,7 @@
   .nav .ver{font-size:10px; color:var(--faint); padding:0 11px}
 
   .main{flex:1; display:flex; flex-direction:column; min-width:0; min-height:0}
-  .view{flex:1; display:none; flex-direction:column; min-width:0; padding:14px 16px; overflow:auto}
+  .view{flex:1; display:none; flex-direction:column; min-width:0; min-height:0; padding:14px 16px; overflow:auto}
   .view.on{display:flex}
   .view h2{font-size:15px; margin-bottom:12px}
 
@@ -156,6 +156,7 @@
   .dtile .dsub{display:block; color:var(--mut); font-size:11px; margin-top:1px}
   .dtile .dnew{position:absolute; top:6px; right:6px; width:11px; height:11px; border-radius:50%; background:var(--lime); border:2px solid rgba(0,0,0,.55); box-shadow:0 0 0 1px rgba(255,255,255,.6)}
   .dsongs{border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .view > .dsongs{flex-shrink:0}
   .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); cursor:pointer}
   .dsongs .drow:last-child{border-bottom:0}
   .drow:hover{background:var(--limebox)}

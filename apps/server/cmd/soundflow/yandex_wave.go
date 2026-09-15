@@ -40,6 +40,29 @@ type yandexWaveOut struct {
 	Source      string `json:"source"`
 }
 
+// topPositiveArtists — до n артистов с положительным счётом, по убыванию.
+func topPositiveArtists(scores map[string]float64, n int) []string {
+	type kv struct {
+		name  string
+		score float64
+	}
+	pos := make([]kv, 0, len(scores))
+	for a, s := range scores {
+		if s > 0 {
+			pos = append(pos, kv{a, s})
+		}
+	}
+	sort.Slice(pos, func(i, j int) bool { return pos[i].score > pos[j].score })
+	if len(pos) > n {
+		pos = pos[:n]
+	}
+	out := make([]string, len(pos))
+	for i, p := range pos {
+		out[i] = p.name
+	}
+	return out
+}
+
 // hYandexWave — GET /api/yandex/wave: до 100 кандидатов на сегодня.
 func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 	today := time.Now().UTC().Format("2006-01-02")
@@ -53,22 +76,27 @@ func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	url := s.sidecarURL()
-	if url == "" {
+	sidecarAddr := s.sidecarURL()
+	if sidecarAddr == "" {
 		http.Error(w, "качалка ещё запускается — попробуй через минуту", 503)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
-	defer cancel()
-	raw, err := sidecar.New(url).YandexWaveCandidates(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), 502)
 		return
 	}
 
 	artScore, err := s.db.ArtistFeedbackScores()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
+		return
+	}
+	// Артисты, залайканные на ТЕЛЕФОНЕ (не только Яндекс-лайки) — Alex TG
+	// 15.09.2026. Отрицательный счёт (дизлайкнутый артист) сюда не годится —
+	// это seed для РАСШИРЕНИЯ пула, а не для сужения.
+	extraArtists := topPositiveArtists(artScore, 10)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	raw, err := sidecar.New(sidecarAddr).YandexWaveCandidates(ctx, extraArtists)
+	if err != nil {
+		http.Error(w, err.Error(), 502)
 		return
 	}
 

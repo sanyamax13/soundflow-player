@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -219,12 +221,19 @@ type YandexWaveItem struct {
 	Source      string `json:"source"` // artist | genre | similar_artist
 }
 
-func (c *Client) YandexWaveCandidates(ctx context.Context) ([]YandexWaveItem, error) {
+// YandexWaveCandidates — extraArtists: артисты, залайканные на ТЕЛЕФОНЕ
+// (Alex TG 15.09.2026: «не только Яндекс, но и то, что лайкнул на телефоне»),
+// подмешиваются в пул наравне с топ-артистами по Яндекс-лайкам.
+func (c *Client) YandexWaveCandidates(ctx context.Context, extraArtists []string) ([]YandexWaveItem, error) {
 	var out struct {
 		Items []YandexWaveItem `json:"items"`
 		Error string           `json:"error"`
 	}
-	if err := c.get(ctx, "/yandex/wave-candidates", &out); err != nil {
+	path := "/yandex/wave-candidates"
+	if len(extraArtists) > 0 {
+		path += "?extra_artists=" + url.QueryEscape(strings.Join(extraArtists, ","))
+	}
+	if err := c.get(ctx, path, &out); err != nil {
 		return nil, err
 	}
 	if out.Error != "" {
