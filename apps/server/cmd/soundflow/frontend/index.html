@@ -119,9 +119,6 @@
   .seg{border:0; background:#fff; padding:8px 16px; font-size:12.5px; font-weight:700; color:var(--mut); cursor:pointer}
   .seg.on{background:var(--lime); color:var(--lime-ink)}
   .seg+.seg{border-left:1px solid var(--line)}
-  .cseg{border:0; background:#fff; padding:0 14px; height:32px; font-size:12px; font-weight:700; color:var(--mut); cursor:pointer}
-  .cseg.on{background:var(--lime); color:var(--lime-ink)}
-  .cseg+.cseg{border-left:1px solid var(--line)}
   .dtile.dseries{box-shadow:4px 4px 0 -1px #fff, 4px 4px 0 0 var(--line), 8px 8px 0 -1px #fff, 8px 8px 0 0 var(--line); margin:0 8px 8px 0}
   .crow{display:flex; align-items:center; gap:12px; padding:9px 4px; border-bottom:1px solid var(--line); font-size:12.5px}
   .crow input[type=checkbox]{width:16px; height:16px; flex-shrink:0}
@@ -273,7 +270,6 @@
       <section class="view on" id="v-catalog">
         <div class="bar">
           <input class="search" id="q" placeholder="Поиск по трекам, артистам, альбомам…" autocomplete="off">
-          <span class="segbar" id="catMode" style="margin:0"><button class="cseg on" data-cm="albums">Альбомы</button><button class="cseg" data-cm="artists">Исполнители</button></span>
           <button class="btn primary" id="btnPick">Выбрать папку</button>
           <button class="btn" id="btnReindex" title="Пересчитать звуковое сходство треков — нужно для умного радио и похожих песен">Пересчитать похожесть по звуку</button>
           <button class="btn danger" id="btnStop" hidden title="Остановить только этот пересчёт — сама программа продолжит работать">Отменить пересчёт</button>
@@ -532,62 +528,40 @@ async function loadInfo(){
   }catch(e){ $("#status").className="pill off"; }
 }
 
-/* ---------- каталог (плитки альбомов — iTunes, Alex TG 14.09.2026) ----------
-   Группируем по тегу «альбом» из самих файлов (не по папке на диске — музыка
-   часто лежит в одной плоской папке без под-папок, особенно то, что качается
-   по одной песне через «Найти и скачать»). У трека без тега альбом — своя
-   плитка-«сингл» (как в iTunes). */
+/* ---------- каталог: папки (Alex TG 20018, 20030) ----------
+   14.09.2026 каталог стал плитками-альбомами «как в iTunes»; 19.09.2026 Alex решил вернуться к папкам:
+   «уберем по исполнителю и альбомы, просто папки оставим» (TG 20030). Плитка = папка на диске, заходишь —
+   подпапки, ещё раз — песни. Режимов «Альбомы»/«Исполнители» и серий сборников больше нет (код — в истории
+   git, коммит f94b338). Дерево папок берём из /api/catalog, сами песни (название, длина, отпечаток) — из
+   /api/catalog/flat. */
 let list = [];               // плоский список видимых треков — очередь плеера
-let _catAlbums = [];         // все альбомы (плитки верхнего уровня)
-let _catOpenKey = null;      // ключ открытого альбома — null = сетка плиток
+let _catTracks = [];         // все песни каталога (плоско)
+let _catById = new Map();    // те же песни по id
 
 function _wordTrack(n){ return plural(n,"трек","трека","треков"); }
-// Группируем ПО НАЗВАНИЮ АЛЬБОМА, без артиста в ключе — у сборников
-// («Поп-хиты зимы» и т.п.) на каждом треке свой исполнитель, и с артистом
-// в ключе такой сборник разваливался на кучу отдельных плиток, по одной на трек
-// (Alex TG 14.09.2026, скриншот). У трека без тега альбом — своя
-// плитка-сингл, как в iTunes.
-function _albumKey(t){ return t.album ? "album:"+t.album : "single:"+t.id; }
 
-function buildAlbums(tracks){
-  const map = new Map();
-  for(const t of tracks){
-    const key = _albumKey(t);
-    let g = map.get(key);
-    if(!g){ g = {key, album: t.album || t.title || "Без названия", artists: new Set(), tracks: []}; map.set(key, g); }
-    g.tracks.push(t);
-    g.artists.add(t.artist || "");
-  }
-  const out = [...map.values()].map(g => ({
-    ...g,
-    artist: g.artists.size > 1 ? "Разные исполнители" : ([...g.artists][0] || ""),
-  }));
-  out.sort((a,b) => (a.artist+a.album).toLowerCase().localeCompare((b.artist+b.album).toLowerCase(), "ru"));
-  return out;
-}
-
-/* ---------- точка «новое» на плитке альбома ----------
-   Alex TG 14.09.2026: «показывать точку на краю обложки, под наш стиль
-   приложения» — для песен, которые появились сами (авто-проверка папки-
-   источника) с прошлого раза, когда была открыта «Каталог». Момент
-   последнего раза — в localStorage самого окна (это только на этом
-   компе, не общая база — ровно то, что нужно для «видел/не видел»). */
+/* ---------- точка «новое» на плитке (Alex TG 14.09.2026) ----------
+   «показывать точку на краю обложки, под наш стиль приложения» — для песен, которые появились сами
+   (авто-проверка папки-источника) с прошлого раза, когда была открыта «Каталог». Момент последнего раза —
+   в localStorage самого окна (только на этом компе — ровно то, что нужно для «видел/не видел»). Точка
+   стоит на папке, если новая песня лежит в ней или глубже. */
 function _lsGet(k){ try{ return localStorage.getItem(k)||""; }catch(e){ return ""; } }
 function _lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 
-async function _markNewAlbums(albums){
+let _catNewIds = new Set();
+async function _markNewFolders(){
   const since = _lsGet("catalogLastVisit");
   if(since){
     try{
       const items = await jget("/api/catalog/new-since?since="+encodeURIComponent(since));
-      const newKeys = new Set(items.map(_albumKey));
-      for(const g of albums) g.isNew = newKeys.has(g.key);
+      _catNewIds = new Set(items.map(x=>x.id));
     }catch(e){}
   }
   // без миллисекунд — совпадает по формату с time.RFC3339 на сервере
   // (created_at), иначе текстовое сравнение в SQL путается на границе секунды
   _lsSet("catalogLastVisit", new Date().toISOString().replace(/\.\d+Z$/, "Z"));
 }
+function _fnAnyNew(n){ return _catNewIds.size>0 && (n.items.some(id=>_catNewIds.has(id)) || n.kids.some(_fnAnyNew)); }
 
 // Alex TG 15.09.2026: «хочу что бы окно каталога обновлялось в реальном
 // времени» — раз в 5с проверяем, не изменился ли каталог (новая песня,
@@ -599,13 +573,13 @@ async function loadCatalog(opts){
   opts = opts || {};
   try{
     const tracks = await jget("/api/catalog/flat");
+    const sig = tracks.length + "|" + tracks.map(t=>t.id+":"+(t.has_fp?1:0)).join(",");
     if(opts.skipIfUnchanged){
-      const sig = tracks.length + "|" + tracks.map(t=>t.id+":"+(t.has_fp?1:0)).join(",");
       if(sig === _catLastSig) return;
-      _catLastSig = sig;
     } else {
-      _catLastSig = tracks.length + "|" + tracks.map(t=>t.id+":"+(t.has_fp?1:0)).join(",");
+      _fnSig = null;        // явная загрузка (открыли вкладку) — дерево папок берём заново: файл могли переложить
     }
+    _catLastSig = sig;
     const box = $("#tree");
     const savedScroll = opts.preserveScroll ? box.scrollTop : 0;
     if(!tracks.length){
@@ -614,15 +588,15 @@ async function loadCatalog(opts){
         '<div class="sub">Укажи папку, где лежит твоя музыка — программа прочитает теги и составит каталог.</div>'+
         '<button class="btn primary" id="emptyPick">Выбрать папку с музыкой</button></div>';
       const b = $("#emptyPick"); if(b) b.onclick = pickAndScan;
-      list = []; _catAlbums = []; _catOpenKey = null;
+      list = []; _catTracks = []; _catById = new Map(); _fnTop = []; _fnSig = null; _catFolderPath = [];
       $("#sum").textContent = "";
       return;
     }
-    _catAlbums = buildAlbums(tracks);
-    await _markNewAlbums(_catAlbums);
-    _catRebuild(tracks);
+    _catTracks = tracks;
+    _catById = new Map(tracks.map(t=>[t.id,t]));
+    await _catLoadFolders();
+    await _markNewFolders();
     _catSummary();
-    if(_catOpenKey && !_catAlbums.find(a=>a.key===_catOpenKey)) _catOpenKey = null;
     renderCatalogBody();
     if(opts.preserveScroll) box.scrollTop = savedScroll;
   }catch(e){ $("#tree").innerHTML = '<div class="muted">ошибка: '+esc(e.message)+'</div>'; }
@@ -643,136 +617,175 @@ function _catStopPoll(){
   if(_catPollTimer){ clearInterval(_catPollTimer); _catPollTimer = null; }
 }
 
-/* ---------- вид каталога: «Альбомы» (серии сборников — одной плиткой) и «Исполнители» ----------
-   Alex TG 19995 («Linkin Park по разным ячейкам»), TG 19997 («выпуски сборника с 1 по 60 —
-   в одну ячейку, в названии Hitzone 1–60»). Плитка альбома по-прежнему = тег «альбом»; серия
-   — это ≥3 альбома с одинаковым названием и разными номерами выпуска. Исполнитель склеивается
-   так же, как на телефоне и во вкладке «Устройства» (_primaryArtist). */
-let _catMode = "albums";
-try{ if(localStorage.getItem("catMode")==="artists") _catMode = "artists"; }catch(e){}
-let _catTracks = [];         // все песни каталога (плоско)
-let _catSeries = [];         // серии сборников (вид «Альбомы»)
-let _catTop = [];            // плитки верхнего уровня вида «Альбомы»: альбомы и серии
-let _catArtists = [];        // исполнители (вид «Исполнители»)
-let _catOpenSer = null;      // ключ открытой серии
-let _catOpenArt = null;      // ключ открытого исполнителя
 
-// Серия: «Hitzone 02», «538 Hitzone 82 (CD1)», «Planet Hits vol. 41», «Dance Mission Vol. 05».
-// Число из 4 цифр (год) выпуском не считаем: «Hitzone Best Of 2021» — отдельный альбом.
-const _serRe = /^(?:\d{3}\s+)?(.*?[\p{L}])[\s._-]*(?:vol(?:ume|umen)?\.?\s*)?0*(\d{1,3})(?!\d)(?:\s*[(\[].*|\s+(?:\d?cd|web|flac)\b.*)?$/iu;
-function _seriesOf(album){
-  const m = _serRe.exec((album||"").trim());
-  if(!m) return null;
-  let name = m[1].replace(/\s*(?:vol(?:ume|umen)?)\.?$/i,"").replace(/[\s._,;:-]+$/,"").trim();
-  name = name.replace(/^(?:radio\s+)?538[\s:._-]*/i, "");   // «Radio 538: Hitzone», «538 Hitzone» — та же серия Hitzone
-  if(name.length < 3 || /\b(?:cd|disc|disk|диск)$/i.test(name)) return null;   // «CD 1–3» — диски одного альбома, не серия
-  return { name, n: parseInt(m[2],10) };
+/* ---------- вид «Папки» (Alex TG 20018 «убери альбомы, сделай папки», TG 20020: третья кнопка, по уровням, очищенные имена) ----------
+   Плитка = папка на диске: заходишь — подпапки, ещё раз — песни (как в проводнике). Названия очищаем от хвостов
+   «[320]», «(2CD, 2013)», «VA - », «-=…=-»; диски «CD 1/CD 2» внутри альбома — не отдельным уровнем, песни всех дисков
+   вместе (решение Alex TG 19973). Папки на диске с разным регистром (музыка/Музыка) — одна папка, как в Windows. */
+const _fnTech = /^(?:(?:19|20)\d{2}|\d?cd|\d+|flac|rip|mp3|web|vbr\S*|cbr|lossless|scene|single|kbps|[-–—+&])$/i;
+const _fnDisc = /^(?:(.*?)[\s._-]*)?(?:cd|disc|disk|диск)[\s._-]*(\d{1,2})$/i;
+const _fnNat = (a,b)=> a.localeCompare(b,"ru",{numeric:true,sensitivity:"base"});
+
+function _fnClean(raw){
+  const orig = String(raw||"").trim();
+  let s = orig;
+  const w = /^-=\s*(.*?)\s*=-$/.exec(s); if(w) s = w[1].trim();
+  for(;;){
+    const t = /\s*(?:\[([^\]]*)\]|\(([^)]*)\))\s*$/.exec(s);
+    if(!t) break;
+    const isSq = t[1] !== undefined, inner = isSq ? t[1] : (t[2]||"");
+    const toks = inner.split(/[\s,;/]+/).filter(Boolean);
+    const head = s.slice(0, t.index).replace(/[\s._-]+$/,"");
+    if(!/\p{L}/u.test(head)) break;                       // остаток без букв — не режем («2004 - [PTS.OF.ATHRTY]»)
+    if(isSq || (toks.length && toks.every(x=>_fnTech.test(x)))) s = head; else break;
+  }
+  s = s.replace(/^va\s*[-–—._]\s*/i,"").replace(/\s{2,}/g," ").replace(/[\s._-]+$/,"").trim();
+  return s.length >= 2 ? s : orig;
 }
 
-function _foldSeries(albums){
-  const bySer = new Map();
-  for(const a of albums){
-    const s = _seriesOf(a.album);
-    if(!s) continue;
-    const k = s.name.toLowerCase();
-    if(!bySer.has(k)) bySer.set(k, {name:s.name, items:[]});
-    bySer.get(k).items.push({a, n:s.n});
-    bySer.get(k).origKeys = (bySer.get(k).origKeys||[]).concat(a.key);
+function _fnNode(name){ return {name, key:name.toLowerCase(), kids:new Map(), items:[]}; }
+function _fnBuild(paths){                                 // paths: [{id, segs:[папки от корня]}]
+  const root = _fnNode("");
+  for(const p of paths){
+    let n = root;
+    for(const s of p.segs){ const k = s.toLowerCase(); let c = n.kids.get(k); if(!c){ c = _fnNode(s); n.kids.set(k,c); } n = c; }
+    n.items.push(p.id);
   }
-  const folded = new Set(), series = [];
-  for(const [k, v] of bySer){
-    if(v.items.length < 3) continue;   // меньше трёх альбомов — не серия
-    v.items.sort((x,y)=> x.n-y.n || x.a.album.localeCompare(y.a.album,"ru"));
-    // выпуски с одним номером («Hitzone 02» и «Hitzone 2», диски CD1+CD2) — одна плитка
-    const merged = [];
-    for(const x of v.items){
-      const last = merged[merged.length-1];
-      if(last && last.n===x.n) last.list.push(x.a); else merged.push({n:x.n, list:[x.a]});
+  return root;
+}
+function _fnStats(n){
+  n.tracks = n.items.length; n.first = n.items[0] || "";
+  for(const c of n.kids){ n.tracks += c.tracks; if(!n.first) n.first = c.first; }
+}
+function _fnFinish(n){
+  n.disp = _fnClean(n.name);
+  const kids = [...n.kids.values()];
+  kids.forEach(_fnFinish);
+  const rest = [], groups = new Map(), loose = [];
+  for(const c of kids){
+    const m = _fnDisc.exec(c.disp);
+    if(!m){ rest.push(c); continue; }
+    c.disc = +m[2];
+    const base = (m[1]||"").trim();
+    if(!base){ loose.push(c); continue; }
+    const gk = base.toLowerCase();
+    if(!groups.has(gk)) groups.set(gk, {base, list:[]});
+    groups.get(gk).list.push(c);
+  }
+  n.kids = rest;
+  loose.sort((a,b)=>a.disc-b.disc).forEach(c => { n.items = n.items.concat(c.items); n.kids = n.kids.concat(c.kids); });
+  for(const [gk, g] of groups){
+    const gn = {name:g.base, key:"disc:"+gk, disp:g.base, kids:[], items:[]};
+    g.list.sort((a,b)=>a.disc-b.disc).forEach(c => { gn.items = gn.items.concat(c.items); gn.kids = gn.kids.concat(c.kids); });
+    _fnStats(gn);
+    n.kids.push(gn);
+  }
+  // папка из одной вложенной папки без своих песен — сразу её песни (иначе лишний пустой уровень)
+  if(n.kids.length===1 && n.items.length===0 && n.kids[0].kids.length===0){ n.items = n.kids[0].items; n.kids = []; }
+  n.kids.sort((a,b)=>_fnNat(a.disp,b.disp));
+  _fnStats(n);
+}
+function _fnTopOf(root){                                  // плитки верхнего уровня: папки внутри «обёрток» (диск, «музыка»)
+  const top = [];
+  for(const drive of root.kids.values()){
+    let cur = drive;
+    while(cur.items.length===0 && cur.kids.size===1){
+      const only = [...cur.kids.values()][0];
+      if(only.kids.size===0) break;
+      cur = only;
     }
-    v.items = merged.map(g => {
-      if(g.list.length===1) return {a:{...g.list[0], album: v.name+" "+g.n}, n:g.n};   // единое имя плитки внутри серии: «Hitzone 6», не «Hitzone 06»
-      const artists = new Set(); g.list.forEach(a=>a.artists.forEach(z=>artists.add(z)));
-      return {n:g.n, a:{
-        key:"merge:"+k+":"+g.n, album: v.name+" "+g.n, artists,
-        artist: artists.size>1 ? "Разные исполнители" : ([...artists][0]||""),
-        tracks: g.list.flatMap(a=>a.tracks), isNew: g.list.some(a=>a.isNew),
-      }};
-    });
-    if(v.items.length < 3) continue;   // после склейки осталось меньше трёх выпусков — не серия
-    const nums = v.items.map(x=>x.n), lo = Math.min(...nums), hi = Math.max(...nums);
-    series.push({
-      key: "series:"+k, name: v.name, lo, hi,
-      title: lo===hi ? v.name : `${v.name} ${lo}–${hi}`,
-      albums: v.items.map(x=>x.a),
-      tracks: v.items.reduce((s,x)=>s+x.a.tracks.length, 0),
-      first: (v.items[0].a.tracks[0]||{}),
-      isNew: v.items.some(x=>x.a.isNew),
-    });
-    for(const key of v.origKeys) folded.add(key);
+    for(const c of cur.kids.values()) top.push(c);
+    if(cur.items.length){ const l = _fnNode("Без папки"); l.items = cur.items; top.push(l); }
   }
-  return { rest: albums.filter(a=>!folded.has(a.key)), series };
+  top.forEach(_fnFinish);
+  top.sort((a,b)=>_fnNat(a.disp,b.disp));
+  return top;
 }
 
-function _buildArtists(tracks){
-  const by = new Map();
-  for(const t of tracks){
-    const k = _artistKey(t.artist||"") || "—";
-    if(!by.has(k)) by.set(k, []);
-    by.get(k).push(t);
+let _fnTop = [];             // плитки верхнего уровня вида «Папки»
+let _fnSig = null;           // для какого состояния каталога построено дерево
+let _catFolderPath = [];     // ключи открытых папок от верха
+
+async function _catLoadFolders(){
+  if(_fnSig!==null && _fnSig===_catLastSig) return;
+  const tree = await jget("/api/catalog");
+  const paths = [];
+  const walk = (n, segs) => {
+    const here = segs.concat([n.name]);
+    for(const it of (n.items||[])) if(_catById.has(it.id)) paths.push({id:it.id, segs:here});
+    for(const c of (n.children||[])) walk(c, here);
+  };
+  for(const r of tree) walk(r, []);
+  _fnTop = _fnTopOf(_fnBuild(paths));
+  _fnSig = _catLastSig;
+}
+
+function _fnResolve(){
+  let nodes = _fnTop, cur = null; const crumbs = [];
+  for(const k of _catFolderPath){
+    const nx = nodes.find(x=>x.key===k);
+    if(!nx) break;
+    crumbs.push(nx); cur = nx; nodes = nx.kids;
   }
-  return [...by.entries()].map(([key, ts]) => {
-    const freq = new Map();
-    for(const t of ts){ const p = _primaryArtist(t.artist||"")||"—"; freq.set(p,(freq.get(p)||0)+1); }
-    const name = [...freq.entries()].sort((a,b)=> b[1]-a[1] || _casing(a[0])-_casing(b[0]) || a[0].length-b[0].length)[0][0];
-    return { key, name, tracks: ts, albums: buildAlbums(ts).sort((x,y)=> x.album.toLowerCase().localeCompare(y.album.toLowerCase(),"ru")) };
-  }).sort((a,b)=> a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "ru"));
+  if(crumbs.length !== _catFolderPath.length) _catFolderPath = crumbs.map(c=>c.key);   // папку убрали с диска — встаём на ближайшую
+  return {cur, crumbs};
 }
-
-// пересчитать плитки под текущие песни (зовётся из loadCatalog)
-function _catRebuild(tracks){
-  _catTracks = tracks;
-  const f = _foldSeries(_catAlbums);
-  _catSeries = f.series;
-  _catTop = [
-    ...f.series.map(s=>({kind:"series", o:s, k:s.name.toLowerCase()})),
-    ...f.rest.map(a=>({kind:"album", o:a, k:(a.artist+" "+a.album).toLowerCase()})),
-  ].sort((x,y)=> x.k.localeCompare(y.k,"ru"));
-  _catArtists = _catMode==="artists" ? _buildArtists(tracks) : [];
+function _fnTracks(ids){
+  return ids.map(id=>_catById.get(id)).filter(Boolean)
+    .sort((x,y)=>(x.title||"").toLowerCase().localeCompare((y.title||"").toLowerCase(),"ru"));
 }
-
-function _catSetMode(m){
-  if(m===_catMode) return;
-  _catMode = m; _catOpenKey = null; _catOpenSer = null; _catOpenArt = null;
-  try{ localStorage.setItem("catMode", m); }catch(e){}
-  if(m==="artists" && !_catArtists.length) _catArtists = _buildArtists(_catTracks);
-  _catSummary();
-  renderCatalogBody();
+function _fnArtistLabel(n){
+  const ar = new Set();
+  (function w(x){ for(const id of x.items){ const t=_catById.get(id); if(t) ar.add(t.artist||""); } x.kids.forEach(w); })(n);
+  return ar.size>1 ? "Разные исполнители" : ([...ar][0]||"");
 }
-
-function _catSummary(){
-  const tr = _catTracks.length, withFp = _catTracks.filter(t=>t.has_fp).length;
-  const head = _catMode==="artists"
-    ? `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <b>${nfmt(_catArtists.length)}</b> ${plural(_catArtists.length,"исполнитель","исполнителя","исполнителей")}`
-    : `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <b>${nfmt(_catTop.length)}</b> ${plural(_catTop.length,"плитка","плитки","плиток")} `+
-      `<span class="muted" title="Серии сборников (Hitzone, Planet Hits…) собраны в одну плитку">(в т.ч. серий: ${_catSeries.length})</span>`;
-  $("#sum").innerHTML = head + ` · <span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(withFp)}</b></span>`;
-  document.querySelectorAll("#catMode .cseg").forEach(b => b.classList.toggle("on", b.dataset.cm===_catMode));
+function _fnTile(n){
+  const group = n.kids.length > 0, ar = _fnArtistLabel(n);
+  const sub = group
+    ? `${n.kids.length} ${plural(n.kids.length,"папка","папки","папок")} · ${nfmt(n.tracks)} ${_wordTrack(n.tracks)}`
+    : `${ar} · ${nfmt(n.tracks)} ${_wordTrack(n.tracks)}`;
+  const seed = (ar && ar!=="Разные исполнители") ? ar : n.disp;   // один исполнитель — его цвет/буквы, как у альбомов
+  return _tileHtml(`_catFolderOpen(this.dataset.key)" data-key="${esc(n.key)}`, n.disp, sub, seed, n.first, _fnAnyNew(n),
+    group ? " dseries" : "", n.name!==n.disp ? n.name : "");
 }
+function renderCatalogBody(){
+  const box = $("#tree");
+  if(!_fnTop.length){ list = []; box.innerHTML = '<div class="muted">папок нет</div>'; return; }
+  const {cur, crumbs} = _fnResolve();
+  if(!cur){
+    list = [];
+    box.innerHTML = `<div class="dtiles">`+ _fnTop.map(_fnTile).join("") +`</div>`;
+    return;
+  }
+  const back = crumbs.length>1 ? crumbs[crumbs.length-2].disp : "все папки";
+  const count = cur.kids.length
+    ? `${cur.kids.length} ${plural(cur.kids.length,"папка","папки","папок")} · ${nfmt(cur.tracks)} ${_wordTrack(cur.tracks)}`
+    : `${nfmt(cur.tracks)} ${_wordTrack(cur.tracks)}`;
+  let html = _catBar("_catFolderBack()", {back:"‹ "+back, text:crumbs.map(c=>c.disp).join(" › ")}, count);
+  let tracks = [];
+  const tiles = cur.kids.length ? `<div class="dtiles">`+ cur.kids.map(_fnTile).join("") +`</div>` : "";
+  if(cur.items.length){
+    tracks = _fnTracks(cur.items);
+    html += `<div class="dsongs">`+ tracks.map((t,i)=>_catSongRow(t,i)).join("") +`</div>`;
+    if(tiles) html += `<div class="muted" style="margin:16px 0 8px">Вложенные папки</div>` + tiles;
+  } else html += tiles;
+  list = tracks;
+  box.innerHTML = html;
+  if(tracks.length) markPlaying();
+}
+function _catFolderOpen(key){ _catFolderPath.push(key); renderCatalogBody(); $("#tree").scrollTop = 0; }
+function _catFolderBack(){ _catFolderPath.pop(); renderCatalogBody(); $("#tree").scrollTop = 0; }
 
-function _tileHtml(click, name, sub, seed, coverId, isNew, extra){
+
+function _tileHtml(click, name, sub, seed, coverId, isNew, extra, tip){
   return `<button class="dtile${extra||""}" onclick="${click}">`+
     `<span class="dart" style="background:${_devColor(seed)}">`+
       `<span class="dini">${esc(_devInitials(seed))}</span>`+
       (coverId ? `<img src="/api/cover/${encodeURIComponent(coverId)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
       (isNew ? `<span class="dnew" title="новое с прошлого раза"></span>` : "")+
     `</span>`+
-    `<span class="dcap"><span class="dnm" title="${esc(name)}">${esc(name)}</span><span class="dsub">${esc(sub)}</span></span>`+
+    `<span class="dcap"><span class="dnm" title="${esc(tip||name)}">${esc(name)}</span><span class="dsub">${esc(sub)}</span></span>`+
     `</button>`;
-}
-function _albumTile(g){
-  const first = g.tracks[0]||{};
-  return _tileHtml(`_catOpenAlbumK(this.dataset.key)" data-key="${esc(g.key)}`, g.album,
-    `${g.artist} · ${g.tracks.length} ${_wordTrack(g.tracks.length)}`, g.artist, first.id, g.isNew);
 }
 function _catBar(back, title, count){
   return `<div class="bar" style="margin:0 0 10px"><button class="btn" onclick="${back}">${title.back}</button>`+
@@ -780,75 +793,12 @@ function _catBar(back, title, count){
     `<span class="sum" style="margin:0">${count}</span></div>`;
 }
 
-// альбомы, среди которых сейчас ищем открытый альбом
-function _catCtxAlbums(){
-  if(_catOpenSer){ const s=_catSeries.find(x=>x.key===_catOpenSer); if(s) return s.albums; }
-  if(_catOpenArt){ const a=_catArtists.find(x=>x.key===_catOpenArt); if(a) return a.albums; }
-  return _catAlbums;
-}
 
-function renderCatalogBody(){
-  const box = $("#tree");
-  // 1) открыт альбом — его песни
-  const a = _catOpenKey ? _catCtxAlbums().find(x=>x.key===_catOpenKey) : null;
-  if(a){
-    const tracks = a.tracks.slice().sort((x,y)=>(x.title||"").toLowerCase().localeCompare((y.title||"").toLowerCase(),"ru"));
-    list = tracks;
-    const back = _catOpenSer ? "серия" : _catOpenArt ? "исполнитель" : "все альбомы";
-    box.innerHTML =
-      _catBar("_catBackToTiles()", {back:"‹ "+back, text:`${a.album} — ${a.artist}`}, `${tracks.length} ${_wordTrack(tracks.length)}`)+
-      `<div class="dsongs">`+ tracks.map((t,i)=>_catSongRow(t,i)).join("") +`</div>`;
-    markPlaying();
-    return;
-  }
-  list = [];
-  // 2) открыта серия — её выпуски
-  if(_catOpenSer){
-    const s = _catSeries.find(x=>x.key===_catOpenSer);
-    if(s){
-      box.innerHTML =
-        _catBar("_catBackToTiles()", {back:"‹ все альбомы", text:s.title}, `${s.albums.length} ${plural(s.albums.length,"выпуск","выпуска","выпусков")} · ${nfmt(s.tracks)} ${_wordTrack(s.tracks)}`)+
-        `<div class="dtiles">`+ s.albums.map(_albumTile).join("") +`</div>`;
-      return;
-    }
-    _catOpenSer = null;
-  }
-  // 3) открыт исполнитель — его альбомы
-  if(_catMode==="artists" && _catOpenArt){
-    const ar = _catArtists.find(x=>x.key===_catOpenArt);
-    if(ar){
-      box.innerHTML =
-        _catBar("_catBackToTiles()", {back:"‹ все исполнители", text:ar.name}, `${ar.albums.length} ${plural(ar.albums.length,"альбом","альбома","альбомов")} · ${nfmt(ar.tracks.length)} ${_wordTrack(ar.tracks.length)}`)+
-        `<div class="dtiles">`+ ar.albums.map(_albumTile).join("") +`</div>`;
-      return;
-    }
-    _catOpenArt = null;
-  }
-  // 4) верхний уровень
-  if(_catMode==="artists"){
-    box.innerHTML = `<div class="dtiles">`+ _catArtists.map((ar,i)=>
-      _tileHtml(`_catOpenArtistI(${i})`, ar.name,
-        `${ar.albums.length} ${plural(ar.albums.length,"альбом","альбома","альбомов")} · ${nfmt(ar.tracks.length)} ${_wordTrack(ar.tracks.length)}`,
-        ar.name, (ar.tracks[0]||{}).id, false)
-    ).join("") + `</div>`;
-    return;
-  }
-  box.innerHTML = `<div class="dtiles">`+ _catTop.map((it,i)=> it.kind==="series"
-    ? _tileHtml(`_catOpenSeriesI(${i})`, it.o.title,
-        `серия · ${it.o.albums.length} ${plural(it.o.albums.length,"выпуск","выпуска","выпусков")} · ${nfmt(it.o.tracks)} ${_wordTrack(it.o.tracks)}`,
-        it.o.name, it.o.first.id, it.o.isNew, " dseries")
-    : _albumTile(it.o)
-  ).join("") + `</div>`;
-}
-document.querySelectorAll("#catMode .cseg").forEach(b => b.addEventListener("click", () => _catSetMode(b.dataset.cm)));
-function _catOpenAlbumK(key){ _catOpenKey = key || null; renderCatalogBody();  $("#tree").scrollTop = 0; }
-function _catOpenSeriesI(i){ const it = _catTop[i]; _catOpenSer = it ? it.o.key : null; _catOpenKey = null; renderCatalogBody();  $("#tree").scrollTop = 0; }
-function _catOpenArtistI(i){ const a = _catArtists[i]; _catOpenArt = a ? a.key : null; _catOpenKey = null; renderCatalogBody();  $("#tree").scrollTop = 0; }
-function _catBackToTiles(){
-  if(_catOpenKey){ _catOpenKey = null; }
-  else { _catOpenSer = null; _catOpenArt = null; }
-  renderCatalogBody();
-  $("#tree").scrollTop = 0;
+function _catSummary(){
+  const tr = _catTracks.length, withFp = _catTracks.filter(t=>t.has_fp).length;
+  $("#sum").innerHTML =
+    `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <span title="Папки верхнего уровня; заходишь — подпапки, ещё раз — песни"><b>${nfmt(_fnTop.length)}</b> ${plural(_fnTop.length,"папка","папки","папок")}</span>`+
+    ` · <span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(withFp)}</b></span>`;
 }
 
 function _catSongRow(t,i){
