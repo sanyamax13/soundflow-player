@@ -338,6 +338,15 @@ func (jr *JobRunner) StartReindex() string {
 		j.Total = len(ids)
 		_ = s.db.AddServerLog("info", "", "", fmt.Sprintf("пересчёт отпечатков/волн: %d треков", len(ids)), 0)
 		var done, failed int
+		// Первая причина сбоя — в итоговую строку журнала: раньше было только
+		// «ошибок 5833», и по нему нельзя понять, что сломано (19.09.2026: у 97
+		// песен на телефоне нет отпечатка, а пересчёт при запуске падал на всех).
+		var firstErr string
+		noteErr := func(what string, e error) {
+			if firstErr == "" && e != nil {
+				firstErr = what + ": " + e.Error()
+			}
+		}
 		for _, id := range ids {
 			if ctx.Err() != nil {
 				break
@@ -347,20 +356,29 @@ func (jr *JobRunner) StartReindex() string {
 				failed++
 				j.Failed++
 				j.Done++
+				if firstErr == "" {
+					firstErr = "у трека нет файла в базе"
+				}
 				continue
 			}
 			lp := s.localPath(path)
 			okAny := false
 			if _, hasVec, _ := s.db.FeatureVector(id); !hasVec {
-				if emb, e := s.eng.EmbedFile(lp); e == nil && s.db.SetFeatureVector(id, emb) == nil {
+				emb, e := s.eng.EmbedFile(lp)
+				if e == nil && s.db.SetFeatureVector(id, emb) == nil {
 					okAny = true
+				} else {
+					noteErr("отпечаток", e)
 				}
 			}
 			if _, hasWf, _ := s.db.Waveform(id); !hasWf {
 				// дешёвый декод (8 кГц) под полоску плеера — Alex TG 18994.
-				if wf, e := waveform.FromFile(lp, waveform.DefaultBars); e == nil && len(wf) > 0 {
+				wf, e := waveform.FromFile(lp, waveform.DefaultBars)
+				if e == nil && len(wf) > 0 {
 					_ = s.db.SetWaveform(id, wf)
 					okAny = true
+				} else {
+					noteErr("волна", e)
 				}
 			}
 			if okAny {
@@ -372,6 +390,9 @@ func (jr *JobRunner) StartReindex() string {
 			j.Done++
 		}
 		note := fmt.Sprintf("посчитано %d, ошибок %d", done, failed)
+		if firstErr != "" {
+			note += "; первая причина: " + firstErr
+		}
 		_ = s.db.AddServerLog("info", "", "", "пересчёт завершён: "+note, 0)
 		jr.finish(note)
 	}()
