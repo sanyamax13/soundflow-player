@@ -247,6 +247,227 @@ void _hill(Canvas c, Size s) {
   c.drawLine(Offset(hx, 0), Offset(hx, s.height), _stroke(_lime, 2));
 }
 
+// ── набор 2 (11-20): идеи из открытых подборок дизайна ───────────────────
+// Alex TG 19.09.2026: «а ещё варианты? может в пинтерест посмотришь?».
+// Pinterest инструменты не открывают; смотрели открытые галереи (Collect UI),
+// подборки про полосы прогресса и описание «волнистой» полосы Android 13+ /
+// Material 3 Expressive. Здесь свои отрисовки этих ИДЕЙ, не копии чужих работ.
+
+// 11. Волнистая линия: играет — колышется, пауза — ровная (тут «в движении»).
+void _wavy(Canvas c, Size s) {
+  final y = s.height / 2;
+  final hx = _p * s.width;
+  double wy(double x) => y + 5.5 * math.sin(x / 26 * 2 * math.pi) * (x < 18 ? x / 18 : 1);
+  c.drawLine(Offset(hx, y), Offset(s.width, y), _stroke(_dim, 4));
+  final path = Path()..moveTo(0, y);
+  for (var x = 0.0; x <= hx; x += 1) {
+    path.lineTo(x, wy(x));
+  }
+  c.drawPath(
+      path,
+      Paint()
+        ..color = _lime
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round);
+  c.drawCircle(Offset(hx, wy(hx)), 7, Paint()..color = _lime);
+}
+
+const _coverGrey = Color(0xFF1F1F1F);
+
+// 12. Вода: уровень воды на обложке = место в песне.
+void _water(Canvas c, Size s) {
+  final side = math.min(s.width, s.height) - 6;
+  final rect = Rect.fromCenter(center: s.center(Offset.zero), width: side, height: side);
+  final rr = RRect.fromRectAndRadius(rect, const Radius.circular(20));
+  c.drawRRect(rr, Paint()..color = _coverGrey);
+  c.save();
+  c.clipRRect(rr);
+  final level = rect.bottom - rect.height * _p;
+  final path = Path()
+    ..moveTo(rect.left, rect.bottom)
+    ..lineTo(rect.left, level);
+  for (var x = 0.0; x <= rect.width; x += 2) {
+    path.lineTo(rect.left + x, level + 3.5 * math.sin(x / 20 * 2 * math.pi));
+  }
+  path
+    ..lineTo(rect.right, rect.bottom)
+    ..close();
+  c.drawPath(path, Paint()..color = _lime.withValues(alpha: 0.88));
+  c.restore();
+}
+
+// 13. Рамка обложки: прогресс бежит по краю обложки по часовой стрелке.
+void _frame(Canvas c, Size s) {
+  final side = math.min(s.width, s.height) - 10;
+  const r = 22.0;
+  final ctr = s.center(Offset.zero);
+  final l = ctr.dx - side / 2, t = ctr.dy - side / 2, rt = l + side, b = t + side;
+  c.drawRRect(RRect.fromLTRBR(l + 5, t + 5, rt - 5, b - 5, const Radius.circular(r - 5)),
+      Paint()..color = _coverGrey);
+  final path = Path()
+    ..moveTo(ctr.dx, t)
+    ..lineTo(rt - r, t)
+    ..arcToPoint(Offset(rt, t + r), radius: const Radius.circular(r))
+    ..lineTo(rt, b - r)
+    ..arcToPoint(Offset(rt - r, b), radius: const Radius.circular(r))
+    ..lineTo(l + r, b)
+    ..arcToPoint(Offset(l, b - r), radius: const Radius.circular(r))
+    ..lineTo(l, t + r)
+    ..arcToPoint(Offset(l + r, t), radius: const Radius.circular(r))
+    ..lineTo(ctr.dx, t);
+  Paint edge(Color col) => Paint()
+    ..color = col
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 5
+    ..strokeCap = StrokeCap.round;
+  c.drawPath(path, edge(_dim));
+  final m = path.computeMetrics().first;
+  c.drawPath(m.extractPath(0, m.length * _p), edge(_lime));
+  c.drawCircle(m.getTangentForOffset(m.length * _p)!.position, 7.5, Paint()..color = _lime);
+}
+
+// 14. Кнопка «плей» сама заполняется.
+void _fillButton(Canvas c, Size s) {
+  final rr = RRect.fromRectAndRadius(Offset.zero & s, const Radius.circular(28));
+  c.drawRRect(rr, Paint()..color = const Color(0xFF2A2A2A));
+  c.save();
+  c.clipRRect(rr);
+  c.drawRect(Rect.fromLTWH(0, 0, s.width * _p, s.height), Paint()..color = _lime);
+  c.restore();
+}
+
+// 16. Дуга-«спидометр».
+void _arc(Canvas c, Size s) {
+  final r = math.min(s.width / 2 - 14, s.height - 16);
+  final ctr = Offset(s.width / 2, s.height - 8);
+  final rect = Rect.fromCircle(center: ctr, radius: r);
+  Paint arcPaint(Color col) => Paint()
+    ..color = col
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 8
+    ..strokeCap = StrokeCap.round;
+  c.drawArc(rect, math.pi, math.pi, false, arcPaint(_dim));
+  c.drawArc(rect, math.pi, math.pi * _p, false, arcPaint(_lime));
+  final a = math.pi + math.pi * _p;
+  c.drawCircle(ctr + Offset(math.cos(a), math.sin(a)) * r, 9.5, Paint()..color = _lime);
+}
+
+// 17. Пластинка с рычагом: игла едет от края к центру.
+void _vinyl(Canvas c, Size s) {
+  final r = math.min(s.height / 2 - 6, 66.0);
+  final ctr = Offset(s.width / 2 - 34, s.height / 2);
+  c.drawCircle(ctr, r, Paint()..color = const Color(0xFF141414));
+  c.drawCircle(
+      ctr,
+      r,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.16)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5);
+  for (var g = r - 8; g > 26; g -= 6) {
+    c.drawCircle(
+        ctr,
+        g,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.06)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1);
+  }
+  c.drawCircle(ctr, 19, Paint()..color = _lime);
+  c.drawCircle(ctr, 3.5, Paint()..color = Colors.black);
+  final pivot = ctr + Offset(r + 46, -r + 4);
+  const ang = -math.pi * 0.3;
+  final tipR = (r - 6) - ((r - 6) - 27) * _p;
+  final tip = ctr + Offset(math.cos(ang), math.sin(ang)) * tipR;
+  c.drawLine(pivot, tip, _stroke(Colors.white70, 4));
+  c.drawCircle(pivot, 9, Paint()..color = Colors.white24);
+  c.drawCircle(pivot, 4, Paint()..color = Colors.white70);
+  c.drawCircle(tip, 4.5, Paint()..color = _lime);
+}
+
+// 18. Кассета: слева ленты убывает, справа прибывает.
+void _cassette(Canvas c, Size s) {
+  final w = math.min(s.width - 40, 264.0);
+  const h = 108.0;
+  final body = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: s.center(Offset.zero), width: w, height: h), const Radius.circular(12));
+  c.drawRRect(body, Paint()..color = const Color(0xFF232323));
+  c.drawRRect(
+      body,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.16)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5);
+  final win = Rect.fromCenter(center: body.center + const Offset(0, -8), width: w * 0.74, height: 52);
+  c.drawRRect(RRect.fromRectAndRadius(win, const Radius.circular(26)), Paint()..color = Colors.black);
+  final lc = Offset(win.left + 30, win.center.dy);
+  final rc = Offset(win.right - 30, win.center.dy);
+  c.drawCircle(lc, 25 - 13 * _p, Paint()..color = Colors.white.withValues(alpha: 0.3));
+  c.drawCircle(rc, 12 + 13 * _p, Paint()..color = _lime);
+  for (final ctr in [lc, rc]) {
+    c.drawCircle(ctr, 10, Paint()..color = Colors.white);
+    for (var k = 0; k < 6; k++) {
+      final a = k * math.pi / 3;
+      c.drawLine(ctr + Offset(math.cos(a), math.sin(a)) * 4, ctr + Offset(math.cos(a), math.sin(a)) * 9,
+          _stroke(Colors.black, 1.6));
+    }
+  }
+  c.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromCenter(center: body.center + const Offset(0, 36), width: w * 0.46, height: 15),
+          const Radius.circular(4)),
+      Paint()..color = Colors.white.withValues(alpha: 0.13));
+}
+
+// 19. Точечная матрица (как ЖК-табло): пять рядов по 40 квадратиков.
+void _matrix(Canvas c, Size s) {
+  const cols = 40, rows = 5;
+  final cw = s.width / cols;
+  final rh = s.height / rows;
+  final d = math.min(cw, rh) * 0.64;
+  for (var i = 0; i < cols; i++) {
+    for (var j = 0; j < rows; j++) {
+      final ctr = Offset(i * cw + cw / 2, j * rh + rh / 2);
+      c.drawRRect(
+          RRect.fromRectAndRadius(Rect.fromCenter(center: ctr, width: d, height: d), Radius.circular(d * 0.25)),
+          Paint()..color = (i + 0.5) / cols <= _p ? _lime : _dim);
+    }
+  }
+}
+
+// 20. Вертикальная полоса вдоль правого края экрана (вести большим пальцем).
+void _edge(Canvas c, Size s) {
+  final body = RRect.fromRectAndRadius(Offset.zero & s, const Radius.circular(22));
+  c.drawRRect(body, Paint()..color = const Color(0xFF141414));
+  c.drawRRect(
+      body.deflate(1),
+      Paint()
+        ..color = Colors.white24
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2);
+  final cover = s.width - 16 - 32;
+  c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(16, 34, cover, cover), const Radius.circular(10)),
+      Paint()..color = _coverGrey);
+  final x = s.width - 15;
+  final top = 26.0;
+  final bot = s.height - 26;
+  c.drawLine(Offset(x, top), Offset(x, bot), _stroke(_dim, 5));
+  final hy = top + (bot - top) * _p;
+  c.drawLine(Offset(x, top), Offset(x, hy), _stroke(_lime, 5));
+  c.drawCircle(Offset(x, hy), 8, Paint()..color = _lime);
+}
+
+Widget _timesAround(Widget middle, {double gap = 22}) => Center(
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        const Text('1:12', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        SizedBox(width: gap),
+        middle,
+        SizedBox(width: gap),
+        const Text('4:33', style: TextStyle(color: Colors.white54, fontSize: 12)),
+      ]),
+    );
+
 // ── сборка страниц ──────────────────────────────────────────────────────
 
 class _V {
@@ -297,6 +518,60 @@ final _variants = <_V>[
       () => _paint(_ribbon), stripH: 58),
   _V('9', 'Крупные столбики', '16 штук из тех же данных сервера; спокойнее, чем 64', true, () => _paint(_bigBars)),
   _V('10', 'Плавный «холм» громкости', 'гладкий силуэт по данным сервера', true, () => _paint(_hill), stripH: 52),
+];
+
+final _variants2 = <_V>[
+  _V('11', 'Волнистая линия', 'играет — колышется, на паузе ровная (тут «в движении»); модно у Android 13+', false,
+      () => _paint(_wavy), stripH: 40),
+  _V('12', 'Вода на обложке', 'уровень воды поднимается по мере песни; вести пальцем вверх-вниз', false,
+      () => _paint(_water), stripH: 126, times: false),
+  _V('13', 'Рамка обложки', 'полоска бежит по краю обложки по кругу; экран без лишних полос', false,
+      () => _paint(_frame), stripH: 126, times: false),
+  _V('14', 'Кнопка «плей» заполняется', 'сама кнопка = полоса; отдельной полосы нет вообще', false,
+      () => _timesAround(SizedBox(
+            width: 92,
+            height: 92,
+            child: Stack(alignment: Alignment.center, children: [
+              SizedBox.expand(child: _paint(_fillButton)),
+              const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 46),
+            ]),
+          )),
+      stripH: 92, times: false),
+  _V('15', 'Название заливается цветом', 'как в караоке: название закрашивается по мере песни; вести пальцем по названию', false,
+      () => Center(
+            child: ShaderMask(
+              shaderCallback: (r) => LinearGradient(
+                colors: [_lime, _lime, Colors.white38, Colors.white38],
+                stops: const [0, _p, _p, 1],
+              ).createShader(r),
+              blendMode: BlendMode.srcIn,
+              child: const Text('Спокойная ночь',
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
+      stripH: 46),
+  _V('16', 'Дуга-«спидометр»', 'полукруг под обложкой; ведёшь по дуге', false, () => _paint(_arc), stripH: 104),
+  _V('17', 'Пластинка с рычагом', 'игла едет от края пластинки к центру; кому нравится «винил»', false,
+      () => _paint(_vinyl), stripH: 146, times: false),
+  _V('18', 'Кассета', 'слева ленты убывает, справа прибывает; ретро', false, () => _paint(_cassette),
+      stripH: 122, times: false),
+  _V('19', 'Точечная матрица + цифры', 'как ЖК-табло: крупное время и точки-квадратики', false,
+      () => Row(children: [
+            const Text('1:12',
+                style: TextStyle(
+                    color: Color(0xFFB0FF00),
+                    fontSize: 32,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+            const SizedBox(width: 14),
+            Expanded(child: _paint(_matrix)),
+          ]),
+      stripH: 40, times: false),
+  _V('20', 'Вертикальная полоса у края', 'вдоль правого края экрана; вести большим пальцем одной рукой', false,
+      () => Center(
+            child: SizedBox(width: 132, height: 204, child: _paint(_edge)),
+          ),
+      stripH: 204, times: false),
 ];
 
 Widget _row(_V v) => Padding(
@@ -386,6 +661,10 @@ void main() {
     _variants.sublist(0, 4), // сейчас + 1-3
     _variants.sublist(4, 8), // 4-7
     _variants.sublist(8), // 8-10
+    _variants2.sublist(0, 3), // 11-13
+    _variants2.sublist(3, 6), // 14-16
+    _variants2.sublist(6, 8), // 17-18
+    _variants2.sublist(8), // 19-20
   ];
   for (var i = 0; i < pages.length; i++) {
     testWidgets('варианты полосы перемотки — страница ${i + 1}', (t) async {
