@@ -1866,6 +1866,18 @@ async function loadPhoneFavorites(){
 }
 
 /* --- слушать: полная песня из Яндекса, играет в общем плеере внизу --- */
+// Окно программы (WebView2, адрес wails.localhost) не играет звук, который программа отдаёт ему «изнутри»
+// окна: песня не начинается и ошибки нет (Alex TG 20095, 20.09.2026; известное ограничение WebView2 —
+// ответы с Range/206 для медиа). Поэтому в окне звук берём по настоящему адресу программы на этом же
+// компьютере (local_url из /api/info) — как это делает браузер, где всё работает. Не в окне — как раньше.
+const _IN_WINDOW = location.hostname === "wails.localhost";
+function _audioBase(){ return (_IN_WINDOW && window._info && window._info.local_url) || ""; }
+// Что творится с плеером в окне, изнутри окна не видно (порта отладки у готовой сборки нет) — события
+// прослушивания дописываются в файл window-debug.log рядом с базой (см. clientlog.go).
+function _clog(msg){
+  try{ fetch("/api/client-log", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({what: msg})}).catch(()=>{}); }catch(e){}
+}
+let _discRel = "";          // тот же адрес без «настоящего» начала — для проверки причины ошибки
 function _discPlay(kind, i){
   const t = _discKind[kind].items()[i];
   if(!t) return;
@@ -1874,8 +1886,10 @@ function _discPlay(kind, i){
   _discPlayKey = key;
   _devPlayId = "";
   cur = -1;                                   // вышли из «списка каталога»
-  au.src = "/api/yandex/preview?" + new URLSearchParams({id: t.yandex_id||"", artist: t.artist||"", title: t.title||""});
-  au.play().catch(()=>{});
+  _discRel = "/api/yandex/preview?" + new URLSearchParams({id: t.yandex_id||"", artist: t.artist||"", title: t.title||""});
+  au.src = _audioBase() + _discRel;
+  _clog("нажата «" + (t.artist||"") + " — " + (t.title||"") + "»: " + (_IN_WINDOW ? "окно" : "браузер") + ", адрес звука " + (_audioBase() || "(через само окно)"));
+  au.play().then(() => _clog("play(): принят"), e => _clog("play(): отклонён " + e.name + " — " + e.message));
   $("#player").classList.remove("empty");
   $("#pt1").textContent = t.title || "—";
   $("#pt2").textContent = t.artist || "";
@@ -1914,10 +1928,13 @@ function _discStep(d){
 au.addEventListener("play",  _discMarkPlaying);
 au.addEventListener("pause", _discMarkPlaying);
 // Яндекс не отдал / качалка не ответила — сказать причину, а не молчать
+["loadstart","loadedmetadata","canplay","playing","waiting","stalled","suspend","abort","emptied","ended"].forEach(ev =>
+  au.addEventListener(ev, () => { if(_discPlayKey && au.src.includes("/api/yandex/preview")) _clog(ev + " t=" + au.currentTime.toFixed(1) + " ready=" + au.readyState + " net=" + au.networkState); }));
 au.addEventListener("error", async () => {
   if(!_discPlayKey || !au.src.includes("/api/yandex/preview")) return;
+  _clog("error код=" + (au.error && au.error.code) + " " + (au.error && au.error.message || ""));
   let why = "";
-  try{ const r = await fetch(au.src, {headers:{Range:"bytes=0-0"}}); if(!r.ok) why = (await r.text()).trim(); }catch(e){}
+  try{ const r = await fetch(_discRel || au.src, {headers:{Range:"bytes=0-0"}}); if(!r.ok) why = (await r.text()).trim(); }catch(e){}
   _ctxToast("Не получилось включить песню" + (why ? ": " + why : " — Яндекс не отдал её"), true);
   _discMarkPlaying();
 });

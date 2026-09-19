@@ -192,6 +192,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/yandex/wave", s.hYandexWave)
 	r.Post("/api/phone/favorites", s.hPhoneFavoritesReport)
 	r.Get("/api/phone/missing-favorites", s.hPhoneFavoritesMissing)
+	r.Post("/api/client-log", localOnly(s.hClientLog))
 	r.Post("/api/discover/dismiss", localOnly(s.hDiscoverDismiss))
 	r.Post("/api/discover/undismiss", localOnly(s.hDiscoverUndismiss))
 	r.Get("/api/yandex/preview", localOnly(s.hYandexPreview))
@@ -253,6 +254,23 @@ func (s *Service) currentAddr() (addr string, fellBack bool) {
 	return addr, fellBack
 }
 
+// localURL — адрес самой программы «изнутри» этого компьютера (порт — реально занятый, с учётом отката).
+// Окно (WebView2) не умеет играть звук, который программа отдаёт ему изнутри окна: песня не начинается и
+// ошибки нет (Alex TG 20095, 20.09.2026). По настоящему адресу — как в браузере — играет.
+func (s *Service) localURL() string {
+	s.mu.Lock()
+	bound := s.phoneBoundAddr
+	s.mu.Unlock()
+	if bound == "" {
+		bound = s.phoneAddr
+	}
+	port := bound
+	if i := strings.LastIndex(bound, ":"); i >= 0 {
+		port = bound[i+1:]
+	}
+	return "http://127.0.0.1:" + port
+}
+
 func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 	c, _ := s.db.Counts()
 	// Alex TG 15.09.2026: «на каком диске 35? синхронизируешь на диск С?» —
@@ -268,6 +286,7 @@ func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 	addr, fellBack := s.currentAddr()
 	writeJSON(w, map[string]any{
 		"addr":            addr,
+		"local_url":       s.localURL(), // окно проигрывает звук по нему, а не через себя (см. frontend _audioBase)
 		"running":         listening, // раньше было true всегда — теперь по факту привязки порта
 		"listen_error":    listenErr,
 		"addr_fell_back":  fellBack, // порт из настроек был занят, взяли следующий свободный
