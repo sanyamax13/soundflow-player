@@ -663,7 +663,8 @@ const _serRe = /^(?:\d{3}\s+)?(.*?[\p{L}])[\s._-]*(?:vol(?:ume|umen)?\.?\s*)?0*(
 function _seriesOf(album){
   const m = _serRe.exec((album||"").trim());
   if(!m) return null;
-  const name = m[1].replace(/\s*(?:vol(?:ume|umen)?)\.?$/i,"").replace(/[\s._,;:-]+$/,"").trim();
+  let name = m[1].replace(/\s*(?:vol(?:ume|umen)?)\.?$/i,"").replace(/[\s._,;:-]+$/,"").trim();
+  name = name.replace(/^(?:radio\s+)?538[\s:._-]*/i, "");   // «Radio 538: Hitzone», «538 Hitzone» — та же серия Hitzone
   if(name.length < 3 || /\b(?:cd|disc|disk|диск)$/i.test(name)) return null;   // «CD 1–3» — диски одного альбома, не серия
   return { name, n: parseInt(m[2],10) };
 }
@@ -676,11 +677,28 @@ function _foldSeries(albums){
     const k = s.name.toLowerCase();
     if(!bySer.has(k)) bySer.set(k, {name:s.name, items:[]});
     bySer.get(k).items.push({a, n:s.n});
+    bySer.get(k).origKeys = (bySer.get(k).origKeys||[]).concat(a.key);
   }
   const folded = new Set(), series = [];
   for(const [k, v] of bySer){
-    if(v.items.length < 3) continue;   // две-три штуки — не серия
+    if(v.items.length < 3) continue;   // меньше трёх альбомов — не серия
     v.items.sort((x,y)=> x.n-y.n || x.a.album.localeCompare(y.a.album,"ru"));
+    // выпуски с одним номером («Hitzone 02» и «Hitzone 2», диски CD1+CD2) — одна плитка
+    const merged = [];
+    for(const x of v.items){
+      const last = merged[merged.length-1];
+      if(last && last.n===x.n) last.list.push(x.a); else merged.push({n:x.n, list:[x.a]});
+    }
+    v.items = merged.map(g => {
+      if(g.list.length===1) return {a:{...g.list[0], album: v.name+" "+g.n}, n:g.n};   // единое имя плитки внутри серии: «Hitzone 6», не «Hitzone 06»
+      const artists = new Set(); g.list.forEach(a=>a.artists.forEach(z=>artists.add(z)));
+      return {n:g.n, a:{
+        key:"merge:"+k+":"+g.n, album: v.name+" "+g.n, artists,
+        artist: artists.size>1 ? "Разные исполнители" : ([...artists][0]||""),
+        tracks: g.list.flatMap(a=>a.tracks), isNew: g.list.some(a=>a.isNew),
+      }};
+    });
+    if(v.items.length < 3) continue;   // после склейки осталось меньше трёх выпусков — не серия
     const nums = v.items.map(x=>x.n), lo = Math.min(...nums), hi = Math.max(...nums);
     series.push({
       key: "series:"+k, name: v.name, lo, hi,
@@ -690,7 +708,7 @@ function _foldSeries(albums){
       first: (v.items[0].a.tracks[0]||{}),
       isNew: v.items.some(x=>x.a.isNew),
     });
-    for(const x of v.items) folded.add(x.a.key);
+    for(const key of v.origKeys) folded.add(key);
   }
   return { rest: albums.filter(a=>!folded.has(a.key)), series };
 }
@@ -706,7 +724,7 @@ function _buildArtists(tracks){
     const freq = new Map();
     for(const t of ts){ const p = _primaryArtist(t.artist||"")||"—"; freq.set(p,(freq.get(p)||0)+1); }
     const name = [...freq.entries()].sort((a,b)=> b[1]-a[1] || _casing(a[0])-_casing(b[0]) || a[0].length-b[0].length)[0][0];
-    return { key, name, tracks: ts, albums: buildAlbums(ts) };
+    return { key, name, tracks: ts, albums: buildAlbums(ts).sort((x,y)=> x.album.toLowerCase().localeCompare(y.album.toLowerCase(),"ru")) };
   }).sort((a,b)=> a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "ru"));
 }
 
