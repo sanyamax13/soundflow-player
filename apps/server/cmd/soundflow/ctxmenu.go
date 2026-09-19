@@ -33,7 +33,7 @@ var (
 // запускать проводник с чужого устройства нельзя. «Свой компьютер» — см. isThisComputer.
 func localOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !isThisComputer(r.RemoteAddr) {
+		if !fromWindow(r) && !isThisComputer(r.RemoteAddr) {
 			host, _, _ := net.SplitHostPort(r.RemoteAddr)
 			http.Error(w, "эта команда только с самого компьютера (запрос пришёл с "+host+")", http.StatusForbidden)
 			return
@@ -42,10 +42,29 @@ func localOnly(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+type fromWindowKey struct{}
+
+// markFromWindow — метка «запрос пришёл через окно программы». У запросов окна Wails (v2.15,
+// pkg/assetserver/assetserver_webview.go) RemoteAddr всегда заглушка 192.0.2.1:1234 (RFC 5737): по
+// адресу их не отличить от чужих, поэтому «своё» узнаём по ПУТИ запроса. Метку ставит только
+// APIRouter() (его отдаём Wails); телефонный сервер (настоящий TCP на 0.0.0.0:8091) её не ставит и
+// по сети её не подделать. Alex TG 20090: «запрос пришёл с 192.0.2.1» — окно не узнавалось.
+func markFromWindow(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), fromWindowKey{}, true)))
+	})
+}
+
+func fromWindow(r *http.Request) bool {
+	v, _ := r.Context().Value(fromWindowKey{}).(bool)
+	return v
+}
+
 // isThisComputer — запрос пришёл с самого этого компьютера: с «петли» (127.0.0.1, ::1); с любого из
 // СОБСТВЕННЫХ адресов ПК (браузер на этом же ПК, открывший программу по адресу 192.168.x.x:8091,
 // приходит именно с него — так у Alex 19.09.2026 «Не получилось включить песню: эта команда только
-// с самого компьютера», TG 20083); либо без настоящего IP (окно Wails). Чужое устройство сети — нет.
+// с самого компьютера», TG 20083); либо без разбираемого адреса. Окно Wails сюда НЕ относится — его
+// узнаёт fromWindow (у него заглушка 192.0.2.1). Чужое устройство сети — нет.
 func isThisComputer(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {

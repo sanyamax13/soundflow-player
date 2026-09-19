@@ -172,6 +172,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 func (s *Service) APIRouter() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
+	r.Use(markFromWindow) // только путь окна: ручки «только с этого компьютера» его пускают, см. localOnly
 	s.mountAPI(r)
 	return r
 }

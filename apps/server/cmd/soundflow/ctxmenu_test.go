@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"soundflow/server/internal/litestore"
 	"soundflow/server/internal/localdb"
 )
@@ -358,6 +360,41 @@ func TestLocalOnlyAllowsOwnLANAddress(t *testing.T) {
 	localOnly(func(w http.ResponseWriter, r *http.Request) { called = true })(rec, req)
 	if rec.Code != 200 || !called {
 		t.Errorf("с собственного адреса %s команда должна проходить: код %d, вызвана %v", own, rec.Code, called)
+	}
+}
+
+// Настоящая причина ошибки у Alex (TG 20090): окно Wails подписывает КАЖДЫЙ свой запрос заглушкой
+// 192.0.2.1:1234 (pkg/assetserver/assetserver_webview.go). Окно (APIRouter) должно проходить, а тот же
+// адрес по настоящей сети (телефонный сервер, тот же mountAPI) — нет.
+func TestLocalOnlyWindowVersusNetwork(t *testing.T) {
+	e := ctxFixture(t)
+	window := e.s.APIRouter()
+	phone := chi.NewRouter()
+	e.s.mountAPI(phone) // так собран телефонный сервер (phone.go): без метки окна
+
+	do := func(h http.Handler, method, path, addr, body string) int {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.RemoteAddr = addr
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	const wailsAddr = "192.0.2.1:1234"
+	const body = `{"artist":"A","title":"B"}`
+	if c := do(window, "POST", "/api/discover/dismiss", wailsAddr, body); c != http.StatusOK {
+		t.Errorf("окно Wails (192.0.2.1) должно проходить, получили %d", c)
+	}
+	if c := do(window, "GET", "/api/yandex/preview?id=1", wailsAddr, ""); c == http.StatusForbidden {
+		t.Errorf("слушание из окна не должно отбиваться защитой, получили %d", c)
+	}
+	if c := do(phone, "POST", "/api/discover/dismiss", wailsAddr, body); c != http.StatusForbidden {
+		t.Errorf("тот же адрес 192.0.2.1 по настоящей сети пускать нельзя, получили %d", c)
+	}
+	if c := do(phone, "POST", "/api/discover/dismiss", "192.168.1.50:5555", body); c != http.StatusForbidden {
+		t.Errorf("чужое устройство домашней сети: ждали 403, получили %d", c)
+	}
+	if c := do(phone, "POST", "/api/discover/dismiss", "127.0.0.1:5555", body); c != http.StatusOK {
+		t.Errorf("браузер на этом же ПК (127.0.0.1) должен проходить, получили %d", c)
 	}
 }
 
