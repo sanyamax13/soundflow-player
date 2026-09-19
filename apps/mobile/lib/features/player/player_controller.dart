@@ -472,7 +472,9 @@ class PlayerController {
   }
 
   /// Убрать из очереди все ещё не сыгранные треки исполнителя [artist] —
-  /// см. `withoutArtistAfter` и player_view.dart _hideArtist (пункт 6).
+  /// см. `withoutArtistAfter`. Сейчас никем не вызывается: единственный вызов
+  /// (`_hideArtist` в меню долгого нажатия плеера) убран 19.09.2026 вместе с
+  /// меню — оставлено для будущей видимой кнопки «скрыть исполнителя».
   Future<void> removeArtistFromQueue(String artist) async {
     if (_source == null) return;
     final newQueue = withoutArtistAfter(_queue, _index, artist);
