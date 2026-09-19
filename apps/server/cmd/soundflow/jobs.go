@@ -19,6 +19,7 @@ import (
 
 	"soundflow/server/internal/cuesplit"
 	"soundflow/server/internal/localdb"
+	"soundflow/server/internal/proc"
 	"soundflow/server/internal/quality"
 	"soundflow/server/internal/tagfix"
 	"soundflow/server/internal/waveform"
@@ -248,7 +249,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 // так — прячем (переименовываем расширение) только при полном успехе.
 func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue) (added, failed int) {
 	cover := findCoverImage(filepath.Dir(audioPath))
-	results, err := cuesplit.Split("ffmpeg", audioPath, cue, cover)
+	results, err := cuesplit.Split(proc.FFmpeg(), audioPath, cue, cover)
 	if err != nil {
 		_ = s.db.AddServerLog("error", "", "", "разрезка по cue не удалась ("+audioPath+"): "+err.Error(), 0)
 		return 0, 1
@@ -408,7 +409,7 @@ var reDuration = regexp.MustCompile(`Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)`)
 // возвращает ошибку — это ожидаемо, нужен только вывод в stderr, где он
 // печатает "Duration: HH:MM:SS.xx".
 func probeDurationSec(path string) int {
-	cmd := exec.Command("ffmpeg", "-i", path)
+	cmd := proc.Quiet(exec.Command(proc.FFmpeg(), "-i", path))
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	_ = cmd.Run()

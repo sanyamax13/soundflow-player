@@ -101,10 +101,13 @@ func (d *DB) FeatureVector(trackID string) ([]float32, bool, error) {
 	return v, len(v) > 0, err
 }
 
-// TrackIDsNeedingAnalysis — треки без отпечатка ИЛИ без рельефа громкости
-// (для «Переиндексировать»: считает недостающее из двух).
+// TrackIDsNeedingAnalysis — треки без отпечатка (для «Переиндексировать» и
+// проверки при запуске). Рельеф громкости (waveform) сюда НЕ входит: с APK v61
+// (19.09.2026, Alex выбрал точечную матрицу вместо волны) телефон его не
+// запрашивает, а 5833 треков без него заставляли программу при каждом запуске
+// заново декодировать тысячи песен ради ненужного (и с моргающими окнами ffmpeg).
 func (d *DB) TrackIDsNeedingAnalysis(limit int) ([]string, error) {
-	q := `SELECT id FROM tracks WHERE feature_vector IS NULL OR waveform IS NULL ORDER BY created_at`
+	q := `SELECT id FROM tracks WHERE feature_vector IS NULL ORDER BY created_at`
 	if limit > 0 {
 		q += " LIMIT ?"
 	}

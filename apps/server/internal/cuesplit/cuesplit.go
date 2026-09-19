@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 
+	"soundflow/server/internal/proc"
 	"soundflow/server/internal/tagfix"
 )
 
@@ -229,7 +230,7 @@ func attachCover(ffmpegPath, audioPath, coverPath string) error {
 }
 
 func runFFmpeg(ffmpegPath string, args []string) error {
-	cmd := exec.Command(ffmpegPath, args...)
+	cmd := proc.Quiet(exec.Command(ffmpegPath, args...))
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {

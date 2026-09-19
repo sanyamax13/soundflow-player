@@ -54,3 +54,31 @@ func TestPendingRemovalsRoundTrip(t *testing.T) {
 		t.Error("пустой track_id должен давать ошибку")
 	}
 }
+
+// Пересчёт при запуске берёт только треки без ОТПЕЧАТКА: без «волны» — не
+// повод (телефон её с v61 не запрашивает).
+func TestTrackIDsNeedingAnalysisIgnoresWaveform(t *testing.T) {
+	d := open(t)
+	for _, id := range []string{"noVec", "vecOnly", "both"} {
+		if _, err := d.sql.Exec(`INSERT INTO tracks (id, artist, title, normalized_key, created_at) VALUES (?,?,?,?,?)`,
+			id, "A", id, "k_"+id, "2026-09-19T00:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.SetFeatureVector("vecOnly", []float32{1, 2, 3}); err != nil { // отпечаток есть, волны нет
+		t.Fatal(err)
+	}
+	if err := d.SetFeatureVector("both", []float32{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetWaveform("both", []byte{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := d.TrackIDsNeedingAnalysis(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != "noVec" {
+		t.Errorf("ждал только noVec (без отпечатка), получил %v", ids)
+	}
+}

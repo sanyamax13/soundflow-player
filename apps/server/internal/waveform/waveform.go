@@ -11,6 +11,8 @@ import (
 	"math"
 	"os/exec"
 	"sort"
+
+	"soundflow/server/internal/proc"
 )
 
 // DefaultBars — сколько столбиков в полоске плеера.
@@ -27,14 +29,14 @@ func FromFile(path string, bars int) ([]byte, error) {
 	if bars <= 0 {
 		bars = DefaultBars
 	}
-	cmd := exec.Command("ffmpeg",
+	cmd := proc.Quiet(exec.Command(proc.FFmpeg(),
 		"-v", "error",
 		"-i", path,
 		"-ac", "1",
 		"-ar", fmt.Sprintf("%d", decodeSR),
 		"-f", "f32le",
 		"pipe:1",
-	)
+	))
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
