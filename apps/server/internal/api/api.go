@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,6 +150,14 @@ func (s *Server) musicFile(w http.ResponseWriter, r *http.Request) {
 			http.ServeFile(w, r, s.PathMap.ToLocal(canonical))
 			return
 		}
+	}
+	// Каталожный id («t_…»), у которого нет файла, — честная ошибка. Раньше при
+	// пустой папке музыки сюда отвечал тестовый тон (3 секунды писка), и телефон
+	// «скачивал» его вместо песни (19.09.2026: так вышло с пустой записью-двойником
+	// «25/17 — Я никогда не видел моря»).
+	if strings.HasPrefix(id, "t_") {
+		http.Error(w, "у трека нет файла на компьютере", http.StatusNotFound)
+		return
 	}
 	// Иначе — тестовый тон / файл из локальной папки.
 	s.Music.ServeFile(w, r, id)
