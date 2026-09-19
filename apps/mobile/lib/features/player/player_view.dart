@@ -33,9 +33,12 @@ import 'player_controller.dart';
 ///    14.09.2026, пункт 10);
 ///  • смахнуть влево/вправо — следующая/предыдущая (обложка едет за пальцем);
 ///  • смахнуть вверх — очередь «Дальше»;
-///  • смахнуть вниз — свернуть плеер (если открыт поверх);
-///  • долгое нажатие — меню действий (радио, скрыть исполнителя,
-///    больше/меньше такого, почему это играет, убрать совсем).
+///  • смахнуть вниз — свернуть плеер (если открыт поверх).
+/// Меню долгого нажатия убрано целиком (Alex TG 19.09.2026: «оно не нужно,
+/// если есть кнопка радио»). Вместе с ним ушли «скрыть исполнителя», «больше
+/// такого», «почему играет» — других мест в приложении для них не было;
+/// «меньше такого» остался в «Моей музыке». Радио и «убрать совсем» — только
+/// кнопками (таблетка сверху, урна внизу). План упрощения, п.1-2 и 6.
 /// Волна внизу — перемотка (вести пальцем), зона касания на всю высоту.
 /// «?» вверху — та же инструкция внутри приложения; в первый раз
 /// показывается сама.
@@ -70,9 +73,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   late final AnimationController _bg;
   late final AnimationController _heart;
   late final AnimationController _dragX;
-  late final AnimationController _menu;
 
-  bool _menuOpen = false;
   bool _showHelp = false;
 
   String? _toastText;
@@ -90,21 +91,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 720),
     );
     _dragX = AnimationController.unbounded(vsync: this, value: 0);
-    _menu = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 260),
-      reverseDuration: const Duration(milliseconds: 180),
-    );
-  }
-
-  void _openMenu() {
-    setState(() => _menuOpen = true);
-    _menu.forward(from: 0);
-  }
-
-  Future<void> _closeMenu() async {
-    await _menu.reverse();
-    if (mounted) setState(() => _menuOpen = false);
   }
 
   @override
@@ -126,7 +112,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
-    _menu.dispose();
     _tint.dispose();
     super.dispose();
   }
@@ -217,41 +202,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     if (!mounted) return;
     await _p.next();
     _toast('Убрал с телефона');
-  }
-
-  Future<void> _hideArtist(NowPlaying now) async {
-    final artist = now.artist;
-    // Раньше это только слало событие на сервер — на телефоне нигде не
-    // запоминалось, и Поток продолжал играть скрытого исполнителя как ни в
-    // чём не бывало (Опус-ревью телефона 14.09.2026, пункт 6). Теперь ещё и
-    // локальная таблица + чистка уже поставленной очереди.
-    await ref.read(dbProvider).hideArtist(artist);
-    await ref
-        .read(syncProvider)
-        .record('hide_artist', payload: {'artist': artist});
-    if (!mounted) return;
-    await _p.removeArtistFromQueue(artist);
-    await _p.next();
-    _undo('Скрыл «$artist» из Потока', () async {
-      await ref.read(dbProvider).unhideArtist(artist);
-      await ref
-          .read(syncProvider)
-          .record('unhide_artist', payload: {'artist': artist});
-    });
-  }
-
-  Future<void> _weight(NowPlaying now, {required bool more}) async {
-    await ref
-        .read(syncProvider)
-        .record(more ? 'more_like' : 'less_like', trackId: now.id);
-    if (!mounted) return;
-    if (!more) await _p.next();
-    _undo(more ? 'Буду чаще ставить похожее' : 'Буду реже ставить похожее',
-        () async {
-      await ref
-          .read(syncProvider)
-          .record(more ? 'less_like' : 'more_like', trackId: now.id);
-    });
   }
 
   Future<void> _radio(NowPlaying now) async {
@@ -463,23 +413,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     });
   }
 
-  void _undo(String text, Future<void> Function() onUndo) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(text),
-      duration: const Duration(seconds: 4),
-      behavior: SnackBarBehavior.floating,
-      action: SnackBarAction(
-        label: 'Отменить',
-        onPressed: () {
-          onUndo();
-          _toast('Отменил');
-        },
-      ),
-    ));
-  }
-
   String _mmss(Duration d) {
     final m = d.inMinutes;
     final s = d.inSeconds % 60;
@@ -550,7 +483,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               ),
               _heartPop(),
               _toastPlashka(),
-              if (_menuOpen) _actionsOverlay(now),
               if (_showHelp) _HelpOverlay(onClose: () => setState(() => _showHelp = false)),
             ],
           ),
@@ -630,7 +562,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
-      onLongPress: _openMenu,
       onHorizontalDragUpdate: (d) {
         _dragX.value = (_dragX.value + d.delta.dx).clamp(-150.0, 150.0);
       },
@@ -852,133 +783,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           ),
         ),
       );
-
-  // ── меню действий по долгому нажатию ──────────────────────────────────
-  // Всё меню появляется одним плавным движением (обложка уменьшается, панель
-  // действий подъезжает снизу с лёгким «доводом»). Без размытия фона на
-  // каждый кадр — оно роняло кадры на телефоне (Alex 18604: «кусками»).
-  Widget _actionsOverlay(NowPlaying now) {
-    final items = <(IconData, String, VoidCallback)>[
-      _p.radio.value
-          ? (Icons.radio_button_checked, 'радио\nвыкл', () => _radio(now))
-          : (Icons.radio, 'радио\nпо этой', () => _radio(now)),
-      (Icons.person_off, 'скрыть\nисполнителя', () => _hideArtist(now)),
-      (Icons.trending_up, 'больше\nтакого', () => _weight(now, more: true)),
-      (Icons.trending_down, 'меньше\nтакого', () => _weight(now, more: false)),
-      (Icons.info_outline, 'почему\nиграет', () => _whySheet(now)),
-      (Icons.delete_outline, 'убрать\nсовсем', () => _confirmDelete(now)),
-    ];
-
-    Widget action((IconData, String, VoidCallback) it) => GestureDetector(
-          onTap: () {
-            _closeMenu();
-            it.$3();
-          },
-          child: SizedBox(
-            width: 88,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.13),
-                    shape: BoxShape.circle,
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.22)),
-                  ),
-                  child: Icon(it.$1, color: Colors.white, size: 24),
-                ),
-                const SizedBox(height: 7),
-                Text(it.$2,
-                    textAlign: TextAlign.center,
-                    style:
-                        const TextStyle(color: Colors.white, fontSize: 11.5)),
-              ],
-            ),
-          ),
-        );
-
-    final panel = SafeArea(
-      child: Column(
-        children: [
-          const Spacer(flex: 2),
-          SizedBox(
-            width: 200,
-            child: CoverArt(trackId: now.id, localPath: now.coverPath),
-          ),
-          const Spacer(flex: 3),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 12,
-              runSpacing: 16,
-              children: [for (final it in items) action(it)],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return Positioned.fill(
-      child: GestureDetector(
-        onTap: _closeMenu,
-        child: FadeTransition(
-          opacity: CurvedAnimation(parent: _menu, curve: Curves.easeOut),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(color: Color(0xE60B0B0B)),
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.04),
-                end: Offset.zero,
-              ).animate(
-                  CurvedAnimation(parent: _menu, curve: Curves.easeOutCubic)),
-              child: panel,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _whySheet(NowPlaying now) {
-    final radioOn = _p.radio.value;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Afisha.surfaceHi,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Почему это играет',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600)),
-              const SizedBox(height: 12),
-              Text(
-                radioOn
-                    ? 'Радио по песне: дальше идут вещи, похожие по звуку на ту, '
-                        'с которой ты включил радио.'
-                    : 'Поток играет твою скачанную музыку вперемешку. Скрытый '
-                        'исполнитель пропадает из Потока сразу. Лайки и '
-                        '«больше/меньше такого» пока сильнее всего влияют на '
-                        'Радио (кнопка ∞ сверху) — до самого Потока такая же '
-                        'подстройка доедет следующим шагом.',
-                style: const TextStyle(color: Colors.white70, height: 1.4),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   void _openQueue(NowPlaying now) {
     showModalBottomSheet<void>(
@@ -1396,8 +1200,6 @@ class _HelpOverlay extends StatelessWidget {
                 row(Icons.swipe, 'Смахнуть вбок', 'следующая / предыдущая песня'),
                 row(Icons.keyboard_arrow_up, 'Смахнуть вверх', 'очередь «Дальше»'),
                 row(Icons.keyboard_arrow_down, 'Смахнуть вниз', 'свернуть плеер'),
-                row(Icons.more_horiz, 'Долгое нажатие',
-                    'меню: радио, скрыть исполнителя, больше/меньше такого, почему играет, убрать совсем'),
                 row(Icons.graphic_eq, 'Вести по волне', 'перемотка'),
                 row(Icons.delete_outline, 'Урна внизу',
                     'убрать песню с телефона совсем (спросит причину)'),

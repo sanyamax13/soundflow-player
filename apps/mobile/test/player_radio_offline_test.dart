@@ -12,7 +12,6 @@ import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
 import 'package:soundflow/data/sync_repo.dart';
-import 'package:soundflow/features/player/cover_art.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/main.dart';
 
@@ -106,13 +105,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // Кнопка радио живёт в оверлее _actionsOverlay, который открывается
-    // долгим тапом по обложке (player_view.dart `onLongPress: _openMenu` на
-    // GestureDetector внутри _coverArea) — сам пункт меню — Text('радио\nпо
-    // этой').
-    await tester.longPress(find.byType(CoverArt));
-    await tester.pump();
-    await tester.tap(find.text('радио\nпо этой'));
+    // Радио — таблетка «∞ радио» вверху плеера (player_view.dart, InkWell с
+    // Text('радио')). Пункт «радио по этой» из меню долгого нажатия убран
+    // как дубль (план упрощения, п.1, Alex TG 15.09.2026).
+    await tester.tap(find.text('радио'));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('Сервера нет'), findsOneWidget);
@@ -151,9 +147,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.longPress(find.byType(CoverArt));
-    await tester.pump();
-    await tester.tap(find.text('радио\nпо этой'));
+    await tester.tap(find.text('радио'));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(player.similarTailCalls, hasLength(1));
@@ -188,9 +182,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.longPress(find.byType(CoverArt));
-    await tester.pump();
-    await tester.tap(find.text('радио\nпо этой'));
+    await tester.tap(find.text('радио'));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('нет звукового отпечатка'), findsOneWidget);

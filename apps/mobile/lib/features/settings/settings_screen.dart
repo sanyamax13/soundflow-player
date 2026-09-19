@@ -62,7 +62,7 @@ class _LogCardState extends State<_LogCard> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Журнал'),
+        title: const Text('Журнал задержек'),
         content: SingleChildScrollView(child: SelectableText(text)),
         actions: [
           if (_text != null)
@@ -95,7 +95,7 @@ class _LogCardState extends State<_LogCard> {
   Widget build(BuildContext context) {
     return ListTile(
       leading: const Icon(Icons.receipt_long_outlined, color: Afisha.inkDim),
-      title: const Text('Журнал'),
+      title: const Text('Журнал задержек'),
       subtitle: Text(
         _text == null ? 'пока пусто' : 'есть записи за последние часы — тапни, чтобы посмотреть',
         style: const TextStyle(color: Afisha.inkDim),

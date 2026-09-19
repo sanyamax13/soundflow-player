@@ -19,7 +19,6 @@ import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
 import 'package:soundflow/data/sync_repo.dart';
-import 'package:soundflow/features/player/cover_art.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/features/player/player_view.dart';
 
@@ -93,15 +92,5 @@ void main() {
     await t.pump(const Duration(milliseconds: 200));
     await expectLater(find.byType(MaterialApp),
         matchesGoldenFile('goldens/player_real_help.png'));
-  });
-
-  testWidgets('плеер 4.2 — меню действий (долгое нажатие)', (t) async {
-    await t.binding.setSurfaceSize(const Size(400, 860));
-    await t.pumpWidget(await _app());
-    await t.pump(const Duration(milliseconds: 300));
-    await t.longPress(find.byType(CoverArt).first);
-    await t.pump(const Duration(milliseconds: 400));
-    await expectLater(find.byType(MaterialApp),
-        matchesGoldenFile('goldens/player_real_menu.png'));
   });
 }

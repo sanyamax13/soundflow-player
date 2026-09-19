@@ -51,7 +51,7 @@ class ProfileScreen extends StatelessWidget {
           _Row(
             icon: Icons.settings_outlined,
             title: 'Настройки',
-            subtitle: 'адрес сервера, журнал',
+            subtitle: 'адрес сервера, журнал задержек',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
