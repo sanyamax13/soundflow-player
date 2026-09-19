@@ -70,7 +70,7 @@ func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 		if raw, ok2, _ := s.db.GetSetting(settingWaveBatch); ok2 && raw != "" {
 			var cached []yandexWaveOut
 			if json.Unmarshal([]byte(raw), &cached) == nil {
-				writeJSON(w, cached)
+				writeJSON(w, s.dropDismissedWave(cached))
 				return
 			}
 		}
@@ -105,8 +105,12 @@ func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 		score float64
 	}
 	var kept []scored
+	dismissed, _ := s.db.DismissedDiscover()
 	for _, it := range raw {
 		key := quality.NormalizedKey(it.Artist, it.Title)
+		if dismissed[key] {
+			continue
+		}
 		if have, _ := s.db.TrackExistsByKey(key); have {
 			continue
 		}

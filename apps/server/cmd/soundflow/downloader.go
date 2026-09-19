@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,11 @@ import (
 type downloaderProc struct {
 	dir    string // apps/downloader (есть .venv и src/main.py)
 	python string // .venv/Scripts/python.exe
+
+	// fixedPort > 0 — слушать именно этот порт (тот, что прописан в SOUNDFLOW_SIDECAR_URL: по нему качалку
+	// ждут и другие места, напр. поиск для телефона), а не случайный свободный. Если на этом порту
+	// качалка уже отвечает (запущена вручную / осталась от прошлого запуска) — вторую не плодим, пользуемся ею.
+	fixedPort int
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -84,7 +90,57 @@ func newDownloaderProc() *downloaderProc {
 		fmt.Printf("SoundFlow: качалка найдена (%s), но нет venv (%s) — «Найти трек» выключено\n", dir, py)
 		return nil
 	}
-	return &downloaderProc{dir: dir, python: py, stop: make(chan struct{})}
+	port, local, set := sidecarEnvPort()
+	if set && !local {
+		return nil // SOUNDFLOW_SIDECAR_URL указывает на другой компьютер — свою качалку не запускаем
+	}
+	return &downloaderProc{dir: dir, python: py, fixedPort: port, stop: make(chan struct{})}
+}
+
+// sidecarEnvPort — порт из SOUNDFLOW_SIDECAR_URL. set — переменная задана; local — она указывает на этот
+// компьютер (127.0.0.1 / localhost) и содержит порт.
+func sidecarEnvPort() (port int, local, set bool) {
+	raw := os.Getenv("SOUNDFLOW_SIDECAR_URL")
+	if raw == "" {
+		return 0, false, false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 0, false, true
+	}
+	if h := u.Hostname(); h != "127.0.0.1" && h != "localhost" {
+		return 0, false, true
+	}
+	p, err := strconv.Atoi(u.Port())
+	if err != nil || p <= 0 {
+		return 0, false, true
+	}
+	return p, true, true
+}
+
+func healthOnce(port int) bool {
+	cl := &http.Client{Timeout: 2 * time.Second}
+	resp, err := cl.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+// killProcessTree — убить процесс качалки вместе с потомками. У venv на Windows python.exe — только
+// «прокладка», настоящий интерпретатор идёт дочерним; обычный Kill() убил бы прокладку, а качалка
+// осталась бы жить и после закрытия программы.
+func killProcessTree(pid int) {
+	if runtime.GOOS == "windows" {
+		kill := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(pid))
+		hideChildWindow(kill)
+		_ = kill.Run()
+		return
+	}
+	if p, err := os.FindProcess(pid); err == nil {
+		_ = p.Kill()
+	}
 }
 
 func freePort() (int, error) {
@@ -120,15 +176,34 @@ func (d *downloaderProc) run() {
 }
 
 func (d *downloaderProc) startOnce() error {
-	port, err := freePort()
-	if err != nil {
-		return err
+	port := d.fixedPort
+	if port == 0 {
+		var err error
+		if port, err = freePort(); err != nil {
+			return err
+		}
+	} else if healthOnce(port) {
+		// Качалка на этом порту уже отвечает — не запускаем вторую. Не наша, поэтому и не гасим при выходе.
+		d.mu.Lock()
+		d.port, d.baseURL, d.ready = port, fmt.Sprintf("http://127.0.0.1:%d", port), true
+		d.mu.Unlock()
+		fmt.Printf("SoundFlow: качалка уже работает на 127.0.0.1:%d — пользуюсь ею\n", port)
+		for healthOnce(port) {
+			select {
+			case <-d.stop:
+				return nil
+			case <-time.After(5 * time.Second):
+			}
+		}
+		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, d.python, "-m", "uvicorn", "src.main:app",
 		"--host", "127.0.0.1", "--port", strconv.Itoa(port))
+	cmd.Cancel = func() error { killProcessTree(cmd.Process.Pid); return nil }
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = d.dir
 	cmd.Env = append(os.Environ(),
 		"SIDECAR_PORT="+strconv.Itoa(port),

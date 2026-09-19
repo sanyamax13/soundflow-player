@@ -62,9 +62,13 @@ func (s *Service) hPhoneFavoritesMissing(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	out := make([]missingFavoriteOut, len(items))
-	for i, it := range items {
-		out[i] = missingFavoriteOut{Artist: it.Artist, Title: it.Title}
+	dismissed, _ := s.db.DismissedDiscover()
+	out := make([]missingFavoriteOut, 0, len(items))
+	for _, it := range items {
+		if dismissed[it.NormalizedKey] {
+			continue // убрано кнопкой «Удалить» во вкладке «Открытия»
+		}
+		out = append(out, missingFavoriteOut{Artist: it.Artist, Title: it.Title})
 	}
 	writeJSON(w, out)
 }

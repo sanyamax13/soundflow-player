@@ -30,11 +30,17 @@ import (
 // E:\soundflow-lab\fg-sidecar-src, порт 8001, отдельный процесс) — просто
 // в Go-коде её никто не читал. Теперь: сперва эта переменная, s.dl.URL()
 // как резерв (для разработки, когда качалку явно не указали).
+//
+// С 19.09.2026 (Alex TG 20073: «качалка пусть запускается вместе с приложением»): если программа сама
+// держит качалку (s.dl — есть папка с .venv, её путь в SOUNDFLOW_DOWNLOADER лаунчера), адрес отдаём,
+// только когда она ответила на /health, иначе честное «ещё запускается». Порт при этом — из
+// SOUNDFLOW_SIDECAR_URL (8001), чтобы остальные места, что ждут качалку там же, её находили.
+// Нет s.dl — как раньше: адрес из SOUNDFLOW_SIDECAR_URL (качалка запущена отдельно).
 func (s *Service) sidecarURL() string {
-	if u := os.Getenv("SOUNDFLOW_SIDECAR_URL"); u != "" {
-		return u
+	if s.dl != nil {
+		return s.dl.URL()
 	}
-	return s.dl.URL()
+	return os.Getenv("SOUNDFLOW_SIDECAR_URL")
 }
 
 type yandexLikeOut struct {
@@ -63,9 +69,13 @@ func (s *Service) hYandexLikes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]yandexLikeOut, 0, len(items))
+	dismissed, _ := s.db.DismissedDiscover()
 	for _, it := range items {
 		key := quality.NormalizedKey(it.Artist, it.Title)
 		have, _ := s.db.TrackExistsByKey(key)
+		if !have && dismissed[key] {
+			continue // Alex убрал её кнопкой «Удалить» во вкладке «Открытия»
+		}
 		out = append(out, yandexLikeOut{
 			YandexID: it.YandexID, Artist: it.Artist, Title: it.Title,
 			Album: it.Album, CoverURL: it.CoverURL, DurationSec: it.DurationSec,

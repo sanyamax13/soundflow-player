@@ -242,6 +242,31 @@ func (c *Client) YandexWaveCandidates(ctx context.Context, extraArtists []string
 	return out.Items, nil
 }
 
+// YandexStreamURL — прямая ссылка на mp3 трека Яндекса, чтобы послушать его в окне до скачивания
+// (Alex TG 20073). Ищет по yandex_id; если его нет (старые лайки с телефона) — по артисту и названию.
+func (c *Client) YandexStreamURL(ctx context.Context, trackID, artist, title string) (string, error) {
+	q := url.Values{}
+	if trackID != "" {
+		q.Set("track_id", trackID)
+	}
+	q.Set("artist", artist)
+	q.Set("title", title)
+	var out struct {
+		URL   string `json:"url"`
+		Error string `json:"error"`
+	}
+	if err := c.get(ctx, "/yandex/stream-url?"+q.Encode(), &out); err != nil {
+		return "", err
+	}
+	if out.URL == "" {
+		if out.Error == "" {
+			out.Error = "ссылка не получена"
+		}
+		return "", fmt.Errorf("sidecar yandex/stream-url: %s", out.Error)
+	}
+	return out.URL, nil
+}
+
 func (c *Client) YandexDislikes(ctx context.Context) ([]YandexDislikeItem, error) {
 	var out struct {
 		Items []YandexDislikeItem `json:"items"`

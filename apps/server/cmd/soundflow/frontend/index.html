@@ -72,6 +72,29 @@
   .ctxtoast{position:fixed; left:50%; bottom:92px; transform:translateX(-50%); z-index:1100; max-width:min(720px,90vw);
     background:#18181b; color:#fff; padding:10px 16px; border-radius:10px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.25)}
   .ctxtoast.bad{background:var(--err)}
+  .ctxtoast .undo{margin-left:10px; border:1px solid rgba(255,255,255,.55); background:none; color:#fff; border-radius:6px;
+    padding:3px 11px; font:inherit; font-weight:700; cursor:pointer}
+  .ctxtoast .undo:hover{background:rgba(255,255,255,.15)}
+  /* «Открытия»: разделы сворачиваются (Alex TG 20073) */
+  .dsec{border:1px solid var(--line); border-radius:10px; margin-bottom:10px; flex-shrink:0}
+  .dsec-head{display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; user-select:none; border-radius:10px}
+  .dsec-head:hover{background:var(--field)}
+  .dsec-head:focus-visible{outline:2px solid var(--ink); outline-offset:-2px}
+  .dsec-head .chev{width:14px; color:var(--mut); font-size:13px; flex-shrink:0}
+  .dsec-head h2{margin:0; flex:1; font-size:15px}
+  .dsec-head .dsec-sum{color:var(--mut); font-size:12px; white-space:nowrap}
+  .dsec-btns{display:none; gap:8px}
+  .dsec.open .dsec-btns{display:flex}
+  .dsec.open .dsec-head{border-bottom:1px solid var(--line); border-radius:10px 10px 0 0}
+  .dsec-body{padding:10px 12px 12px}
+  #v-discover .drow .dcv .pl{display:flex; background:rgba(0,0,0,.28)}     /* ▶ на обложке видна всегда */
+  #v-discover .drow.playing .dcv .pl{background:rgba(0,0,0,.4)}
+  #v-discover .drow .dcv > span:first-child{visibility:hidden}               /* буквы вместо обложки не мешают значку ▶ */
+  #v-discover .drow .dx{opacity:1; font-size:12px; font-weight:600; padding:4px 10px; border:1px solid var(--line);
+    background:#fff; color:var(--ink); white-space:nowrap}                    /* «Скачать» и «Удалить» — видны всегда, подписаны словами */
+  #v-discover .drow .dx:not(.del):hover{background:var(--limebox); color:var(--ink)}
+  #v-discover .drow .dx.del:hover{background:#fde8e6; color:var(--err); border-color:#eecccb}
+  .drow.have{opacity:.6}
 
   .sum{font-size:12px; color:var(--mut); margin-bottom:9px; flex-shrink:0}
   .sum b{color:var(--ink)}
@@ -378,47 +401,65 @@
         <div id="tasteBody"><div class="muted">загрузка…</div></div>
       </section>
 
-      <!-- Открытия: лайки/дизлайки из Яндекс.Музыки (Alex TG 14.09.2026 —
-           «возьмём моё избранное из Яндекса», шаг 1). Полные песни, без
-           превью — по прямой просьбе Alex. -->
+      <!-- Открытия (Alex TG 14.09.2026 — «возьмём моё избранное из Яндекса»). С 19.09.2026 (Alex TG 20073):
+           каждый раздел СВЁРНУТ, по нажатию на заголовок раскрывается; каждую песню можно послушать
+           (полная, из Яндекса, через качалку); у каждой песни — «Удалить» (убрать из списка, не из Яндекса). -->
       <section class="view" id="v-discover">
-        <!-- Волна ПЕРВОЙ (Alex TG 15.09.2026 поймал: «где новое предложенное?»
-             — была ниже 573 лайков, физически не долистать). Шаг 2, без
-             личной рекомендации Яндекса (Alex TG 14.09.2026 — «алгоритм их
-             изучи, что бы мы сделали похожее для себя»). Кандидаты — ещё
-             треки у лайкнутых артистов, похожие жанры, похожие артисты,
-             артисты залайканные на телефоне; отбирает и ранжирует свой
-             вкус-движок, не Яндекс. Раз в день, до 100 штук. -->
-        <div class="bar">
-          <h2 style="margin:0;flex:1">Волна на сегодня — подборка по твоему вкусу</h2>
-          <button class="btn" id="waveRefresh">Обновить</button>
-          <button class="btn primary" id="waveDlAll">Скачать выбранные</button>
+        <!-- Волна ПЕРВОЙ (Alex TG 15.09.2026 поймал: «где новое предложенное?»). Шаг 2, без личной
+             рекомендации Яндекса (Alex TG 14.09.2026 — «алгоритм их изучи, что бы мы сделали похожее для
+             себя»). Кандидаты — ещё треки у лайкнутых артистов, похожие жанры, похожие артисты, артисты,
+             залайканные на телефоне; отбирает и ранжирует свой вкус-движок, не Яндекс. Раз в день, до 100. -->
+        <div class="dsec" id="sec-wave">
+          <div class="dsec-head" data-sec="wave" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
+            <span class="chev">▸</span>
+            <h2>Волна на сегодня — подборка по твоему вкусу</h2>
+            <span class="dsec-sum" id="waveSum"></span>
+            <span class="dsec-btns">
+              <button class="btn" id="waveRefresh">Обновить</button>
+              <button class="btn primary" id="waveDlAll">Скачать выбранные</button>
+            </span>
+          </div>
+          <div class="dsec-body" hidden>
+            <div class="hint" id="waveHint">загрузка…</div>
+            <div class="dsongs" id="waveBody"></div>
+          </div>
         </div>
-        <div class="hint" id="waveHint">загрузка…</div>
-        <div class="dsongs" id="waveBody"></div>
 
-        <!-- Лайки из Яндекс.Музыки (Alex TG 14.09.2026, шаг 1). Полные песни,
-             без превью — по прямой просьбе Alex. -->
-        <div class="bar" style="margin-top:24px">
-          <h2 style="margin:0;flex:1">Твои лайки из Яндекс.Музыки</h2>
-          <button class="btn" id="discRefresh">Обновить</button>
-          <button class="btn primary" id="discDlAll">Скачать выбранные</button>
+        <!-- Лайки из Яндекс.Музыки (Alex TG 14.09.2026, шаг 1). Полные песни, без превью-обрезков. -->
+        <div class="dsec" id="sec-likes">
+          <div class="dsec-head" data-sec="likes" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
+            <span class="chev">▸</span>
+            <h2>Твои лайки из Яндекс.Музыки</h2>
+            <span class="dsec-sum" id="likesSum"></span>
+            <span class="dsec-btns">
+              <button class="btn" id="discRefresh">Обновить</button>
+              <button class="btn primary" id="discDlAll">Скачать выбранные</button>
+            </span>
+          </div>
+          <div class="dsec-body" hidden>
+            <div class="hint" id="discHint">загрузка…</div>
+            <div class="dsongs" id="discBody"></div>
+          </div>
         </div>
-        <div class="hint" id="discHint">загрузка…</div>
-        <div class="dsongs" id="discBody"></div>
 
-        <!-- Старые лайки с телефона (Alex TG 15.09.2026): библиотеку стёрли,
-             а на телефоне остались лайки песен, которых больше нет в
-             каталоге — сами файлы на телефоне тоже не сохранились, только
-             название. Телефон присылает список сам (см. AutoSync на
-             телефоне), тут только докачка тем же /api/acquire. -->
-        <div class="bar" style="margin-top:24px">
-          <h2 style="margin:0;flex:1">Старые лайки с телефона</h2>
-          <button class="btn" id="phoneFavRefresh">Обновить</button>
-          <button class="btn primary" id="phoneFavDlAll">Скачать выбранные</button>
+        <!-- Старые лайки с телефона (Alex TG 15.09.2026): библиотеку стёрли, а на телефоне остались лайки
+             песен, которых больше нет в каталоге — только название. Телефон присылает список сам (AutoSync),
+             тут показ и докачка тем же /api/acquire. -->
+        <div class="dsec" id="sec-phone">
+          <div class="dsec-head" data-sec="phone" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
+            <span class="chev">▸</span>
+            <h2>Старые лайки с телефона</h2>
+            <span class="dsec-sum" id="phoneSum"></span>
+            <span class="dsec-btns">
+              <button class="btn" id="phoneFavRefresh">Обновить</button>
+              <button class="btn primary" id="phoneFavDlAll">Скачать выбранные</button>
+            </span>
+          </div>
+          <div class="dsec-body" hidden>
+            <div class="hint" id="phoneFavHint">загрузка…</div>
+            <div class="dsongs" id="phoneFavBody"></div>
+          </div>
         </div>
-        <div class="hint" id="phoneFavHint">загрузка…</div>
-        <div class="dsongs" id="phoneFavBody"></div>
       </section>
 
       <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
@@ -514,7 +555,7 @@ function showView(name){
   if(name==="taste") loadTaste();
   if(name==="log") loadLog();
   if(name==="settings") loadSettings();
-  if(name==="discover"){ loadDiscover(); loadWave(); loadPhoneFavorites(); }
+  if(name==="discover") _discOnEnter();
 }
 document.querySelectorAll(".nav a").forEach(a => a.onclick = () => showView(a.dataset.v));
 window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
@@ -1068,6 +1109,7 @@ function _playQ(i){
   }
   cur = i;
   _devPlayId = "";           // ушли в список каталога — снять подсветку в «Устройствах»
+  _discPlayKey = "";         // и в «Открытиях»
   au.src = src;
   au.play().catch(()=>{});
   $("#player").classList.remove("empty");
@@ -1081,8 +1123,8 @@ function _playQ(i){
   img.src = "/api/cover/" + encodeURIComponent(t.id);
   markPlaying();
 }
-function playNext(){ if(cur+1 < queue.length) _playQ(cur+1); }
-function playPrev(){ if(au.currentTime > 3){ au.currentTime = 0; return; } if(cur > 0) _playQ(cur-1); }
+function playNext(){ if(_discPlayKey){ _discStep(1); return; } if(cur+1 < queue.length) _playQ(cur+1); }
+function playPrev(){ if(au.currentTime > 3){ au.currentTime = 0; return; } if(_discPlayKey){ _discStep(-1); return; } if(cur > 0) _playQ(cur-1); }
 function markPlaying(){
   const pid = (cur >= 0 && queue[cur]) ? queue[cur].id : "";
   document.querySelectorAll("#tree .drow").forEach(r => {
@@ -1444,6 +1486,7 @@ function _devPlay(id){
   if(!t || !t.id){ return; }
   if(_devPlayId === t.id && au.src){ au.paused ? au.play() : au.pause(); _devMarkPlaying(); return; }
   _devPlayId = t.id;
+  _discPlayKey = "";                          // прослушивание из «Открытий» — закончено
   cur = -1;                                   // выйти из «списка каталога», чтобы ▶▶ не прыгал по нему
   au.src = "/audio/" + encodeURIComponent(t.id);
   au.play().catch(()=>{});
@@ -1687,78 +1730,110 @@ async function loadTaste(){
 }
 
 /* ---------- Настройки ---------- */
-/* ---------- Открытия: лайки/дизлайки из Яндекс.Музыки ----------
-   Alex TG 14.09.2026: «возьмём моё избранное из Яндекса... нужно это в
-   программе как-то разместить, может отдельную вкладку». Шаг 1 —
-   полные песни без превью (Alex явно попросил не делать превью), сама
-   закачка — тем же /api/acquire, что и «Найти и скачать» (ищет по
-   Яндексу/торрентам, проверяет качество — код не дублируем). Дизлайки —
-   молча в чёрный список при первом открытии вкладки за сессию. */
-let _discItems = [];
+/* ---------- Открытия: волна, лайки Яндекса, старые лайки с телефона ----------
+   Alex TG 14.09.2026: «возьмём моё избранное из Яндекса... нужно это в программе как-то разместить,
+   может отдельную вкладку». Закачка — тем же /api/acquire, что и «Найти и скачать» (ищет по Яндексу/
+   торрентам, проверяет качество — код не дублируем). Дизлайки Яндекса — молча в чёрный список.
+   Alex TG 20073 (19.09.2026): (1) каждый раздел свёрнут, по нажатию раскрывается и только тогда грузится;
+   (2) каждую песню можно послушать — полная, из Яндекса, через /api/yandex/preview; (3) у каждой песни
+   кнопка «Удалить» — убрать из списка (только скрытие, лайк в Яндексе/на телефоне не трогаем; «Вернуть»
+   после удаления). */
+let _discItems = [];        // лайки Яндекса
+let _waveItems = [];        // волна
+let _phoneFavItems = [];    // старые лайки с телефона
 let _discDislikesDone = false;
+let _discPlayKey = "";      // какая песня из «Открытий» сейчас играет: вид|артист|название
+
+const _discOpen = {wave:false, likes:false, phone:false};
+const _discLoaded = {wave:false, likes:false, phone:false};
+const _discLoader = {wave: () => loadWave(), likes: () => loadDiscover(), phone: () => loadPhoneFavorites()};
+const _discKind = {
+  wave:  {items: () => _waveItems,     body: "#waveBody",    one: "_waveOne",     pick: "wavePick"},
+  likes: {items: () => _discItems,     body: "#discBody",    one: "_discOne",     pick: "discPick"},
+  phone: {items: () => _phoneFavItems, body: "#phoneFavBody", one: "_phoneFavOne", pick: "phoneFavPick"},
+};
+
+function _discToggle(name){
+  const open = !_discOpen[name];
+  _discOpen[name] = open;
+  const sec = $("#sec-"+name);
+  sec.classList.toggle("open", open);
+  sec.querySelector(".dsec-body").hidden = !open;
+  sec.querySelector(".chev").textContent = open ? "▾" : "▸";
+  sec.querySelector(".dsec-head").setAttribute("aria-expanded", open ? "true" : "false");
+  if(open && !_discLoaded[name]){ _discLoaded[name] = true; _discLoader[name](); }
+}
+document.querySelectorAll(".dsec-head").forEach(h => {
+  h.addEventListener("click", () => _discToggle(h.dataset.sec));
+  h.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); _discToggle(h.dataset.sec); } });
+});
+document.querySelectorAll(".dsec-btns").forEach(b => b.addEventListener("click", e => e.stopPropagation()));
+
+// вход на вкладку: дизлайки Яндекса → чёрный список (раз за запуск, тихо); раскрытые разделы обновляем
+function _discOnEnter(){
+  if(!_discDislikesDone){
+    _discDislikesDone = true;
+    fetch("/api/yandex/dislikes/import",{method:"POST"}).catch(()=>{});
+  }
+  for(const n of Object.keys(_discOpen)) if(_discOpen[n]) _discLoader[n]();
+}
+
+const _discKey = (kind, t) => kind + "|" + (t.artist||"") + "|" + (t.title||"");
+
+function _discRow(kind, t, i){
+  const k = _discKind[kind];
+  const have = !!t.already_have;
+  const on = _discPlayKey === _discKey(kind, t);
+  return `<div class="drow${have?" have":""}${on?" playing":""}" data-i="${i}" onclick="_discPlay('${kind}',${i})" title="нажми — заиграет здесь, в окне">`+
+    `<span class="dcv" style="background:${_devColor(t.artist)}"><span>${esc(_devInitials(t.artist))}</span>`+
+      (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
+      `<span class="pl">${on && !au.paused ? "⏸" : "▶"}</span></span>`+
+    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span></span>`+
+    (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
+    (have
+      ? `<span class="ds" title="уже в каталоге">✓ есть</span>`
+      : `<input type="checkbox" class="${k.pick}" data-i="${i}" style="margin:0 6px" onclick="event.stopPropagation()">`+
+        `<button class="dx" title="скачать эту песню" onclick="event.stopPropagation();${k.one}(${i})">Скачать</button>`+
+        `<button class="dx del" title="убрать из списка" onclick="event.stopPropagation();_discDismiss('${kind}',${i})">Удалить</button>`)+
+    `</div>`;
+}
+
+function _discRender(kind){
+  const box = $(_discKind[kind].body), items = _discKind[kind].items();
+  box.innerHTML = items.map((t,i) => _discRow(kind, t, i)).join("");
+  if(kind === "wave"){
+    $("#waveHint").innerHTML = items.length
+      ? `Сегодня подобрано — <b>${nfmt(items.length)}</b> песен. Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`
+      : "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.";
+    $("#waveSum").textContent = items.length ? nfmt(items.length)+" песен" : "";
+  } else if(kind === "likes"){
+    const left = items.filter(t=>!t.already_have).length;
+    $("#discHint").innerHTML = `<b>${nfmt(items.length)}</b> лайкнутых песен в Яндексе, `+
+      `из них уже в каталоге — <b>${nfmt(items.length-left)}</b>, можно докачать — <b>${nfmt(left)}</b>. `+
+      `Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`;
+    $("#likesSum").textContent = nfmt(items.length)+" песен · докачать "+nfmt(left);
+  } else {
+    $("#phoneFavHint").innerHTML = items.length
+      ? `<b>${nfmt(items.length)}</b> песен были лайкнуты на телефоне, но их нет в каталоге. `+
+        `Нажми на песню — она заиграет здесь (ищу её в Яндексе); отметь галочками, что докачать, или сразу «Скачать выбранные».`
+      : "Пусто — либо телефон ещё не присылал лайки, либо всё уже в каталоге.";
+    $("#phoneSum").textContent = items.length ? nfmt(items.length)+" песен" : "";
+  }
+  _discMarkPlaying();
+}
 
 async function loadDiscover(){
   const hint = $("#discHint"), box = $("#discBody");
   hint.textContent = "загрузка твоих лайков из Яндекса…";
   box.innerHTML = "";
-  if(!_discDislikesDone){
-    _discDislikesDone = true;
-    fetch("/api/yandex/dislikes/import",{method:"POST"}).catch(()=>{});
-  }
   try{
     _discItems = await jget("/api/yandex/likes");
   }catch(e){
     hint.textContent = "Не вышло получить лайки: "+friendlyError(e);
     return;
   }
-  const left = _discItems.filter(t=>!t.already_have).length;
-  hint.innerHTML = `<b>${nfmt(_discItems.length)}</b> лайкнутых песен в Яндексе, `+
-    `из них уже в каталоге — <b>${nfmt(_discItems.length-left)}</b>, можно докачать — <b>${nfmt(left)}</b>. `+
-    `Отметь галочками, что хочешь, или сразу «Скачать выбранные».`;
-  box.innerHTML = _discItems.map((t,i) => _discRow(t,i)).join("");
+  _discRender("likes");
 }
-
-function _discRow(t,i){
-  const have = t.already_have;
-  return `<div class="drow${have?" busy":""}" data-i="${i}">`+
-    `<span class="dcv" style="background:${_devColor(t.artist)}">`+
-      (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : `<span>${esc(_devInitials(t.artist))}</span>`)+
-    `</span>`+
-    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span></span>`+
-    (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
-    (have
-      ? `<span class="ds" title="уже в каталоге">✓ есть</span>`
-      : `<input type="checkbox" class="discPick" data-i="${i}" style="margin:0 6px">`+
-        `<button class="dx" title="скачать эту песню" onclick="_discOne(${i})">⬇</button>`)+
-    `</div>`;
-}
-
-async function _discOne(i){
-  const t = _discItems[i];
-  if(!t || t.already_have) return;
-  const row = document.querySelector('#discBody .drow[data-i="'+i+'"]');
-  if(row) row.classList.add("busy");
-  try{
-    await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
-  }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
-}
-
-$("#discRefresh").onclick = loadDiscover;
-$("#discDlAll").onclick = async () => {
-  const picked = [...document.querySelectorAll(".discPick:checked")].map(el => Number(el.dataset.i));
-  const list = picked.length ? picked : _discItems.map((t,i)=>i).filter(i=>!_discItems[i].already_have);
-  if(!list.length){ alert("Нечего качать — все уже в каталоге."); return; }
-  if(!picked.length && !confirm(`Скачать все ${list.length} песен, которых ещё нет в каталоге?`)) return;
-  $("#discDlAll").disabled = true;
-  for(const i of list){ await _discOne(i); }
-  $("#discDlAll").disabled = false;
-};
-
-/* ---------- Волна: шаг 2, до 100 кандидатов в день ----------
-   Источник — /api/yandex/wave (сервер сам отсеял то, что уже в каталоге,
-   и то, что в чёрном списке, и отранжировал по вкусу — тут только показ
-   и закачка, тот же /api/acquire, что и в блоке лайков выше). */
-let _waveItems = [];
 
 async function loadWave(){
   const hint = $("#waveHint"), box = $("#waveBody");
@@ -1770,53 +1845,8 @@ async function loadWave(){
     hint.textContent = "Не вышло собрать волну: "+friendlyError(e);
     return;
   }
-  if(!_waveItems.length){
-    hint.textContent = "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.";
-    box.innerHTML = "";
-    return;
-  }
-  hint.innerHTML = `Сегодня подобрано — <b>${nfmt(_waveItems.length)}</b> песен. `+
-    `Отметь галочками, что хочешь, или сразу «Скачать выбранные».`;
-  box.innerHTML = _waveItems.map((t,i) => _waveRow(t,i)).join("");
+  _discRender("wave");
 }
-
-function _waveRow(t,i){
-  return `<div class="drow" data-i="${i}">`+
-    `<span class="dcv" style="background:${_devColor(t.artist)}">`+
-      (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : `<span>${esc(_devInitials(t.artist))}</span>`)+
-    `</span>`+
-    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span></span>`+
-    (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
-    `<input type="checkbox" class="wavePick" data-i="${i}" style="margin:0 6px">`+
-    `<button class="dx" title="скачать эту песню" onclick="_waveOne(${i})">⬇</button>`+
-    `</div>`;
-}
-
-async function _waveOne(i){
-  const t = _waveItems[i];
-  if(!t) return;
-  const row = document.querySelector('#waveBody .drow[data-i="'+i+'"]');
-  if(row) row.classList.add("busy");
-  try{
-    await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
-  }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
-}
-
-$("#waveRefresh").onclick = loadWave;
-$("#waveDlAll").onclick = async () => {
-  const picked = [...document.querySelectorAll(".wavePick:checked")].map(el => Number(el.dataset.i));
-  const list = picked.length ? picked : _waveItems.map((t,i)=>i);
-  if(!list.length){ alert("Список пуст."); return; }
-  if(!picked.length && !confirm(`Скачать все ${list.length} песен волны?`)) return;
-  $("#waveDlAll").disabled = true;
-  for(const i of list){ await _waveOne(i); }
-  $("#waveDlAll").disabled = false;
-};
-
-/* ---------- Старые лайки с телефона ----------
-   Телефон сам присылает список (см. AutoSync на телефоне), тут только
-   показ и докачка тем же /api/acquire, что и везде в этой вкладке. */
-let _phoneFavItems = [];
 
 async function loadPhoneFavorites(){
   const hint = $("#phoneFavHint"), box = $("#phoneFavBody");
@@ -1828,35 +1858,127 @@ async function loadPhoneFavorites(){
     hint.textContent = "Не вышло получить список: "+friendlyError(e);
     return;
   }
-  if(!_phoneFavItems.length){
-    hint.textContent = "Пусто — либо телефон ещё не присылал лайки, либо всё уже в каталоге.";
-    box.innerHTML = "";
-    return;
-  }
-  hint.innerHTML = `<b>${nfmt(_phoneFavItems.length)}</b> песен были лайкнуты на телефоне, но их нет в каталоге. `+
-    `Отметь галочками, что хочешь докачать, или сразу «Скачать выбранные».`;
-  box.innerHTML = _phoneFavItems.map((t,i) => _phoneFavRow(t,i)).join("");
+  _discRender("phone");
 }
 
-function _phoneFavRow(t,i){
-  return `<div class="drow" data-i="${i}">`+
-    `<span class="dcv" style="background:${_devColor(t.artist)}"><span>${esc(_devInitials(t.artist))}</span></span>`+
-    `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}</span></span>`+
-    `<input type="checkbox" class="phoneFavPick" data-i="${i}" style="margin:0 6px">`+
-    `<button class="dx" title="скачать эту песню" onclick="_phoneFavOne(${i})">⬇</button>`+
-    `</div>`;
-}
-
-async function _phoneFavOne(i){
-  const t = _phoneFavItems[i];
+/* --- слушать: полная песня из Яндекса, играет в общем плеере внизу --- */
+function _discPlay(kind, i){
+  const t = _discKind[kind].items()[i];
   if(!t) return;
-  const row = document.querySelector('#phoneFavBody .drow[data-i="'+i+'"]');
+  const key = _discKey(kind, t);
+  if(_discPlayKey === key && au.src){ au.paused ? au.play() : au.pause(); _discMarkPlaying(); return; }
+  _discPlayKey = key;
+  _devPlayId = "";
+  cur = -1;                                   // вышли из «списка каталога»
+  au.src = "/api/yandex/preview?" + new URLSearchParams({id: t.yandex_id||"", artist: t.artist||"", title: t.title||""});
+  au.play().catch(()=>{});
+  $("#player").classList.remove("empty");
+  $("#pt1").textContent = t.title || "—";
+  $("#pt2").textContent = t.artist || "";
+  const cov = $("#pcov");
+  cov.textContent = "♪"; cov.style.backgroundImage = "";
+  if(t.cover_url){
+    const img = new Image();
+    img.onload  = () => { if(_discPlayKey === key){ cov.textContent=""; cov.style.backgroundImage = `url(${JSON.stringify(t.cover_url)})`; cov.style.backgroundSize="cover"; } };
+    img.src = t.cover_url;
+  }
+  _discMarkPlaying();
+}
+function _discMarkPlaying(){
+  for(const kind of Object.keys(_discKind)){
+    const items = _discKind[kind].items();
+    document.querySelectorAll(_discKind[kind].body + " .drow").forEach(r => {
+      const t = items[+r.dataset.i];
+      const on = !!_discPlayKey && !!t && _discKey(kind, t) === _discPlayKey;
+      r.classList.toggle("playing", on);
+      const pl = r.querySelector(".dcv .pl");
+      if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";
+    });
+  }
+}
+// ▶▶ / ◀◀ и конец песни во время прослушивания — соседняя песня того же списка
+function _discStep(d){
+  const kind = _discPlayKey.split("|")[0], k = _discKind[kind];
+  if(!k) return false;
+  const items = k.items();
+  const at = items.findIndex(t => _discKey(kind, t) === _discPlayKey);
+  const to = at + d;
+  if(at < 0 || to < 0 || to >= items.length) return true;   // край списка — остаёмся
+  _discPlay(kind, to);
+  return true;
+}
+au.addEventListener("play",  _discMarkPlaying);
+au.addEventListener("pause", _discMarkPlaying);
+// Яндекс не отдал / качалка не ответила — сказать причину, а не молчать
+au.addEventListener("error", async () => {
+  if(!_discPlayKey || !au.src.includes("/api/yandex/preview")) return;
+  let why = "";
+  try{ const r = await fetch(au.src, {headers:{Range:"bytes=0-0"}}); if(!r.ok) why = (await r.text()).trim(); }catch(e){}
+  _ctxToast("Не получилось включить песню" + (why ? ": " + why : " — Яндекс не отдал её"), true);
+  _discMarkPlaying();
+});
+
+/* --- удалить: убрать из списка (только скрытие), «Вернуть» --- */
+function _discToast(msg, undo){
+  document.querySelectorAll(".ctxtoast").forEach(x => x.remove());
+  const el = document.createElement("div"); el.className = "ctxtoast";
+  el.append(msg + " ");
+  const b = document.createElement("button"); b.className = "undo"; b.textContent = "Вернуть";
+  b.onclick = () => { el.remove(); undo(); };
+  el.appendChild(b);
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 10000);
+}
+async function _discDismiss(kind, i){
+  const items = _discKind[kind].items(), t = items[i];
+  if(!t) return;
+  try{ await _ctxPost("/api/discover/dismiss", {artist: t.artist||"", title: t.title||""}); }
+  catch(e){ _ctxToast("Не получилось убрать: " + e.message, true); return; }
+  if(_discPlayKey === _discKey(kind, t)){ au.pause(); }
+  items.splice(i, 1);
+  _discRender(kind);
+  _discToast(`Убрано из списка: «${t.artist} — ${t.title}».`, async () => {
+    try{ await _ctxPost("/api/discover/undismiss", {artist: t.artist||"", title: t.title||""}); }
+    catch(e){ _ctxToast("Не вернулось: " + e.message, true); return; }
+    items.splice(Math.min(i, items.length), 0, t);
+    _discRender(kind);
+  });
+}
+
+/* --- скачать --- */
+async function _acquireOne(kind, i){
+  const t = _discKind[kind].items()[i];
+  if(!t || t.already_have) return;
+  const row = document.querySelector(_discKind[kind].body + ' .drow[data-i="'+i+'"]');
   if(row) row.classList.add("busy");
   try{
     await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
   }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
 }
+const _discOne = i => _acquireOne("likes", i);
+const _waveOne = i => _acquireOne("wave", i);
+const _phoneFavOne = i => _acquireOne("phone", i);
 
+$("#discRefresh").onclick = loadDiscover;
+$("#discDlAll").onclick = async () => {
+  const picked = [...document.querySelectorAll(".discPick:checked")].map(el => Number(el.dataset.i));
+  const list = picked.length ? picked : _discItems.map((t,i)=>i).filter(i=>!_discItems[i].already_have);
+  if(!list.length){ alert("Нечего качать — все уже в каталоге."); return; }
+  if(!picked.length && !confirm(`Скачать все ${list.length} песен, которых ещё нет в каталоге?`)) return;
+  $("#discDlAll").disabled = true;
+  for(const i of list){ await _discOne(i); }
+  $("#discDlAll").disabled = false;
+};
+$("#waveRefresh").onclick = loadWave;
+$("#waveDlAll").onclick = async () => {
+  const picked = [...document.querySelectorAll(".wavePick:checked")].map(el => Number(el.dataset.i));
+  const list = picked.length ? picked : _waveItems.map((t,i)=>i);
+  if(!list.length){ alert("Список пуст."); return; }
+  if(!picked.length && !confirm(`Скачать все ${list.length} песен волны?`)) return;
+  $("#waveDlAll").disabled = true;
+  for(const i of list){ await _waveOne(i); }
+  $("#waveDlAll").disabled = false;
+};
 $("#phoneFavRefresh").onclick = loadPhoneFavorites;
 $("#phoneFavDlAll").onclick = async () => {
   const picked = [...document.querySelectorAll(".phoneFavPick:checked")].map(el => Number(el.dataset.i));

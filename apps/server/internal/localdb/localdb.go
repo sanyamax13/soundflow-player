@@ -77,6 +77,11 @@ func Open(path string) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS phone_missing_favorites (
 			normalized_key TEXT PRIMARY KEY, artist TEXT NOT NULL DEFAULT '',
 			title TEXT NOT NULL DEFAULT '', reported_at TEXT NOT NULL DEFAULT '')`,
+		// «Удалить» во вкладке «Открытия» (Alex TG 20073, 19.09.2026): скрыть песню в списках
+		// волны / лайков Яндекса / старых лайков телефона. Только скрытие, см. discover.go.
+		`CREATE TABLE IF NOT EXISTS discover_dismissed (
+			normalized_key TEXT PRIMARY KEY, artist TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL DEFAULT '', dismissed_at TEXT NOT NULL DEFAULT '')`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()
