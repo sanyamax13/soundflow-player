@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/app_log.dart';
 import '../../core/local_taste.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
@@ -66,6 +67,13 @@ Future<List<DownloadedTrack>> orderByTaste(Db db, List<DownloadedTrack> items) a
 class _StreamScreenState extends ConsumerState<StreamScreen> {
   List<DownloadedTrack>? _items;
 
+  /// Очередь Потока ещё заряжается (порядок под вкус + загрузка источника — на
+  /// телефоне это секунды). Плеер в это время видит `now == null` и раньше писал
+  /// «Ничего не играет» (Alex TG 19950, 19.09.2026: «в начале говорит что нет
+  /// песен, через несколько секунд они появляются») — теперь на это время
+  /// колесо, а текст остаётся только если очередь так и не собралась.
+  bool _building = true;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -83,7 +91,14 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     if (!mounted) return;
     setState(() => _items = items);
     if (items.isEmpty) return;
+    try {
+      await _fillQueue(db, items);
+    } finally {
+      if (mounted) setState(() => _building = false);
+    }
+  }
 
+  Future<void> _fillQueue(Db db, List<DownloadedTrack> items) async {
     final player = ref.read(playerProvider);
     // Раньше очередь строилась только один раз за всё время работы
     // приложения (player.now.value == null — становится не-null сразу же
@@ -94,11 +109,13 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     // (плеер пуст), либо дозапись новых треков в хвост без остановки того,
     // что уже играет.
     if (player.streamQueueCount == items.length) return;
+    final sw = Stopwatch()..start();
     // Порядок — под вкус, не просто вперемешку (Alex TG 14.09.2026: «доделай»
     // урезанный пункт 6 — раньше учитывались только скрытые исполнители).
     // Нет ещё вкуса/отпечатков — orderByTaste сама выродится в обычную
     // перетасовку, отдельного «если вкуса нет» пути тут не нужно.
     final ordered = await orderByTaste(db, items);
+    final orderMs = sw.elapsedMilliseconds;
     final queue = [
       for (final t in ordered)
         NowPlaying(
@@ -108,17 +125,25 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
             path: t.path,
             coverPath: t.coverPath),
     ];
-    if (player.now.value == null) {
-      unawaited(player.playQueue(
-        queue,
-        startIndex: 0,
-        shuffle: false,
-        autoplay: false,
-      ));
-    } else {
-      unawaited(player.appendNewToQueue(queue));
-    }
+    final started = player.now.value == null
+        ? player.playQueue(
+            queue,
+            startIndex: 0,
+            shuffle: false,
+            autoplay: false,
+          )
+        : player.appendNewToQueue(queue);
+    // Счётчик — сразу, не дожидаясь конца зарядки (как и раньше): повторное
+    // открытие вкладки за это время не соберёт очередь второй раз.
     player.streamQueueCount = items.length;
+    await started;
+    // Сколько заняла зарядка на телефоне — смотреть в «Журнале» (Настройки), чтобы
+    // видеть, что именно долгое: порядок под вкус или загрузка источника.
+    unawaited(AppLog.event('stream_queue_ready', {
+      'tracks': items.length,
+      'order_ms': orderMs,
+      'total_ms': sw.elapsedMilliseconds,
+    }));
   }
 
   @override
@@ -130,7 +155,11 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
           ? const Center(child: CircularProgressIndicator())
           : items.isEmpty
               ? _empty()
-              : const PlayerView(),
+              : PlayerView(
+                  emptyState: _building
+                      ? const Center(child: CircularProgressIndicator())
+                      : null,
+                ),
     );
   }
 
