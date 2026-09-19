@@ -164,6 +164,6 @@ void main() {
     await tester.tap(find.text('Настройки'));
     await tester.pumpAndSettle();
     expect(find.text('Адрес сервера'), findsOneWidget);
-    expect(find.text('Журнал задержек'), findsOneWidget);
+    expect(find.text('Журнал'), findsOneWidget);
   });
 }
