@@ -34,3 +34,42 @@ func TestResolveTagsFromFilenameStripsTrackNumber(t *testing.T) {
 		}
 	}
 }
+
+// Сборник без тегов: папка с пронумерованными файлами → альбом по имени папки,
+// одна плитка на весь сборник. Папка исполнителя с одинаковым числом в имени
+// файлов («25_17») сборником не считается.
+func TestCompilationAlbumFromFolder(t *testing.T) {
+	root := t.TempDir()
+	mk := func(dir string, names ...string) string {
+		d := filepath.Join(root, filepath.FromSlash(dir))
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range names {
+			if err := os.WriteFile(filepath.Join(d, n), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return d
+	}
+	cd1 := mk("Dance Hits 90s/Album Artist - Album cd1", "01. Go Disco - Angie.mp3", "02. Capitan Cozmo - Coundown.mp3", "03. Cosmo-Tom - Shield.mp3", "cover.jpg")
+	cd2 := mk("Dance Hits 90s/Album Artist - Album cd2", "01. Deja Vu - Unbreak.mp3", "02. T-Spoon - Party.mp3", "03. Heart Attack - Loving.mp3")
+	rap := mk("25_17", "25_17 - Звезда.mp3", "25_17 - Жду чуда.mp3", "25_17 - Остаться.mp3")
+	single := mk("Разное", "Sting - Fields.mp3", "Muse - Uprising.mp3")
+
+	cache := map[string]string{}
+	cases := []struct{ path, want string }{
+		{filepath.Join(cd1, "01. Go Disco - Angie.mp3"), "Dance Hits 90s"},
+		{filepath.Join(cd2, "01. Deja Vu - Unbreak.mp3"), "Dance Hits 90s"}, // оба диска — один альбом
+		{filepath.Join(rap, "25_17 - Звезда.mp3"), ""},
+		{filepath.Join(single, "Sting - Fields.mp3"), ""},
+	}
+	for _, c := range cases {
+		if got := compilationAlbum(cache, c.path); got != c.want {
+			t.Errorf("compilationAlbum(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+	if len(cache) != 4 {
+		t.Errorf("решение по каждой папке помним один раз: в кэше %d записей, ждал 4", len(cache))
+	}
+}

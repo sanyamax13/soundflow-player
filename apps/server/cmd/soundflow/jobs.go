@@ -155,6 +155,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 		s := jr.svc
 		_ = s.db.AddServerLog("info", "", "", "скан папки: "+dir, 0)
 		var added, skipped, failed int
+		compDirs := map[string]string{} // папка → альбом-сборник («» — не сборник)
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -176,6 +177,9 @@ func (jr *JobRunner) StartScan(dir string) string {
 			}
 			j.Total++
 			ar, ti, al := resolveTags(path)
+			if al == "" {
+				al = compilationAlbum(compDirs, path)
+			}
 			if ar == "" || ti == "" {
 				skipped++
 				j.Done++
@@ -447,6 +451,42 @@ func resolveTags(path string) (artist, title, album string) {
 		}
 	}
 	return artist, title, album
+}
+
+// compilationAlbum — альбом для песни без тега «альбом», лежащей в папке-сборнике
+// (имена файлов с номерами по порядку — см. quality.LooksLikeNumberedAlbum):
+// имя папки. Так весь сборник собирается в одну плитку каталога, а не в
+// россыпь «синглов» (Alex TG 19970, 19.09.2026: «в одну плитку»). Решение по
+// папке считаем один раз и помним в cache; пусто — не сборник.
+func compilationAlbum(cache map[string]string, path string) string {
+	dir := filepath.Dir(path)
+	if v, ok := cache[dir]; ok {
+		return v
+	}
+	v := ""
+	if quality.LooksLikeNumberedAlbum(audioNamesIn(dir)) {
+		v = quality.AlbumFromFolder(dir)
+	}
+	cache[dir] = v
+	return v
+}
+
+// audioNamesIn — имена аудиофайлов прямо в папке (без вложенных папок).
+func audioNamesIn(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if _, ok := audioExt[strings.ToLower(filepath.Ext(e.Name()))]; ok {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }
 
 func fromFilename(path string) (artist, title string) {
