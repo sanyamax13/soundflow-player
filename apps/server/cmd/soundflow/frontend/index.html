@@ -273,7 +273,7 @@
       <section class="view on" id="v-catalog">
         <div class="bar">
           <input class="search" id="q" placeholder="Поиск по трекам, артистам, альбомам…" autocomplete="off">
-          <span class="segbar" id="catMode" style="margin:0"><button class="cseg on" data-cm="albums">Альбомы</button><button class="cseg" data-cm="artists">Исполнители</button></span>
+          <span class="segbar" id="catMode" style="margin:0"><button class="cseg on" data-cm="albums">Альбомы</button><button class="cseg" data-cm="artists">Исполнители</button><button class="cseg" data-cm="folders">Папки</button></span>
           <button class="btn primary" id="btnPick">Выбрать папку</button>
           <button class="btn" id="btnReindex" title="Пересчитать звуковое сходство треков — нужно для умного радио и похожих песен">Пересчитать похожесть по звуку</button>
           <button class="btn danger" id="btnStop" hidden title="Остановить только этот пересчёт — сама программа продолжит работать">Отменить пересчёт</button>
@@ -621,6 +621,7 @@ async function loadCatalog(opts){
     _catAlbums = buildAlbums(tracks);
     await _markNewAlbums(_catAlbums);
     _catRebuild(tracks);
+    if(_catMode==="folders") await _catLoadFolders();
     _catSummary();
     if(_catOpenKey && !_catAlbums.find(a=>a.key===_catOpenKey)) _catOpenKey = null;
     renderCatalogBody();
@@ -649,8 +650,9 @@ function _catStopPoll(){
    — это ≥3 альбома с одинаковым названием и разными номерами выпуска. Исполнитель склеивается
    так же, как на телефоне и во вкладке «Устройства» (_primaryArtist). */
 let _catMode = "albums";
-try{ if(localStorage.getItem("catMode")==="artists") _catMode = "artists"; }catch(e){}
+try{ const _cm = localStorage.getItem("catMode"); if(_cm==="artists" || _cm==="folders") _catMode = _cm; }catch(e){}
 let _catTracks = [];         // все песни каталога (плоско)
+let _catById = new Map();    // те же песни по id (для вида «Папки»)
 let _catSeries = [];         // серии сборников (вид «Альбомы»)
 let _catTop = [];            // плитки верхнего уровня вида «Альбомы»: альбомы и серии
 let _catArtists = [];        // исполнители (вид «Исполнители»)
@@ -731,6 +733,7 @@ function _buildArtists(tracks){
 // пересчитать плитки под текущие песни (зовётся из loadCatalog)
 function _catRebuild(tracks){
   _catTracks = tracks;
+  _catById = new Map(tracks.map(t=>[t.id,t]));
   const f = _foldSeries(_catAlbums);
   _catSeries = f.series;
   _catTop = [
@@ -740,18 +743,186 @@ function _catRebuild(tracks){
   _catArtists = _catMode==="artists" ? _buildArtists(tracks) : [];
 }
 
-function _catSetMode(m){
+/* ---------- вид «Папки» (Alex TG 20018 «убери альбомы, сделай папки», TG 20020: третья кнопка, по уровням, очищенные имена) ----------
+   Плитка = папка на диске: заходишь — подпапки, ещё раз — песни (как в проводнике). Названия очищаем от хвостов
+   «[320]», «(2CD, 2013)», «VA - », «-=…=-»; диски «CD 1/CD 2» внутри альбома — не отдельным уровнем, песни всех дисков
+   вместе (решение Alex TG 19973). Папки на диске с разным регистром (музыка/Музыка) — одна папка, как в Windows. */
+const _fnTech = /^(?:(?:19|20)\d{2}|\d?cd|\d+|flac|rip|mp3|web|vbr\S*|cbr|lossless|scene|single|kbps|[-–—+&])$/i;
+const _fnDisc = /^(?:(.*?)[\s._-]*)?(?:cd|disc|disk|диск)[\s._-]*(\d{1,2})$/i;
+const _fnNat = (a,b)=> a.localeCompare(b,"ru",{numeric:true,sensitivity:"base"});
+
+function _fnClean(raw){
+  const orig = String(raw||"").trim();
+  let s = orig;
+  const w = /^-=\s*(.*?)\s*=-$/.exec(s); if(w) s = w[1].trim();
+  for(;;){
+    const t = /\s*(?:\[([^\]]*)\]|\(([^)]*)\))\s*$/.exec(s);
+    if(!t) break;
+    const isSq = t[1] !== undefined, inner = isSq ? t[1] : (t[2]||"");
+    const toks = inner.split(/[\s,;/]+/).filter(Boolean);
+    const head = s.slice(0, t.index).replace(/[\s._-]+$/,"");
+    if(!/\p{L}/u.test(head)) break;                       // остаток без букв — не режем («2004 - [PTS.OF.ATHRTY]»)
+    if(isSq || (toks.length && toks.every(x=>_fnTech.test(x)))) s = head; else break;
+  }
+  s = s.replace(/^va\s*[-–—._]\s*/i,"").replace(/\s{2,}/g," ").replace(/[\s._-]+$/,"").trim();
+  return s.length >= 2 ? s : orig;
+}
+
+function _fnNode(name){ return {name, key:name.toLowerCase(), kids:new Map(), items:[]}; }
+function _fnBuild(paths){                                 // paths: [{id, segs:[папки от корня]}]
+  const root = _fnNode("");
+  for(const p of paths){
+    let n = root;
+    for(const s of p.segs){ const k = s.toLowerCase(); let c = n.kids.get(k); if(!c){ c = _fnNode(s); n.kids.set(k,c); } n = c; }
+    n.items.push(p.id);
+  }
+  return root;
+}
+function _fnStats(n){
+  n.tracks = n.items.length; n.first = n.items[0] || "";
+  for(const c of n.kids){ n.tracks += c.tracks; if(!n.first) n.first = c.first; }
+}
+function _fnFinish(n){
+  n.disp = _fnClean(n.name);
+  const kids = [...n.kids.values()];
+  kids.forEach(_fnFinish);
+  const rest = [], groups = new Map(), loose = [];
+  for(const c of kids){
+    const m = _fnDisc.exec(c.disp);
+    if(!m){ rest.push(c); continue; }
+    c.disc = +m[2];
+    const base = (m[1]||"").trim();
+    if(!base){ loose.push(c); continue; }
+    const gk = base.toLowerCase();
+    if(!groups.has(gk)) groups.set(gk, {base, list:[]});
+    groups.get(gk).list.push(c);
+  }
+  n.kids = rest;
+  loose.sort((a,b)=>a.disc-b.disc).forEach(c => { n.items = n.items.concat(c.items); n.kids = n.kids.concat(c.kids); });
+  for(const [gk, g] of groups){
+    const gn = {name:g.base, key:"disc:"+gk, disp:g.base, kids:[], items:[]};
+    g.list.sort((a,b)=>a.disc-b.disc).forEach(c => { gn.items = gn.items.concat(c.items); gn.kids = gn.kids.concat(c.kids); });
+    _fnStats(gn);
+    n.kids.push(gn);
+  }
+  // папка из одной вложенной папки без своих песен — сразу её песни (иначе лишний пустой уровень)
+  if(n.kids.length===1 && n.items.length===0 && n.kids[0].kids.length===0){ n.items = n.kids[0].items; n.kids = []; }
+  n.kids.sort((a,b)=>_fnNat(a.disp,b.disp));
+  _fnStats(n);
+}
+function _fnTopOf(root){                                  // плитки верхнего уровня: папки внутри «обёрток» (диск, «музыка»)
+  const top = [];
+  for(const drive of root.kids.values()){
+    let cur = drive;
+    while(cur.items.length===0 && cur.kids.size===1){
+      const only = [...cur.kids.values()][0];
+      if(only.kids.size===0) break;
+      cur = only;
+    }
+    for(const c of cur.kids.values()) top.push(c);
+    if(cur.items.length){ const l = _fnNode("Без папки"); l.items = cur.items; top.push(l); }
+  }
+  top.forEach(_fnFinish);
+  top.sort((a,b)=>_fnNat(a.disp,b.disp));
+  return top;
+}
+
+let _fnTop = [];             // плитки верхнего уровня вида «Папки»
+let _fnSig = null;           // для какого состояния каталога построено дерево
+let _catFolderPath = [];     // ключи открытых папок от верха
+
+async function _catLoadFolders(){
+  if(_fnSig!==null && _fnSig===_catLastSig) return;
+  const tree = await jget("/api/catalog");
+  const paths = [];
+  const walk = (n, segs) => {
+    const here = segs.concat([n.name]);
+    for(const it of (n.items||[])) if(_catById.has(it.id)) paths.push({id:it.id, segs:here});
+    for(const c of (n.children||[])) walk(c, here);
+  };
+  for(const r of tree) walk(r, []);
+  _fnTop = _fnTopOf(_fnBuild(paths));
+  _fnSig = _catLastSig;
+}
+
+function _fnResolve(){
+  let nodes = _fnTop, cur = null; const crumbs = [];
+  for(const k of _catFolderPath){
+    const nx = nodes.find(x=>x.key===k);
+    if(!nx) break;
+    crumbs.push(nx); cur = nx; nodes = nx.kids;
+  }
+  if(crumbs.length !== _catFolderPath.length) _catFolderPath = crumbs.map(c=>c.key);   // папку убрали с диска — встаём на ближайшую
+  return {cur, crumbs};
+}
+function _fnTracks(ids){
+  return ids.map(id=>_catById.get(id)).filter(Boolean)
+    .sort((x,y)=>(x.title||"").toLowerCase().localeCompare((y.title||"").toLowerCase(),"ru"));
+}
+function _fnArtistLabel(n){
+  const ar = new Set();
+  (function w(x){ for(const id of x.items){ const t=_catById.get(id); if(t) ar.add(t.artist||""); } x.kids.forEach(w); })(n);
+  return ar.size>1 ? "Разные исполнители" : ([...ar][0]||"");
+}
+function _fnTile(n){
+  const group = n.kids.length > 0, ar = _fnArtistLabel(n);
+  const sub = group
+    ? `${n.kids.length} ${plural(n.kids.length,"папка","папки","папок")} · ${nfmt(n.tracks)} ${_wordTrack(n.tracks)}`
+    : `${ar} · ${nfmt(n.tracks)} ${_wordTrack(n.tracks)}`;
+  const seed = (ar && ar!=="Разные исполнители") ? ar : n.disp;   // один исполнитель — его цвет/буквы, как у альбомов
+  return _tileHtml(`_catFolderOpen(this.dataset.key)" data-key="${esc(n.key)}`, n.disp, sub, seed, n.first, false,
+    group ? " dseries" : "", n.name!==n.disp ? n.name : "");
+}
+function _renderFolders(){
+  const box = $("#tree");
+  if(!_fnTop.length){ list = []; box.innerHTML = '<div class="muted">папок нет</div>'; return; }
+  const {cur, crumbs} = _fnResolve();
+  if(!cur){
+    list = [];
+    box.innerHTML = `<div class="dtiles">`+ _fnTop.map(_fnTile).join("") +`</div>`;
+    return;
+  }
+  const back = crumbs.length>1 ? crumbs[crumbs.length-2].disp : "все папки";
+  const count = cur.kids.length
+    ? `${cur.kids.length} ${plural(cur.kids.length,"папка","папки","папок")} · ${nfmt(cur.tracks)} ${_wordTrack(cur.tracks)}`
+    : `${nfmt(cur.tracks)} ${_wordTrack(cur.tracks)}`;
+  let html = _catBar("_catFolderBack()", {back:"‹ "+back, text:crumbs.map(c=>c.disp).join(" › ")}, count);
+  let tracks = [];
+  const tiles = cur.kids.length ? `<div class="dtiles">`+ cur.kids.map(_fnTile).join("") +`</div>` : "";
+  if(cur.items.length){
+    tracks = _fnTracks(cur.items);
+    html += `<div class="dsongs">`+ tracks.map((t,i)=>_catSongRow(t,i)).join("") +`</div>`;
+    if(tiles) html += `<div class="muted" style="margin:16px 0 8px">Вложенные папки</div>` + tiles;
+  } else html += tiles;
+  list = tracks;
+  box.innerHTML = html;
+  if(tracks.length) markPlaying();
+}
+function _catFolderOpen(key){ _catFolderPath.push(key); renderCatalogBody(); $("#tree").scrollTop = 0; }
+function _catFolderBack(){ _catFolderPath.pop(); renderCatalogBody(); $("#tree").scrollTop = 0; }
+
+async function _catSetMode(m){
   if(m===_catMode) return;
-  _catMode = m; _catOpenKey = null; _catOpenSer = null; _catOpenArt = null;
+  _catMode = m; _catOpenKey = null; _catOpenSer = null; _catOpenArt = null; _catFolderPath = [];
   try{ localStorage.setItem("catMode", m); }catch(e){}
   if(m==="artists" && !_catArtists.length) _catArtists = _buildArtists(_catTracks);
+  if(m==="folders"){
+    document.querySelectorAll("#catMode .cseg").forEach(b => b.classList.toggle("on", b.dataset.cm===m));
+    $("#tree").innerHTML = '<div class="muted">загружаю папки…</div>';
+    try{ await _catLoadFolders(); }
+    catch(e){ $("#tree").innerHTML = '<div class="muted">ошибка: '+esc(e.message)+'</div>'; return; }
+    if(_catMode!=="folders") return;      // пока грузилось, переключили на другой вид
+  }
   _catSummary();
   renderCatalogBody();
 }
 
 function _catSummary(){
   const tr = _catTracks.length, withFp = _catTracks.filter(t=>t.has_fp).length;
-  const head = _catMode==="artists"
+  const head = _catMode==="folders"
+    ? `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <b>${nfmt(_fnTop.length)}</b> ${plural(_fnTop.length,"папка","папки","папок")} `+
+      `<span class="muted" title="Папки верхнего уровня; заходишь — подпапки, ещё раз — песни">(верхний уровень)</span>`
+    : _catMode==="artists"
     ? `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <b>${nfmt(_catArtists.length)}</b> ${plural(_catArtists.length,"исполнитель","исполнителя","исполнителей")}`
     : `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <b>${nfmt(_catTop.length)}</b> ${plural(_catTop.length,"плитка","плитки","плиток")} `+
       `<span class="muted" title="Серии сборников (Hitzone, Planet Hits…) собраны в одну плитку">(в т.ч. серий: ${_catSeries.length})</span>`;
@@ -759,14 +930,14 @@ function _catSummary(){
   document.querySelectorAll("#catMode .cseg").forEach(b => b.classList.toggle("on", b.dataset.cm===_catMode));
 }
 
-function _tileHtml(click, name, sub, seed, coverId, isNew, extra){
+function _tileHtml(click, name, sub, seed, coverId, isNew, extra, tip){
   return `<button class="dtile${extra||""}" onclick="${click}">`+
     `<span class="dart" style="background:${_devColor(seed)}">`+
       `<span class="dini">${esc(_devInitials(seed))}</span>`+
       (coverId ? `<img src="/api/cover/${encodeURIComponent(coverId)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
       (isNew ? `<span class="dnew" title="новое с прошлого раза"></span>` : "")+
     `</span>`+
-    `<span class="dcap"><span class="dnm" title="${esc(name)}">${esc(name)}</span><span class="dsub">${esc(sub)}</span></span>`+
+    `<span class="dcap"><span class="dnm" title="${esc(tip||name)}">${esc(name)}</span><span class="dsub">${esc(sub)}</span></span>`+
     `</button>`;
 }
 function _albumTile(g){
@@ -788,6 +959,7 @@ function _catCtxAlbums(){
 }
 
 function renderCatalogBody(){
+  if(_catMode==="folders"){ _renderFolders(); return; }
   const box = $("#tree");
   // 1) открыт альбом — его песни
   const a = _catOpenKey ? _catCtxAlbums().find(x=>x.key===_catOpenKey) : null;
