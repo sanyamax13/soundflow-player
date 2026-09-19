@@ -5,15 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/net_hint.dart';
 import '../../core/theme.dart';
-import 'blocklist_screen.dart';
 
 /// «Сервер» — упрощено до того, что реально нужно Alex на ЭТОМ экране
-/// (Опус-ревью телефона 14.09.2026, пункт 8): связь с компьютером,
-/// синхронизация, список «больше не качать». Версии Go, миграции, сырые виды
-/// событий, ID устройств и лог сервера убраны — это разработческая панель,
-/// которая только пугала техническим видом и дублирует то, что теперь
-/// показывает само окно программы на компьютере (серверный Опус-ревью того
-/// же дня). PIN нет: плеер личный, сервер в домашней сети.
+/// (Опус-ревью телефона 14.09.2026, пункт 8): связь с компьютером и
+/// синхронизация. Версии Go, миграции, сырые виды событий, ID устройств и лог
+/// сервера убраны — это разработческая панель, которая только пугала
+/// техническим видом и дублирует то, что теперь показывает само окно
+/// программы на компьютере (серверный Опус-ревью того же дня). PIN нет: плеер
+/// личный, сервер в домашней сети. Список «больше не качать» с 19.09.2026 на
+/// телефоне не показывается (Alex TG 19943: «все в программу и все скрыто»):
+/// его знает только программа на компьютере.
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
@@ -191,17 +192,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _connectivityRow(),
         _section('Синхронизация'),
         _syncBlock(),
-        _section('Больше не качать'),
-        ListTile(
-          dense: true,
-          title: const Text('Список «больше не качать»'),
-          subtitle: const Text('удалённые песни, которые сервер не предложит снова',
-              style: TextStyle(color: Afisha.inkDim)),
-          trailing: const Icon(Icons.chevron_right, color: Afisha.line),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const BlocklistScreen()),
-          ),
-        ),
         _section('Опасно'),
         _resetBlock(),
         const SizedBox(height: 24),

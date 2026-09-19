@@ -9,7 +9,6 @@ import '../../core/update_check.dart';
 import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
 import '../library/library_screen.dart';
-import '../removed/removed_screen.dart';
 import '../settings/settings_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
@@ -30,14 +29,6 @@ class ProfileScreen extends StatelessWidget {
             subtitle: 'докачать музыку с сервера',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
-            ),
-          ),
-          _Row(
-            icon: Icons.auto_delete_outlined,
-            title: 'Убранные',
-            subtitle: 'что удалено и сколько места освободилось',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const RemovedScreen()),
             ),
           ),
           _Row(

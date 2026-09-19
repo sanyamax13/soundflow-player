@@ -1,7 +1,6 @@
 // Рендер новых экранов для показа Alex (не проверка логики):
 //   1. «Моя музыка» — склеенные исполнители + секция «Имя не читается»
 //   2. одна папка исполнителя — песни с полным написанием совместок
-//   3. «Убранные» — статистика вместо «Корзины»
 // Запуск: flutter test --update-goldens test/mymusic_folders_shots.dart
 // Картинки: test/goldens/folders_*.png
 
@@ -20,7 +19,6 @@ import 'package:soundflow/data/downloads_repo.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/my_music/my_music_screen.dart';
 import 'package:soundflow/features/player/player_controller.dart';
-import 'package:soundflow/features/removed/removed_screen.dart';
 
 class _FakeApi extends Api {
   _FakeApi();
@@ -54,16 +52,6 @@ const _broken = <(String id, String artist, String title)>[
   ('bad2', '?????, ??????', 'Piano Sonata'),
 ];
 
-// Что уже убрано — для экрана «Убранные».
-const _removed = <(String title, String artist, int mb, String reason)>[
-  ('Random Podcast #14', 'Some Talk', 58, 'not_music'),
-  ('Лютик', 'Дворовые', 6, 'dislike'),
-  ('Trap Beat 3', 'NoName', 4, 'dislike'),
-  ('Old Mix', 'DJ X', 12, 'tired'),
-  ('Live bootleg', 'The Band', 22, 'bad_quality'),
-  ('Song (radio edit)', 'Artist', 8, 'wrong_version'),
-];
-
 Future<Db> _db() async {
   final db = await Db.open(
     path: inMemoryDatabasePath,
@@ -95,17 +83,6 @@ Future<Db> _db() async {
       bytes: 7 * 1024 * 1024,
       addedAt: 1,
     ));
-  }
-  for (var i = 0; i < _removed.length; i++) {
-    final (title, artist, mb, reason) = _removed[i];
-    await db.addRemoved(
-      id: 'rm$i',
-      title: title,
-      artist: artist,
-      bytes: mb * 1024 * 1024,
-      reason: reason,
-      removedAt: 5000 - i,
-    );
   }
   return db;
 }
@@ -149,7 +126,7 @@ void main() {
     }
   });
 
-  testWidgets('склейка исполнителей + «Имя не читается» + «Убранные»',
+  testWidgets('склейка исполнителей + «Имя не читается»',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 880));
     final db = await _db();
@@ -164,11 +141,5 @@ void main() {
     await expectLater(find.byType(MaterialApp),
         matchesGoldenFile('goldens/folders_2_songs.png'));
 
-    await tester.pumpWidget(await _wrap(db, const RemovedScreen()));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Не музыка'));
-    await tester.pumpAndSettle();
-    await expectLater(find.byType(MaterialApp),
-        matchesGoldenFile('goldens/folders_3_removed.png'));
   });
 }

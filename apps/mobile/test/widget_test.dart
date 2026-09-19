@@ -105,8 +105,8 @@ void main() {
   });
 
   // Экран «Сервер» упрощён (Опус-ревью телефона 14.09.2026, пункт 8): вместо
-  // версий/миграций/устройств/сырого лога — связь, синхронизация, «больше не
-  // качать».
+  // версий/миграций/устройств/сырого лога — связь и синхронизация. Список
+  // «больше не качать» с 19.09.2026 на телефоне не показывается (Alex TG 19943).
   testWidgets('в Профиле есть «Сервер», экран показывает состояние', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
@@ -119,7 +119,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('СИНХРОНИЗАЦИЯ'), findsOneWidget);
     expect(find.text('СВЯЗЬ С КОМПЬЮТЕРОМ'), findsOneWidget);
-    expect(find.text('БОЛЬШЕ НЕ КАЧАТЬ'), findsOneWidget);
+    expect(find.text('БОЛЬШЕ НЕ КАЧАТЬ'), findsNothing);
     expect(find.text('Компьютер на связи'), findsOneWidget);
   });
 
@@ -137,17 +137,17 @@ void main() {
     expect(find.text('Докачать ещё 10 ГБ'), findsOneWidget);
   });
 
-  testWidgets('в Профиле есть «Убранные», пустая — понятная надпись', (tester) async {
+  // Alex TG 19943 (19.09.2026): «убранные только в программе на сервере, а не в
+  // плеере на телефоне, плеер захламляется информацией».
+  testWidgets('в Профиле нет «Убранных»', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Убранные'), findsOneWidget);
-
-    await tester.tap(find.text('Убранные'));
-    await tester.pumpAndSettle();
-    expect(find.text('Пока ничего не убрано'), findsOneWidget);
+    expect(find.text('Убранные'), findsNothing);
+    expect(find.text('Скачать музыку'), findsOneWidget);
+    expect(find.text('Сервер'), findsOneWidget);
   });
 
   // «Адрес сервера» переехал из Профиля в Настройки (Alex TG 14.09.2026: «в
