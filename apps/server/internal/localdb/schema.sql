@@ -163,3 +163,16 @@ CREATE TABLE IF NOT EXISTS import_meta (
     checksum   TEXT NOT NULL,
     imported_at TEXT NOT NULL
 );
+
+-- Песни, убранные на телефоне, файлы которых на компьютере ждут подтверждения
+-- в окне программы (Alex TG 19943/19948, 19.09.2026). Метка blocked уже стоит;
+-- файл лежит, пока Alex не нажмёт кнопку. file_path — канонический (как в БД).
+CREATE TABLE IF NOT EXISTS pending_removals (
+    track_id  TEXT PRIMARY KEY,
+    artist    TEXT NOT NULL DEFAULT '',
+    title     TEXT NOT NULL DEFAULT '',
+    file_path TEXT NOT NULL DEFAULT '',
+    bytes     INTEGER NOT NULL DEFAULT 0,
+    reason    TEXT NOT NULL DEFAULT '',
+    added_at  TEXT NOT NULL DEFAULT ''
+);

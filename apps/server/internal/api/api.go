@@ -31,10 +31,32 @@ type Server struct {
 	// 05.09.2026), отдаётся статикой. Пусто — ручка выключена (404 всем).
 	GeneratedCoversDir string
 
+	// EraseGate — необязательный шлюз стирания файлов, убранных на телефоне.
+	// Программа на компьютере ставит его, чтобы такие файлы не стирались сами, а
+	// ждали подтверждения Alex в окне (TG 19943/19948, 19.09.2026). Пусто — файл
+	// стирается сразу при приёме события, как раньше.
+	EraseGate EraseGate
+
 	// dlTracker — прогресс докачки музыки на телефоны прямо сейчас (в памяти,
 	// не в БД). Ленивая инициализация через dl().
 	dlOnce    sync.Once
 	dlTracker *downloadTracker
+}
+
+// EraseGate принимает песню, файл которой надо стереть, но не сразу: ждёт
+// подтверждения человека. Метка «больше не качать» к этому моменту уже стоит.
+type EraseGate interface {
+	HoldErase(ctx context.Context, h HeldErase) error
+}
+
+// HeldErase — что шлюз запоминает про песню, убранную на телефоне.
+type HeldErase struct {
+	TrackID string
+	Artist  string
+	Title   string
+	Path    string // канонический путь файла, как в БД
+	Reason  string
+	Bytes   int64
 }
 
 func (s *Server) Router() http.Handler {
@@ -187,8 +209,10 @@ func (s *Server) syncEvents(w http.ResponseWriter, r *http.Request) {
 // (не нравится/надоела/не музыка/другое/без причины): сервер помечает трек
 // blocked в legacy_marks (не попадёт в каталог/повторный импорт/повторное
 // скачивание) и стирает файл НАСОВСЕМ (Alex 06.09.2026: без корзины на
-// 7 дней). Причина "плохое качество"/"не та версия" — особый случай,
-// см. deleteAndReacquire.
+// 7 дней) — либо сразу, либо, если задан EraseGate (программа на компьютере),
+// после подтверждения в окне (Alex TG 19943/19948, 19.09.2026). Причина
+// "плохое качество"/"не та версия" — особый случай, см. deleteAndReacquire:
+// они шлюз не проходят, замена ищется сама.
 // Обрабатываем только реально новые события (accepted), чтобы не дёргать
 // файл при каждом повторном синке.
 func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, accepted []string) {
@@ -218,11 +242,27 @@ func (s *Server) handleDeleteEvents(ctx context.Context, events []db.SyncEvent, 
 
 		artist, title, _, _ := s.DB.TrackArtistTitle(ctx, e.TrackID)
 		var size int64
-		if fi, statErr := os.Stat(local); statErr == nil {
+		fi, statErr := os.Stat(local)
+		if statErr == nil {
 			size = fi.Size()
 		}
 		if err := s.DB.UpsertLegacyMark(ctx, db.LegacyMark{Key: normKey, Kind: "blocked", At: time.Now()}); err != nil {
 			log.Printf("delete-event %s: пометить blocked: %v", e.TrackID, err)
+		}
+		// Есть шлюз и файл ещё лежит — не стираем, а ставим в ожидание
+		// подтверждения. Не смогли поставить — файл всё равно не трогаем
+		// (безопаснее оставить, чем стереть без ведома Alex).
+		if s.EraseGate != nil && statErr == nil {
+			if err := s.EraseGate.HoldErase(ctx, HeldErase{
+				TrackID: e.TrackID, Artist: artist, Title: title,
+				Path: canonical, Reason: reason, Bytes: size,
+			}); err != nil {
+				log.Printf("delete-event %s: поставить на подтверждение: %v", e.TrackID, err)
+				s.logServer(ctx, db.LogError, artist, title, "не смог поставить на подтверждение стирания", 0)
+			} else {
+				s.logServer(ctx, db.LogInfo, artist, title, "убран на телефоне — файл ждёт подтверждения на компьютере", size)
+			}
+			continue
 		}
 		if err := pathmap.DeleteForever(local); err != nil {
 			log.Printf("delete-event %s: стереть файл (%s): %v", e.TrackID, local, err)

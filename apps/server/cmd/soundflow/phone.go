@@ -92,6 +92,9 @@ func (s *Service) startPhoneServer() {
 		PathMap:            pm,
 		StartedAt:          s.startedAt,
 		GeneratedCoversDir: gcov,
+		// Убранное на телефоне не стирается само, а ждёт подтверждения в окне
+		// (Alex TG 19943/19948, см. removals.go).
+		EraseGate: removalGate{db: s.db},
 	}
 	s.phoneAPI = apiSrv // окну нужен для строки «качает прямо сейчас»
 	s.store = store     // окну нужен для acquire («Найти трек»)
