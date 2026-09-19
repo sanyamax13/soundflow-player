@@ -56,6 +56,22 @@
   .btn.primary:hover{filter:brightness(.96)}
   .btn.danger{color:var(--err); border-color:#eecccb}
   .btn:disabled{opacity:.45; cursor:default}
+  .btn.dangerfill{background:var(--err); border-color:var(--err); color:#fff}
+  .btn.dangerfill:hover{filter:brightness(.95)}
+  /* контекстное меню (правая кнопка), Alex TG 20039 */
+  .ctxm{position:fixed; z-index:1000; min-width:250px; max-width:350px; background:#fff; border:1px solid var(--line);
+    border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.18); padding:6px; font-size:13px}
+  .ctxm .ctxt{padding:6px 12px 7px; font-size:12px; font-weight:700; color:var(--mut); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:330px}
+  .ctxm button{display:block; width:100%; text-align:left; border:0; background:none; padding:8px 12px;
+    border-radius:7px; font:inherit; color:var(--ink); cursor:pointer}
+  .ctxm button:hover:not(:disabled){background:var(--field)}
+  .ctxm button:disabled{color:var(--faint); cursor:default}
+  .ctxm button.danger{color:var(--err)}
+  .ctxm hr{border:0; border-top:1px solid var(--line); margin:5px 2px}
+  .ctxtoast{position:fixed; left:50%; bottom:92px; transform:translateX(-50%); z-index:1100; max-width:min(720px,90vw);
+    background:#18181b; color:#fff; padding:10px 16px; border-radius:10px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .ctxtoast.bad{background:var(--err)}
 
   .sum{font-size:12px; color:var(--mut); margin-bottom:9px; flex-shrink:0}
   .sum b{color:var(--ink)}
@@ -643,12 +659,12 @@ function _fnClean(raw){
   return s.length >= 2 ? s : orig;
 }
 
-function _fnNode(name){ return {name, key:name.toLowerCase(), kids:new Map(), items:[]}; }
+function _fnNode(name, path){ return {name, path:path||"", key:name.toLowerCase(), kids:new Map(), items:[]}; }
 function _fnBuild(paths){                                 // paths: [{id, segs:[папки от корня]}]
   const root = _fnNode("");
   for(const p of paths){
     let n = root;
-    for(const s of p.segs){ const k = s.toLowerCase(); let c = n.kids.get(k); if(!c){ c = _fnNode(s); n.kids.set(k,c); } n = c; }
+    for(const s of p.segs){ const k = s.toLowerCase(); let c = n.kids.get(k); if(!c){ c = _fnNode(s, n.path ? n.path+"\\"+s : s); n.kids.set(k,c); } n = c; }
     n.items.push(p.id);
   }
   return root;
@@ -675,7 +691,7 @@ function _fnFinish(n){
   n.kids = rest;
   loose.sort((a,b)=>a.disc-b.disc).forEach(c => { n.items = n.items.concat(c.items); n.kids = n.kids.concat(c.kids); });
   for(const [gk, g] of groups){
-    const gn = {name:g.base, key:"disc:"+gk, disp:g.base, kids:[], items:[]};
+    const gn = {name:g.base, path:n.path, key:"disc:"+gk, disp:g.base, kids:[], items:[]};
     g.list.sort((a,b)=>a.disc-b.disc).forEach(c => { gn.items = gn.items.concat(c.items); gn.kids = gn.kids.concat(c.kids); });
     _fnStats(gn);
     n.kids.push(gn);
@@ -695,7 +711,7 @@ function _fnTopOf(root){                                  // плитки вер
       cur = only;
     }
     for(const c of cur.kids.values()) top.push(c);
-    if(cur.items.length){ const l = _fnNode("Без папки"); l.items = cur.items; top.push(l); }
+    if(cur.items.length){ const l = _fnNode("Без папки", cur.path); l.items = cur.items; top.push(l); }
   }
   top.forEach(_fnFinish);
   top.sort((a,b)=>_fnNat(a.disp,b.disp));
@@ -802,7 +818,7 @@ function _catSummary(){
 }
 
 function _catSongRow(t,i){
-  const on = cur === i;
+  const on = cur >= 0 && !!queue[cur] && queue[cur].id === t.id;
   return `<div class="drow${on?" playing":""}" data-i="${i}" onclick="playAt(${i})">`+
     `<span class="dcv" style="background:${_devColor(t.artist||'')}">`+
       `<span>${esc(_devInitials(t.artist||''))}</span>`+
@@ -814,6 +830,224 @@ function _catSongRow(t,i){
     `<span class="${t.has_fp?'yes':'no'}" style="margin-left:8px" title="${t.has_fp?'Звук распознан — участвует в умном радио и поиске похожих':'Звук ещё не распознан'}">${t.has_fp?'✓':'—'}</span>`+
     `</div>`;
 }
+
+/* ---------- контекстное меню (правая кнопка) — Alex TG 20039–20045, 19.09.2026 ----------
+   Песня: играть, показать в проводнике, добавить/убрать на телефоне, удалить навсегда.
+   Папка: играть папку, открыть в проводнике, добавить/убрать всю папку на телефоне, удалить навсегда.
+   Удаление (то же, что кнопка «Удалить полностью» в карточке телефона): песни уходят с телефона (при его
+   заходе), из каталога, получают метку «больше не качать», а файлы НЕ стираются, а переносятся в
+   <диск>\_deleted; от 25 песен окно просит напечатать слово «удалить», а сервер сам сохраняет копию базы. */
+const _ctxWord = "удалить", _ctxBig = 24;
+let _ctxEl = null;
+function _ctxClose(){ if(_ctxEl){ _ctxEl.remove(); _ctxEl = null; } }
+document.addEventListener("click", _ctxClose);
+document.addEventListener("keydown", e => { if(e.key === "Escape") _ctxClose(); });
+window.addEventListener("blur", _ctxClose);
+window.addEventListener("resize", _ctxClose);
+document.addEventListener("scroll", _ctxClose, true);
+
+const _fmtSize = b => b >= 1073741824 ? (b/1073741824).toFixed(1).replace(".",",")+" ГБ" : Math.max(1, Math.round(b/1048576))+" МБ";
+function _ctxToast(msg, bad){
+  const el = document.createElement("div");
+  el.className = "ctxtoast" + (bad ? " bad" : "");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), bad ? 9000 : 5000);
+}
+async function _ctxPost(url, body){
+  const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if(!r.ok) throw new Error((await r.text()).trim() || r.statusText);
+  return r.json();
+}
+async function _ctxTry(fn){
+  try{ return await fn(); }catch(e){ _ctxToast("Не получилось: " + e.message, true); }
+}
+
+// items: {title} — заголовок, "-" — линия, {label, run, danger, disabled, hint}
+function _ctxShow(x, y, items){
+  _ctxClose();
+  const el = document.createElement("div");
+  el.className = "ctxm";
+  el.addEventListener("click", e => e.stopPropagation());
+  el.addEventListener("contextmenu", e => e.preventDefault());
+  for(const it of items){
+    if(it === "-"){ el.appendChild(document.createElement("hr")); continue; }
+    if(it.title !== undefined){ const h = document.createElement("div"); h.className = "ctxt"; h.textContent = it.title; el.appendChild(h); continue; }
+    const b = document.createElement("button");
+    b.textContent = it.label;
+    if(it.danger) b.className = "danger";
+    if(it.disabled) b.disabled = true;
+    if(it.hint) b.title = it.hint;
+    b.addEventListener("click", () => { _ctxClose(); if(!it.disabled) it.run(); });
+    el.appendChild(b);
+  }
+  document.body.appendChild(el);
+  const r = el.getBoundingClientRect();
+  el.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + "px";
+  el.style.top  = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + "px";
+  _ctxEl = el;
+}
+
+// окно-вопрос; resolve(true/false). needWord — кнопка «ок» включается, только когда напечатано слово.
+function _ctxConfirm(o){
+  return new Promise(resolve => {
+    const ov = document.createElement("div"); ov.className = "modal";
+    const card = document.createElement("div"); card.className = "modal-card"; card.style.width = "min(540px,92vw)";
+    const head = document.createElement("div"); head.className = "modal-head";
+    const hb = document.createElement("b"); hb.textContent = o.title; head.appendChild(hb);
+    const body = document.createElement("div"); body.className = "modal-body";
+    for(const l of o.lines){ const p = document.createElement("p"); p.style.margin = "0 0 9px"; p.textContent = l; body.appendChild(p); }
+    let inp = null;
+    if(o.needWord){
+      const p = document.createElement("p"); p.style.margin = "14px 0 6px";
+      p.append("Чтобы подтвердить, напечатай слово «");
+      const wb = document.createElement("b"); wb.textContent = o.needWord; p.appendChild(wb);
+      p.append("»:");
+      body.appendChild(p);
+      inp = document.createElement("input"); inp.className = "search"; inp.style.width = "100%"; inp.autocomplete = "off";
+      body.appendChild(inp);
+    }
+    const foot = document.createElement("div"); foot.className = "modal-foot";
+    foot.appendChild(document.createElement("span"));
+    const btns = document.createElement("span");
+    const no = document.createElement("button"); no.className = "btn"; no.textContent = "Отмена";
+    const yes = document.createElement("button"); yes.className = "btn " + (o.danger ? "dangerfill" : "primary"); yes.textContent = o.okText;
+    yes.style.marginLeft = "8px";
+    if(inp) yes.disabled = true;
+    btns.append(no, yes); foot.appendChild(btns);
+    card.append(head, body, foot); ov.appendChild(card);
+    const done = v => { document.removeEventListener("keydown", onKey, true); ov.remove(); resolve(v); };
+    const onKey = e => {
+      if(e.key === "Escape"){ e.preventDefault(); done(false); }
+      else if(e.key === "Enter" && inp && document.activeElement === inp && !yes.disabled){ e.preventDefault(); done(true); }
+    };
+    document.addEventListener("keydown", onKey, true);
+    no.onclick = () => done(false);
+    yes.onclick = () => { if(!yes.disabled) done(true); };
+    ov.addEventListener("mousedown", e => { if(e.target === ov) done(false); });
+    if(inp) inp.addEventListener("input", () => { yes.disabled = inp.value.trim().toLowerCase() !== o.needWord; });
+    document.body.appendChild(ov);
+    (inp || no).focus();      // по умолчанию фокус на «Отмена»: случайный Enter ничего не удаляет
+  });
+}
+function _ctxBusy(msg){
+  const ov = document.createElement("div"); ov.className = "modal";
+  const card = document.createElement("div"); card.className = "modal-card"; card.style.width = "min(420px,92vw)";
+  const body = document.createElement("div"); body.className = "modal-body"; body.style.padding = "22px 20px"; body.textContent = msg;
+  card.appendChild(body); ov.appendChild(card); document.body.appendChild(ov);
+  return () => ov.remove();
+}
+
+// что сейчас на «живом» телефоне; null — телефона нет или сервер не ответил
+async function _ctxPhoneState(){
+  try{
+    const s = await jget("/api/phone/state");
+    if(!s || !s.device_id) return null;
+    const on = new Set(s.on_device), pa = new Set(s.plan_add), pr = new Set(s.plan_remove);
+    s.has = id => pa.has(id) || (on.has(id) && !pr.has(id));   // лежит на телефоне или будет после захода
+    return s;
+  }catch(e){ return null; }
+}
+async function _ctxPhonePlan(ids, add){
+  await _ctxTry(async () => {
+    const r = await _ctxPost("/api/phone/plan", add ? {add:ids} : {remove:ids});
+    const n = add ? r.added : r.removed;
+    _ctxToast((add ? "Добавлено в план" : "Убрано в плане") + ` телефона «${r.device}»: ${nfmt(n)} ${_wordTrack(n)}. Телефон выполнит при следующем заходе.`);
+  });
+}
+const _ctxBytes = ids => ids.reduce((sum, id) => sum + ((_catById.get(id) || {}).size_bytes || 0), 0);
+
+async function _ctxPhoneBulk(name, ids, add){
+  const ok = await _ctxConfirm({
+    title: add ? "Добавить папку на телефон?" : "Убрать папку с телефона?",
+    lines: [`«${name}»: ${nfmt(ids.length)} ${_wordTrack(ids.length)}, ${_fmtSize(_ctxBytes(ids))}.`,
+      add ? "Телефон скачает их при следующем заходе. Хватит ли на нём места, программа не проверяет."
+          : "Они пропадут с телефона при его следующем заходе; на компьютере останутся."],
+    okText: add ? "Добавить" : "Убрать", danger: false });
+  if(ok) await _ctxPhonePlan(ids, add);
+}
+
+async function _ctxDelete(ids, label, isFolder){
+  const big = ids.length > _ctxBig;
+  const lines = [isFolder ? `Папка «${label}»: ${nfmt(ids.length)} ${_wordTrack(ids.length)}, ${_fmtSize(_ctxBytes(ids))}.` : `«${label}»`,
+    "Песни уйдут из каталога и с телефона (при его следующем заходе), а в загрузчик попадёт метка «больше не качать».",
+    "Файлы не стираются: они переносятся в папку _deleted на том же диске (например G:\\_deleted), оттуда их можно вернуть руками."];
+  if(big) lines.push("Перед удалением программа сама сохранит копию базы.");
+  const ok = await _ctxConfirm({ title: isFolder ? "Удалить папку навсегда?" : "Удалить песню навсегда?",
+    lines, okText: "Удалить", danger: true, needWord: big ? _ctxWord : "" });
+  if(!ok) return;
+  const close = _ctxBusy(`Удаляю: ${nfmt(ids.length)} ${_wordTrack(ids.length)}…`);
+  try{
+    const r = await _ctxPost("/api/tracks/delete-forever", {ids});
+    close();
+    let msg = `Удалено: ${nfmt(r.deleted)} ${_wordTrack(r.deleted)}.`;
+    if(r.trash_dir) msg += ` Файлы лежат в ${r.trash_dir}.`;
+    if(r.failed) msg += ` Не удалось: ${nfmt(r.failed)} (файл занят), они остались на месте.`;
+    _ctxToast(msg, !!r.failed);
+    await loadCatalog();               // явная загрузка: дерево папок берём заново
+  }catch(e){ close(); _ctxToast("Не получилось: " + e.message, true); }
+}
+
+// все песни папки, включая подпапки: сначала свои (по названию), потом подпапки по порядку на экране
+function _fnAllTracks(n){
+  const out = _fnTracks(n.items);
+  for(const k of n.kids) out.push(..._fnAllTracks(k));
+  return out;
+}
+function _ctxPlayTracks(tracks){
+  if(!tracks.length) return;
+  queue = tracks;                      // своя очередь: переходы по папкам её не сбрасывают
+  _playQ(0);
+}
+
+async function _ctxSongMenu(x, y, i){
+  const t = list[i];
+  if(!t) return;
+  const ph = await _ctxPhoneState();
+  const label = (t.title || t.id) + (t.artist ? " — " + t.artist : "");
+  let phoneItem;
+  if(!ph) phoneItem = {label:"Добавить на телефон", disabled:true, hint:"телефон ещё ни разу не заходил"};
+  else if(ph.has(t.id)) phoneItem = {label:"Убрать с телефона", hint:"пропадёт с телефона при его следующем заходе, на компьютере останется", run:() => _ctxPhonePlan([t.id], false)};
+  else phoneItem = {label:"Добавить на телефон", hint:"телефон скачает при следующем заходе", run:() => _ctxPhonePlan([t.id], true)};
+  _ctxShow(x, y, [
+    {title: label},
+    {label:"Играть", run:() => playAt(i)},
+    {label:"Показать в проводнике", run:() => _ctxTry(() => _ctxPost("/api/reveal", {track_id:t.id}))},
+    phoneItem,
+    "-",
+    {label:"Удалить навсегда…", danger:true, run:() => _ctxDelete([t.id], label, false)},
+  ]);
+}
+
+async function _ctxFolderMenu(x, y, key){
+  const here = _fnResolve().cur;
+  const n = (here ? here.kids : _fnTop).find(k => k.key === key);
+  if(!n) return;
+  const tracks = _fnAllTracks(n), ids = tracks.map(t => t.id);
+  const ph = await _ctxPhoneState();
+  const notOn = ph ? ids.filter(id => !ph.has(id)) : [], on = ph ? ids.filter(id => ph.has(id)) : [];
+  _ctxShow(x, y, [
+    {title: `${n.disp} · ${nfmt(ids.length)} ${_wordTrack(ids.length)}`},
+    {label:"Играть папку", run:() => _ctxPlayTracks(tracks)},
+    {label:"Открыть в проводнике", run:() => _ctxTry(() => _ctxPost("/api/open-folder", {path:n.path}))},
+    {label: ph ? `Добавить всю папку на телефон (${nfmt(notOn.length)})` : "Добавить всю папку на телефон",
+      disabled: !ph || !notOn.length, hint: !ph ? "телефон ещё ни разу не заходил" : (!notOn.length ? "вся папка уже на телефоне" : "скачается при следующем заходе телефона"),
+      run:() => _ctxPhoneBulk(n.disp, notOn, true)},
+    {label: ph ? `Убрать всю папку с телефона (${nfmt(on.length)})` : "Убрать всю папку с телефона",
+      disabled: !ph || !on.length, hint: !ph ? "телефон ещё ни разу не заходил" : (!on.length ? "на телефоне из этой папки ничего нет" : "пропадёт с телефона при его следующем заходе, на компьютере останется"),
+      run:() => _ctxPhoneBulk(n.disp, on, false)},
+    "-",
+    {label:"Удалить папку навсегда…", danger:true, run:() => _ctxDelete(ids, n.disp, true)},
+  ]);
+}
+
+$("#tree").addEventListener("contextmenu", e => {
+  const row = e.target.closest(".drow"), tile = e.target.closest(".dtile");
+  if(!row && !tile) return;
+  e.preventDefault();
+  if(row) _ctxSongMenu(e.clientX, e.clientY, +row.dataset.i);
+  else _ctxFolderMenu(e.clientX, e.clientY, tile.dataset.key);
+});
 
 /* ---------- поиск ---------- */
 let sTmr;
@@ -830,11 +1064,17 @@ async function doSearch(){
 
 /* ---------- плеер ---------- */
 const au = $("#au");
-let cur = -1;   // индекс в list
+let cur = -1;   // индекс в queue
+let queue = []; // очередь плеера; может отличаться от list (списка на экране), напр. после «Играть папку»
 
-function playAt(i){
+function playAt(i){                 // клик по строке на экране: очередь = список на экране
   if(i<0 || i>=list.length) return;
-  const t = list[i];
+  queue = list;
+  _playQ(i);
+}
+function _playQ(i){
+  if(i<0 || i>=queue.length) return;
+  const t = queue[i];
   const src = "/audio/" + encodeURIComponent(t.id);
   if(cur === i && _devPlayId === "" && au.src && au.src.endsWith(src)){
     au.paused ? au.play() : au.pause();
@@ -856,11 +1096,13 @@ function playAt(i){
   img.src = "/api/cover/" + encodeURIComponent(t.id);
   markPlaying();
 }
-function playNext(){ if(cur+1 < list.length) playAt(cur+1); }
-function playPrev(){ if(au.currentTime > 3){ au.currentTime = 0; return; } if(cur > 0) playAt(cur-1); }
+function playNext(){ if(cur+1 < queue.length) _playQ(cur+1); }
+function playPrev(){ if(au.currentTime > 3){ au.currentTime = 0; return; } if(cur > 0) _playQ(cur-1); }
 function markPlaying(){
+  const pid = (cur >= 0 && queue[cur]) ? queue[cur].id : "";
   document.querySelectorAll("#tree .drow").forEach(r => {
-    const on = +r.dataset.i === cur;
+    const t = list[+r.dataset.i];
+    const on = !!pid && !!t && t.id === pid;      // строка на экране играет, если это та же песня, что в очереди
     r.classList.toggle("playing", on);
     const pl = r.querySelector(".pl");
     if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";

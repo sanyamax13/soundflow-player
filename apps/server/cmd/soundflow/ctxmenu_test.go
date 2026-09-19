@@ -426,3 +426,11 @@ func TestRevealHandler(t *testing.T) {
 		t.Errorf("проводник должен запуститься ровно один раз: %v", got)
 	}
 }
+
+func TestSkipScanDir(t *testing.T) {
+	for name, want := range map[string]bool{"_deleted": true, "_DELETED": true, "музыка": false, "deleted": false, "_backup": false} {
+		if got := skipScanDir(name); got != want {
+			t.Errorf("skipScanDir(%q) = %v, ждали %v", name, got, want)
+		}
+	}
+}
