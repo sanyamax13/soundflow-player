@@ -836,8 +836,8 @@ function _catSongRow(t,i){
    Папка: играть папку, открыть в проводнике, добавить/убрать всю папку на телефоне, удалить навсегда.
    Удаление (то же, что кнопка «Удалить полностью» в карточке телефона): песни уходят с телефона (при его
    заходе), из каталога, получают метку «больше не качать», а файлы НЕ стираются, а переносятся в
-   <диск>\_deleted; от 25 песен окно просит напечатать слово «удалить», а сервер сам сохраняет копию базы. */
-const _ctxWord = "удалить", _ctxBig = 24;
+   <диск>\_deleted; от 25 песен сервер сам сохраняет копию базы (печатать слово не нужно — Alex TG 20055). */
+const _ctxBig = 24;      // как bigDeleteThreshold в ctxmenu.go: от скольких песен сервер делает копию базы
 let _ctxEl = null;
 function _ctxClose(){ if(_ctxEl){ _ctxEl.remove(); _ctxEl = null; } }
 document.addEventListener("click", _ctxClose);
@@ -888,7 +888,7 @@ function _ctxShow(x, y, items){
   _ctxEl = el;
 }
 
-// окно-вопрос; resolve(true/false). needWord — кнопка «ок» включается, только когда напечатано слово.
+// окно-вопрос; resolve(true/false).
 function _ctxConfirm(o){
   return new Promise(resolve => {
     const ov = document.createElement("div"); ov.className = "modal";
@@ -897,37 +897,22 @@ function _ctxConfirm(o){
     const hb = document.createElement("b"); hb.textContent = o.title; head.appendChild(hb);
     const body = document.createElement("div"); body.className = "modal-body";
     for(const l of o.lines){ const p = document.createElement("p"); p.style.margin = "0 0 9px"; p.textContent = l; body.appendChild(p); }
-    let inp = null;
-    if(o.needWord){
-      const p = document.createElement("p"); p.style.margin = "14px 0 6px";
-      p.append("Чтобы подтвердить, напечатай слово «");
-      const wb = document.createElement("b"); wb.textContent = o.needWord; p.appendChild(wb);
-      p.append("»:");
-      body.appendChild(p);
-      inp = document.createElement("input"); inp.className = "search"; inp.style.width = "100%"; inp.autocomplete = "off";
-      body.appendChild(inp);
-    }
     const foot = document.createElement("div"); foot.className = "modal-foot";
     foot.appendChild(document.createElement("span"));
     const btns = document.createElement("span");
     const no = document.createElement("button"); no.className = "btn"; no.textContent = "Отмена";
     const yes = document.createElement("button"); yes.className = "btn " + (o.danger ? "dangerfill" : "primary"); yes.textContent = o.okText;
     yes.style.marginLeft = "8px";
-    if(inp) yes.disabled = true;
     btns.append(no, yes); foot.appendChild(btns);
     card.append(head, body, foot); ov.appendChild(card);
     const done = v => { document.removeEventListener("keydown", onKey, true); ov.remove(); resolve(v); };
-    const onKey = e => {
-      if(e.key === "Escape"){ e.preventDefault(); done(false); }
-      else if(e.key === "Enter" && inp && document.activeElement === inp && !yes.disabled){ e.preventDefault(); done(true); }
-    };
+    const onKey = e => { if(e.key === "Escape"){ e.preventDefault(); done(false); } };
     document.addEventListener("keydown", onKey, true);
     no.onclick = () => done(false);
-    yes.onclick = () => { if(!yes.disabled) done(true); };
+    yes.onclick = () => done(true);
     ov.addEventListener("mousedown", e => { if(e.target === ov) done(false); });
-    if(inp) inp.addEventListener("input", () => { yes.disabled = inp.value.trim().toLowerCase() !== o.needWord; });
     document.body.appendChild(ov);
-    (inp || no).focus();      // по умолчанию фокус на «Отмена»: случайный Enter ничего не удаляет
+    no.focus();      // по умолчанию фокус на «Отмена»: случайный Enter ничего не удаляет
   });
 }
 function _ctxBusy(msg){
@@ -974,7 +959,7 @@ async function _ctxDelete(ids, label, isFolder){
     "Файлы не стираются: они переносятся в папку _deleted на том же диске (например G:\\_deleted), оттуда их можно вернуть руками."];
   if(big) lines.push("Перед удалением программа сама сохранит копию базы.");
   const ok = await _ctxConfirm({ title: isFolder ? "Удалить папку навсегда?" : "Удалить песню навсегда?",
-    lines, okText: "Удалить", danger: true, needWord: big ? _ctxWord : "" });
+    lines, okText: "Удалить", danger: true });
   if(!ok) return;
   const close = _ctxBusy(`Удаляю: ${nfmt(ids.length)} ${_wordTrack(ids.length)}…`);
   try{
