@@ -4,9 +4,9 @@ import "testing"
 
 func TestCleanTag(t *testing.T) {
 	cases := []struct {
-		in        string
-		titleish  bool
-		want      string
+		in       string
+		titleish bool
+		want     string
 	}{
 		// скобки с сайтом
 		{"Волк (Topmuzon.net)", true, "Волк"},
@@ -51,11 +51,18 @@ func TestStripLeadingTrackNumber(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"04. DJ Vertigo", "DJ Vertigo"},
 		{"12) Adriano Celentano", "Adriano Celentano"},
-		{"21 Savage", "21 Savage"},     // без точки/скобки — не трогаем
-		{"50 Cent", "50 Cent"},         // не трогаем
+		{"21 Savage", "21 Savage"}, // без точки/скобки — не трогаем
+		{"50 Cent", "50 Cent"},     // не трогаем
 		{"3 Doors Down", "3 Doors Down"},
 		{"DJ Dave", "DJ Dave"},
-		{"04.", "04."}, // после срезки пусто — возвращаем исходное
+		{"04.", "04."},                     // после срезки пусто — возвращаем исходное
+		{"1.Captain Jack", "Captain Jack"}, // без пробела после точки
+		{"2.Scatman John", "Scatman John"},
+		{"4.EX-IT", "EX-IT"},
+		{"10)Вика", "Вика"},
+		{"3.14", "3.14"}, // дальше не буква — не трогаем
+		{"1.5 Cents", "1.5 Cents"},
+		{"25/17", "25/17"},
 	}
 	for _, c := range cases {
 		if got := StripLeadingTrackNumber(c.in); got != c.want {

@@ -1,6 +1,10 @@
 package quality
 
-import "regexp"
+import (
+	"regexp"
+	"unicode"
+	"unicode/utf8"
+)
 
 // Правило (Alex, 08.09.2026): в каталог не должны попадать названия/исполнители/
 // альбомы с рекламными хвостами качалок — «(Muzjazz.com)», «[mp3xa.cc]»,
@@ -33,15 +37,28 @@ var (
 	// "Track 8"…). Оба тега НЕ пустые, поэтому обычное «тег пуст → берём из
 	// имени файла» (importer.go/jobs.go fromFilename) не срабатывало — мусор
 	// так и попадал в каталог как есть.
-	tagLeadingTrackNum   = regexp.MustCompile(`^\s*\d{1,3}[.)]\s+`)
-	tagGenericTrackTitle = regexp.MustCompile(`(?i)^\s*(?:track|трек)[\s._-]*0*\d{1,3}\s*$`)
+	tagLeadingTrackNum = regexp.MustCompile(`^\s*\d{1,3}[.)]\s+`)
+	// То же без пробела после точки: "1.Captain Jack", "2.Scatman John"
+	// (Queen Dance Traxx, Alex TG 19970). Срезаем только если дальше буква —
+	// чтобы не тронуть что-то вроде "3.14".
+	tagLeadingTrackNumTight = regexp.MustCompile(`^\s*\d{1,3}[.)]`)
+	tagGenericTrackTitle    = regexp.MustCompile(`(?i)^\s*(?:track|трек)[\s._-]*0*\d{1,3}\s*$`)
 )
 
 // StripLeadingTrackNumber срезает налипший номер трека из тега артиста
 // ("04. DJ Vertigo" → "DJ Vertigo"). Пусто после срезки быть не должно —
 // возвращаем исходную строку, если вдруг весь тег состоял из номера.
 func StripLeadingTrackNumber(artist string) string {
-	if s := tagLeadingTrackNum.ReplaceAllString(artist, ""); s != "" {
+	s := tagLeadingTrackNum.ReplaceAllString(artist, "")
+	if s == artist { // с пробелом не вышло — пробуем «1.Captain Jack»
+		if loc := tagLeadingTrackNumTight.FindStringIndex(artist); loc != nil {
+			rest := artist[loc[1]:]
+			if r, _ := utf8.DecodeRuneInString(rest); unicode.IsLetter(r) {
+				s = rest
+			}
+		}
+	}
+	if s != "" {
 		return s
 	}
 	return artist

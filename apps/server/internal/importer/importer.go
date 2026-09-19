@@ -105,7 +105,7 @@ func importOne(ctx context.Context, p Store, pm pathmap.Mapper, localPath, mime 
 			// оставляем как есть, дальше Screen сам решит, годится ли трек.
 		} else {
 			if artist == "" {
-				artist = a2
+				artist = quality.StripLeadingTrackNumber(a2)
 			}
 			if (title == "" || quality.IsGenericTrackTitle(title)) && t2 != "" {
 				title = t2

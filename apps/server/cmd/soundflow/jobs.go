@@ -175,17 +175,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 				return nil
 			}
 			j.Total++
-			ar, ti, al := readTags(path)
-			ar = quality.StripLeadingTrackNumber(ar)
-			if ar == "" || ti == "" || quality.IsGenericTrackTitle(ti) {
-				a2, t2 := fromFilename(path)
-				if ar == "" {
-					ar = a2
-				}
-				if (ti == "" || quality.IsGenericTrackTitle(ti)) && t2 != "" {
-					ti = t2
-				}
-			}
+			ar, ti, al := resolveTags(path)
 			if ar == "" || ti == "" {
 				skipped++
 				j.Done++
@@ -436,6 +426,27 @@ func readTags(path string) (artist, title, album string) {
 		return
 	}
 	return tagfix.Sanitize(m.Artist()), tagfix.Sanitize(m.Title()), tagfix.Sanitize(m.Album())
+}
+
+// resolveTags — исполнитель/название/альбом файла для каталога: берём теги, а где
+// они пусты или это болванка «Track N» — разбираем имя файла. Налипший номер
+// трека срезаем на ОБОИХ путях: и из тега, и из имени файла («01. Deja Vu -
+// Unbreak My Heart.mp3» → исполнитель «Deja Vu»). Раньше срез стоял только на
+// пути «из тега», и сборники с пустыми тегами попадали в каталог с исполнителем
+// «01. Deja Vu» (Alex TG 19970, 19.09.2026).
+func resolveTags(path string) (artist, title, album string) {
+	artist, title, album = readTags(path)
+	artist = quality.StripLeadingTrackNumber(artist)
+	if artist == "" || title == "" || quality.IsGenericTrackTitle(title) {
+		a2, t2 := fromFilename(path)
+		if artist == "" {
+			artist = quality.StripLeadingTrackNumber(a2)
+		}
+		if (title == "" || quality.IsGenericTrackTitle(title)) && t2 != "" {
+			title = t2
+		}
+	}
+	return artist, title, album
 }
 
 func fromFilename(path string) (artist, title string) {
