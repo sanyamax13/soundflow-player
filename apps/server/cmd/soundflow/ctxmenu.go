@@ -30,18 +30,44 @@ var (
 
 // localOnly — ручка только с этого компьютера. /api/* висит и на телефонном
 // сервере (0.0.0.0:8091), то есть доступно всей домашней сети; удалять файлы и
-// запускать проводник с чужого устройства нельзя. Окно Wails приходит без
-// настоящего IP — его пропускаем, отсекаем только запросы с не-локальным IP.
+// запускать проводник с чужого устройства нельзя. «Свой компьютер» — см. isThisComputer.
 func localOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() {
-				http.Error(w, "эта команда только с самого компьютера", http.StatusForbidden)
-				return
-			}
+		if !isThisComputer(r.RemoteAddr) {
+			host, _, _ := net.SplitHostPort(r.RemoteAddr)
+			http.Error(w, "эта команда только с самого компьютера (запрос пришёл с "+host+")", http.StatusForbidden)
+			return
 		}
 		h(w, r)
 	}
+}
+
+// isThisComputer — запрос пришёл с самого этого компьютера: с «петли» (127.0.0.1, ::1); с любого из
+// СОБСТВЕННЫХ адресов ПК (браузер на этом же ПК, открывший программу по адресу 192.168.x.x:8091,
+// приходит именно с него — так у Alex 19.09.2026 «Не получилось включить песню: эта команда только
+// с самого компьютера», TG 20083); либо без настоящего IP (окно Wails). Чужое устройство сети — нет.
+func isThisComputer(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return true // окно Wails приходит без адреса
+	}
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		host = host[:i] // зона IPv6: fe80::1%Ethernet
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return true // не IP (у Wails бывает имя) — пускаем, как раньше
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------- телефон: состояние и план ----------------

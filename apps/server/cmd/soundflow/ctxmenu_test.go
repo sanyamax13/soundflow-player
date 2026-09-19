@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -322,6 +323,52 @@ func TestLocalOnly(t *testing.T) {
 	}
 	if ok != 4 {
 		t.Errorf("обработчик должен сработать 4 раза, сработал %d", ok)
+	}
+}
+
+// Браузер на ЭТОМ ЖЕ компьютере, открывший программу по адресу 192.168.x.x:8091, приходит с собственного
+// LAN-адреса ПК — его надо пускать (Alex TG 20083); чужое устройство и link-local IPv6 с зоной — нет.
+func TestLocalOnlyAllowsOwnLANAddress(t *testing.T) {
+	var own string
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && !n.IP.IsLoopback() && n.IP.To4() != nil {
+			own = n.IP.String()
+			break
+		}
+	}
+	if own == "" {
+		t.Skip("у этого ПК нет своего IPv4-адреса кроме петли")
+	}
+	for addr, want := range map[string]bool{
+		own + ":54321":                  true,  // свой LAN-адрес
+		"127.0.0.1:1":                   true,  // петля
+		"[fe80::dead:beef%Ethernet]:55": false, // чужой link-local с зоной
+		"203.0.113.9:55":                false, // чужой публичный
+	} {
+		if got := isThisComputer(addr); got != want {
+			t.Errorf("isThisComputer(%q) = %v, ждали %v", addr, got, want)
+		}
+	}
+	// и через сам обработчик: с собственного адреса команда проходит
+	called := false
+	req := httptest.NewRequest("POST", "/x", nil)
+	req.RemoteAddr = own + ":54321"
+	rec := httptest.NewRecorder()
+	localOnly(func(w http.ResponseWriter, r *http.Request) { called = true })(rec, req)
+	if rec.Code != 200 || !called {
+		t.Errorf("с собственного адреса %s команда должна проходить: код %d, вызвана %v", own, rec.Code, called)
+	}
+}
+
+// Отказ называет адрес, с которого пришёл запрос, — по фото ошибки видно, кого именно не пустили.
+func TestLocalOnlyDenialNamesTheAddress(t *testing.T) {
+	req := httptest.NewRequest("POST", "/x", nil)
+	req.RemoteAddr = "203.0.113.9:5555"
+	rec := httptest.NewRecorder()
+	localOnly(func(w http.ResponseWriter, r *http.Request) {})(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "203.0.113.9") {
+		t.Errorf("код %d, тело %q", rec.Code, rec.Body.String())
 	}
 }
 

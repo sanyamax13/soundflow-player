@@ -415,6 +415,7 @@
             <h2>Волна на сегодня — подборка по твоему вкусу</h2>
             <span class="dsec-sum" id="waveSum"></span>
             <span class="dsec-btns">
+              <button class="btn" id="waveSelAll">Выбрать все</button>
               <button class="btn" id="waveRefresh">Обновить</button>
               <button class="btn primary" id="waveDlAll">Скачать выбранные</button>
             </span>
@@ -432,6 +433,7 @@
             <h2>Твои лайки из Яндекс.Музыки</h2>
             <span class="dsec-sum" id="likesSum"></span>
             <span class="dsec-btns">
+              <button class="btn" id="discSelAll">Выбрать все</button>
               <button class="btn" id="discRefresh">Обновить</button>
               <button class="btn primary" id="discDlAll">Скачать выбранные</button>
             </span>
@@ -451,6 +453,7 @@
             <h2>Старые лайки с телефона</h2>
             <span class="dsec-sum" id="phoneSum"></span>
             <span class="dsec-btns">
+              <button class="btn" id="phoneFavSelAll">Выбрать все</button>
               <button class="btn" id="phoneFavRefresh">Обновить</button>
               <button class="btn primary" id="phoneFavDlAll">Скачать выбранные</button>
             </span>
@@ -1792,7 +1795,7 @@ function _discRow(kind, t, i){
     (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
     (have
       ? `<span class="ds" title="уже в каталоге">✓ есть</span>`
-      : `<input type="checkbox" class="${k.pick}" data-i="${i}" style="margin:0 6px" onclick="event.stopPropagation()">`+
+      : `<input type="checkbox" class="${k.pick}" data-i="${i}" style="margin:0 6px" onclick="event.stopPropagation();_discSelUpdate('${kind}')">`+
         `<button class="dx" title="скачать эту песню" onclick="event.stopPropagation();${k.one}(${i})">Скачать</button>`+
         `<button class="dx del" title="убрать из списка" onclick="event.stopPropagation();_discDismiss('${kind}',${i})">Удалить</button>`)+
     `</div>`;
@@ -1820,6 +1823,7 @@ function _discRender(kind){
     $("#phoneSum").textContent = items.length ? nfmt(items.length)+" песен" : "";
   }
   _discMarkPlaying();
+  _discSelUpdate(kind);
 }
 
 async function loadDiscover(){
@@ -1959,36 +1963,49 @@ const _discOne = i => _acquireOne("likes", i);
 const _waveOne = i => _acquireOne("wave", i);
 const _phoneFavOne = i => _acquireOne("phone", i);
 
+/* --- выбрать все / скачать выбранные (Alex TG 20083: «нет кнопки выделить все песни») --- */
+const _discIds = {
+  wave:  {sel: "#waveSelAll",     dl: "#waveDlAll"},
+  likes: {sel: "#discSelAll",     dl: "#discDlAll"},
+  phone: {sel: "#phoneFavSelAll", dl: "#phoneFavDlAll"},
+};
+const _discBoxes = kind => [...document.querySelectorAll(_discKind[kind].body + " input." + _discKind[kind].pick)];
+// подписи кнопок: «Выбрать все» ↔ «Снять выбор», «Скачать выбранные (N)»
+function _discSelUpdate(kind){
+  const boxes = _discBoxes(kind), n = boxes.filter(b => b.checked).length;
+  const sel = $(_discIds[kind].sel);
+  sel.textContent = (boxes.length > 0 && n === boxes.length) ? "Снять выбор" : "Выбрать все";
+  sel.disabled = boxes.length === 0;
+  $(_discIds[kind].dl).textContent = n ? `Скачать выбранные (${nfmt(n)})` : "Скачать выбранные";
+}
+function _discSelAll(kind){
+  const boxes = _discBoxes(kind);
+  const all = boxes.length > 0 && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !all; });
+  _discSelUpdate(kind);
+}
+async function _discDlPicked(kind, askAll){
+  const k = _discKind[kind], items = k.items();
+  const picked = _discBoxes(kind).filter(b => b.checked).map(b => Number(b.dataset.i));
+  const list = picked.length ? picked : items.map((t,i)=>i).filter(i => !items[i].already_have);
+  if(!list.length){ alert(kind === "likes" ? "Нечего качать — все уже в каталоге." : "Список пуст."); return; }
+  if(!picked.length && !confirm(askAll(list.length))) return;
+  if(picked.length > 50 && !confirm(`Скачать ${nfmt(picked.length)} песен? Это займёт время и место на диске.`)) return;
+  const btn = $(_discIds[kind].dl);
+  btn.disabled = true;
+  for(const i of list){ await _acquireOne(kind, i); }
+  btn.disabled = false;
+  _discSelUpdate(kind);
+}
 $("#discRefresh").onclick = loadDiscover;
-$("#discDlAll").onclick = async () => {
-  const picked = [...document.querySelectorAll(".discPick:checked")].map(el => Number(el.dataset.i));
-  const list = picked.length ? picked : _discItems.map((t,i)=>i).filter(i=>!_discItems[i].already_have);
-  if(!list.length){ alert("Нечего качать — все уже в каталоге."); return; }
-  if(!picked.length && !confirm(`Скачать все ${list.length} песен, которых ещё нет в каталоге?`)) return;
-  $("#discDlAll").disabled = true;
-  for(const i of list){ await _discOne(i); }
-  $("#discDlAll").disabled = false;
-};
 $("#waveRefresh").onclick = loadWave;
-$("#waveDlAll").onclick = async () => {
-  const picked = [...document.querySelectorAll(".wavePick:checked")].map(el => Number(el.dataset.i));
-  const list = picked.length ? picked : _waveItems.map((t,i)=>i);
-  if(!list.length){ alert("Список пуст."); return; }
-  if(!picked.length && !confirm(`Скачать все ${list.length} песен волны?`)) return;
-  $("#waveDlAll").disabled = true;
-  for(const i of list){ await _waveOne(i); }
-  $("#waveDlAll").disabled = false;
-};
 $("#phoneFavRefresh").onclick = loadPhoneFavorites;
-$("#phoneFavDlAll").onclick = async () => {
-  const picked = [...document.querySelectorAll(".phoneFavPick:checked")].map(el => Number(el.dataset.i));
-  const list = picked.length ? picked : _phoneFavItems.map((t,i)=>i);
-  if(!list.length){ alert("Список пуст."); return; }
-  if(!picked.length && !confirm(`Скачать все ${list.length} песен?`)) return;
-  $("#phoneFavDlAll").disabled = true;
-  for(const i of list){ await _phoneFavOne(i); }
-  $("#phoneFavDlAll").disabled = false;
-};
+$("#discSelAll").onclick = () => _discSelAll("likes");
+$("#waveSelAll").onclick = () => _discSelAll("wave");
+$("#phoneFavSelAll").onclick = () => _discSelAll("phone");
+$("#discDlAll").onclick = () => _discDlPicked("likes", n => `Скачать все ${n} песен, которых ещё нет в каталоге?`);
+$("#waveDlAll").onclick = () => _discDlPicked("wave", n => `Скачать все ${n} песен волны?`);
+$("#phoneFavDlAll").onclick = () => _discDlPicked("phone", n => `Скачать все ${n} песен?`);
 
 async function loadSettings(){
   if(!window._info){ try{ await loadInfo(); }catch(e){} }
