@@ -52,6 +52,9 @@ type Service struct {
 	frontend  embed.FS
 	mu        sync.Mutex
 
+	// trashRootOverride — куда переносить «удалённое навсегда» (только тесты; обычно <диск>\_deleted).
+	trashRootOverride string
+
 	// Честный статус телефонного слушателя (Опус-ревью 14.09.2026, пункт 1):
 	// раньше окно всегда показывало «сервер работает», даже если порт был
 	// занят другой программой (реальный случай — TorrServer на 8090) и
@@ -195,6 +198,13 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/devices/{id}/sync-preview", s.hSyncPreview)
 	r.Post("/api/devices/{id}/sync-plan", s.hSyncPlanCommit)
 	r.Post("/api/devices/{id}/track/delete", s.hDevTrackDelete)
+	// контекстное меню окна (Alex TG 20039–20045). Команды, что меняют файлы/план или
+	// запускают проводник, — только с этого компьютера (см. localOnly).
+	r.Get("/api/phone/state", s.hPhoneState)
+	r.Post("/api/phone/plan", localOnly(s.hPhonePlan))
+	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
+	r.Post("/api/reveal", localOnly(s.hReveal))
+	r.Post("/api/open-folder", localOnly(s.hOpenFolder))
 	r.Get("/api/removals", s.hRemovals)
 	r.Post("/api/removals/confirm", s.hRemovalsConfirm)
 	r.Get("/api/devices/{id}/suggest", s.hSuggest)

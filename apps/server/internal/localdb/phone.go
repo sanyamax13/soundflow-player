@@ -19,6 +19,14 @@ func (d *DB) NextLibraryBatch(excludeIDs []string, budgetBytes int64) ([]Catalog
 	for _, id := range excludeIDs {
 		ex[id] = true
 	}
+	// убранное с телефона из окна ПК обратно не докачиваем (Alex TG 20039)
+	removed, err := d.pcRemovedIDs()
+	if err != nil {
+		return nil, 0, err
+	}
+	for id := range removed {
+		ex[id] = true
+	}
 	rows, err := d.sql.Query(catalogSelect + `
 		AND t.release_kind <> 'live'
 		AND COALESCE(tf.duration_sec, t.duration_sec, 120) >= 40
@@ -210,9 +218,32 @@ func (d *DB) Plan(deviceID string) (add, remove []string, at string, ok bool, er
 }
 
 // ClearPlan — телефон отчитался о выполнении.
+//
+// Пока телефон стирал песни из remove, он событий не слал — комп сам записывает
+// «убрано с телефона» (событие delete, причина pc_removed), иначе окно и
+// «докачать ещё» считали бы, что песни всё ещё там (Alex TG 20039).
 func (d *DB) ClearPlan(deviceID string) error {
-	_, err := d.sql.Exec(`DELETE FROM sync_plans WHERE device_id=?`, deviceID)
-	return err
+	tx, err := d.sql.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var r string
+	switch e := tx.QueryRow(`SELECT remove_ids FROM sync_plans WHERE device_id=?`, deviceID).Scan(&r); {
+	case e == nil:
+		var ids []string
+		_ = json.Unmarshal([]byte(r), &ids)
+		if err := recordDeviceRemovals(tx, deviceID, ids); err != nil {
+			return err
+		}
+	case !errors.Is(e, sql.ErrNoRows):
+		return e
+	}
+	if _, err := tx.Exec(`DELETE FROM sync_plans WHERE device_id=?`, deviceID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // TracksByIDs — карточки каталога по списку id (новые сверху). Нужно для
