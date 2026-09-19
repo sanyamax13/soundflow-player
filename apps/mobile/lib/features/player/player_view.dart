@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -12,7 +11,6 @@ import '../../app/providers.dart';
 import '../../core/app_log.dart';
 import '../../core/config.dart';
 import '../../core/local_taste.dart';
-import '../../core/net_hint.dart';
 import '../../core/removal_reasons.dart';
 import '../../data/api.dart';
 import '../../data/db.dart';
@@ -204,6 +202,18 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _toast('Убрал с телефона');
   }
 
+  /// Радио «по этой песне». Всё считает ТЕЛЕФОН по уже лежащим на нём
+  /// звуковым отпечаткам, сервер на нажатие не спрашиваем (Alex TG
+  /// 19.09.2026: «сервер изначально всё делает и отдаёт на телефон, а
+  /// телефон уже сам»). Журнал 18.09 показал причину задержки: из ~8,2 с
+  /// около 8 уходило на ожидание недоступного сервера (`connectTimeout`), а
+  /// сам подбор из скачанного — 0,004 с на первые 80 песен и 0,1 с на
+  /// остальные 416.
+  ///
+  /// Нет отпечатка у самой песни — подтягиваем только его ([_fetchSeedVector],
+  /// не дольше [_seedVectorWait]) и считаем локально. Не вышло — говорим как
+  /// есть и просим докачать отпечатки в фоне (это дыра в доставке, её
+  /// видно в журнале по `vectors_backfill`).
   Future<void> _radio(NowPlaying now) async {
     if (_p.radio.value) {
       await _p.stopRadio();
@@ -215,10 +225,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         .where((t) => !hidden.contains(t.artist))
         .toList();
     if (all.length < 2) return;
-    final ids = [
-      for (final t in all)
-        if (t.id != now.id) t.id,
-    ];
     // Реальное время НА ЭТОМ ТЕЛЕФОНЕ от нажатия до результата — Alex TG
     // 14.09.2026 отдельно поправил, что замеры на компьютере (SSD/память
     // сильно быстрее) не показывают его реальную задержку: «должен как-то
@@ -226,78 +232,59 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     // DateTime.now() на телефоне пользователя, не на деве.
     final sw = Stopwatch()..start();
     try {
-      final res = await ref
-          .read(apiProvider)
-          .streamOrder(seedId: now.id, candidateIds: ids);
-      if (!res.reordered) {
+      if (!mounted) return;
+      var tail = await _offlineRadioFallback(now, all, sw);
+      if (tail == null && await _fetchSeedVector(now.id)) {
+        if (!mounted) return;
+        tail = await _offlineRadioFallback(now, all, sw);
+      }
+      if (!mounted) return;
+      if (tail == null) {
         unawaited(AppLog.event('radio_no_fingerprint', {'elapsed_ms': sw.elapsedMilliseconds}));
-        _toast('У этой песни нет звукового отпечатка — похожее не подобрать');
+        _toast('У этой песни нет звукового отпечатка на телефоне — похожее не подобрать');
+        unawaited(ref.read(downloadsProvider).backfillVectors());
         return;
       }
-      final byId = {for (final t in all) t.id: t};
-      final tail = <NowPlaying>[
-        for (final id in res.ids)
-          if (byId[id] case final t?)
-            NowPlaying(
-              id: t.id,
-              title: t.title,
-              artist: t.artist,
-              path: t.path,
-              coverPath: t.coverPath,
-            ),
-      ];
-      if (tail.isEmpty || !mounted) return;
-      unawaited(AppLog.event('radio_server_ok', {
+      unawaited(AppLog.event('radio_local_ok', {
         'elapsed_ms': sw.elapsedMilliseconds,
-        'candidates': ids.length,
         'picked': tail.length,
       }));
       await _p.setSimilarTail(tail);
       _toast('Дальше — похожее по звуку');
-    } on DioException catch (_) {
-      // именно сетевая ошибка (сервер недоступен) — пробуем локальный
-      // фолбэк по уже скачанным трекам; reordered:false (ветка выше) сюда
-      // не попадает — источник отпечатка у seed один и тот же, что для
-      // сервера, что локально, так что фолбэк там всё равно не поможет.
-      // mounted-проверка ОБЯЗАТЕЛЬНА до вызова — пока streamOrder висел
-      // (сетевой таймаут), пользователь мог уйти с этого экрана, и
-      // _offlineRadioFallback тут же трогает ref.read(dbProvider) на первой
-      // строке (упало на боевом телефоне Alex, «Cannot use "ref" after the
-      // widget was disposed», 14.09.2026, журнал сбоев в Профиле).
-      if (!mounted) return;
-      final tail = await _offlineRadioFallback(now, all, sw);
-      if (tail != null && mounted) {
-        unawaited(AppLog.event('radio_offline_ok', {
-          'elapsed_ms': sw.elapsedMilliseconds,
-          'picked': tail.length,
-        }));
-        await _p.setSimilarTail(tail);
-        _toast('Сервера нет — собрал похожее из уже скачанного');
-        unawaited(_offlineRadioTopUp(sw));
-        return;
-      }
-      unawaited(AppLog.event('radio_offline_failed', {'elapsed_ms': sw.elapsedMilliseconds}));
-      _radioUnreachable();
+      unawaited(_offlineRadioTopUp(sw));
     } catch (_) {
       unawaited(AppLog.event('radio_error', {'elapsed_ms': sw.elapsedMilliseconds}));
-      _radioUnreachable();
+      _toast('Радио не собралось');
     }
   }
 
-  /// Радио не собралось из-за недоступного сервера (и офлайн-фолбэк не
-  /// помог) — обычный тост тут тупиковый, поэтому вместо него снэкбар с
-  /// подсказкой и кнопкой «Проверить связь» (Опус-ревью телефона 14.09.2026,
-  /// пункт 1).
-  void _radioUnreachable() {
-    if (!mounted) return;
-    showServerUnreachableSnackBar(context, ScaffoldMessenger.of(context), lead: 'Радио не собралось');
+  /// Сколько ждём у сервера отпечаток ОДНОЙ песни, когда его нет на телефоне.
+  static const _seedVectorWait = Duration(seconds: 2);
+
+  /// Подтянуть у сервера отпечаток одной песни (несколько сотен байт) и
+  /// положить на телефон. true — теперь он лежит локально. Сервер молчит или
+  /// не знает песню — false; дольше [_seedVectorWait] не ждём.
+  Future<bool> _fetchSeedVector(String id) async {
+    final api = ref.read(apiProvider);
+    final db = ref.read(dbProvider);
+    try {
+      final got = await api.trackVectors([id]).timeout(_seedVectorWait);
+      final bytes = got[id];
+      if (bytes == null) return false;
+      await db.setTrackVector(id, bytes);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// Локальный фолбэк, когда сервер недоступен: сравнивает уже скачанные
-  /// треки по кэшированным отпечаткам (docs/superpowers/specs/
-  /// 2026-09-13-taste-layers-offline-design.md §4.5-4.6). Нет отпечатка у
-  /// seed — null (обычный тост «радио не собралось» тогда и должен
-  /// показаться). Возвращает только БЫСТРЫЙ первый кусок — дальше
+  /// Подбор радио на телефоне: сравнивает уже скачанные треки по лежащим на
+  /// нём отпечаткам (docs/superpowers/specs/2026-09-13-taste-layers-offline-
+  /// design.md §4.5-4.6). С 19.09.2026 это ОСНОВНОЙ путь радио, а не фолбэк
+  /// на случай недоступного сервера (имена `_offline*` и события
+  /// `radio_offline_*` в журнале — с тех времён, оставлены). Нет отпечатка у
+  /// seed — null (вызывающий тогда пробует подтянуть его у сервера, см.
+  /// [_fetchSeedVector]). Возвращает только БЫСТРЫЙ первый кусок — дальше
   /// [_offlineRadioTopUp] сам дозагружает остальное в фоне (см. его
   /// комментарий).
   Future<List<NowPlaying>?> _offlineRadioFallback(

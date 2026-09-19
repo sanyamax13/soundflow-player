@@ -92,4 +92,41 @@ void main() {
     expect(await db.trackVector('old1'), vec);
     await db.close();
   });
+
+  test('backfillVectors: два вызова одновременно — один прогон, один поход на сервер', () async {
+    // Зовут и при старте приложения, и когда радио не нашло отпечаток —
+    // одновременно два прогона по всей библиотеке не нужны (19.09.2026).
+    final calls = <List<String>>[];
+    final vec = Uint8List.fromList(List.filled(8, 9));
+    final api = _FakeApi(vectorFor: (id) => vec)..onTrackVectorsCall = calls.add;
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+    final repo = DownloadsRepo(api, db);
+    await db.upsertDownloaded(DownloadedTrack(id: 'x1', title: 'x', artist: 'y', path: '/tmp/x1', bytes: 1, addedAt: 1));
+
+    await Future.wait([repo.backfillVectors(), repo.backfillVectors()]);
+    expect(calls, hasLength(1));
+
+    // Флажок «идёт прогон» не залип: новый недостающий отпечаток докачается
+    // следующим вызовом.
+    await db.upsertDownloaded(DownloadedTrack(id: 'x2', title: 'x', artist: 'y', path: '/tmp/x2', bytes: 1, addedAt: 2));
+    await repo.backfillVectors();
+    expect(calls, hasLength(2));
+    expect(calls.last, ['x2']);
+    expect(await db.trackVector('x2'), vec);
+    await db.close();
+  });
+
+  test('backfillVectors: сети нет — не падает и не залипает, повтор пробует снова', () async {
+    final calls = <List<String>>[];
+    final api = _FakeApi(vectorFor: null)..onTrackVectorsCall = calls.add; // trackVectors бросает
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+    final repo = DownloadsRepo(api, db);
+    await db.upsertDownloaded(DownloadedTrack(id: 'x1', title: 'x', artist: 'y', path: '/tmp/x1', bytes: 1, addedAt: 1));
+
+    await repo.backfillVectors(); // без исключения наружу
+    await repo.backfillVectors(); // и второй раз тоже честно пробует
+    expect(calls, hasLength(2));
+    expect(await db.trackVector('x1'), isNull);
+    await db.close();
+  });
 }

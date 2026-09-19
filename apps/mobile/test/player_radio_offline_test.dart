@@ -15,23 +15,53 @@ import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/main.dart';
 
-class _NetworkDownApi extends Api {
+/// Сервер на нажатие «радио» спрашиваться НЕ должен (Alex TG 19.09.2026:
+/// сервер отдал отпечатки заранее, дальше телефон сам) — любое обращение
+/// считается, тесты проверяют, что счётчики нулевые. Сеть при этом «лежит»:
+/// если код всё же пойдёт к серверу, он получит ошибку, а не тихий успех.
+class _ServerMustNotBeAsked extends Api {
+  int streamOrderCalls = 0;
+  int trackVectorsCalls = 0;
+
   @override
   Future<({List<String> ids, bool reordered})> streamOrder({
     required String seedId,
     required List<String> candidateIds,
   }) async {
+    streamOrderCalls++;
     throw DioException(requestOptions: RequestOptions(path: '/v1/stream/order'));
+  }
+
+  @override
+  Future<Map<String, Uint8List>> trackVectors(List<String> ids) async {
+    trackVectorsCalls++;
+    throw DioException(requestOptions: RequestOptions(path: '/api/tracks/vectors'));
   }
 }
 
-class _NoFingerprintApi extends Api {
+/// Сервер жив, но отпечатка этой песни не знает — отдаёт пустой ответ.
+class _ServerKnowsNoFingerprint extends Api {
+  final List<List<String>> trackVectorsCalls = [];
+
   @override
-  Future<({List<String> ids, bool reordered})> streamOrder({
-    required String seedId,
-    required List<String> candidateIds,
-  }) async =>
-      (ids: candidateIds, reordered: false);
+  Future<Map<String, Uint8List>> trackVectors(List<String> ids) async {
+    trackVectorsCalls.add(ids);
+    return {};
+  }
+}
+
+/// Сервер отдаёт отпечатки по запросу — для «подтянуть один недостающий».
+class _ServerGivesVectors extends Api {
+  _ServerGivesVectors(this.vectors);
+
+  final Map<String, Uint8List> vectors;
+  final List<List<String>> trackVectorsCalls = [];
+
+  @override
+  Future<Map<String, Uint8List>> trackVectors(List<String> ids) async {
+    trackVectorsCalls.add(ids);
+    return {for (final id in ids) id: ?vectors[id]};
+  }
 }
 
 /// В тесте нет аудиоплагина (см. stream_test.dart) — реальный
@@ -84,7 +114,7 @@ void main() {
   setUp(() => offlineComputeRunner = <T>(body) async => body());
   tearDown(() => offlineComputeRunner = <T>(body) => Isolate.run(body));
 
-  testWidgets('сеть недоступна + есть локальные отпечатки — фолбэк собирает похожее', (tester) async {
+  testWidgets('отпечатки уже на телефоне — радио собирается сразу, сервер не спрашивается', (tester) async {
     final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
     await db.upsertDownloaded(DownloadedTrack(id: 'a', title: 'A', artist: 'X', path: '/tmp/a', bytes: 1, addedAt: 1));
     await db.upsertDownloaded(DownloadedTrack(id: 'b', title: 'B', artist: 'Y', path: '/tmp/b', bytes: 1, addedAt: 2));
@@ -98,8 +128,9 @@ void main() {
     await db.setTrackVector('b', _vecBytes([0.866, 0.5]));
     await db.setTrackVector('c', _vecBytes([0.5, 0.866]));
     final player = _FakePlayerController();
+    final api = _ServerMustNotBeAsked();
 
-    await tester.pumpWidget(await _appWith(_NetworkDownApi(), db, player: player));
+    await tester.pumpWidget(await _appWith(api, db, player: player));
     await tester.binding.setSurfaceSize(const Size(400, 860));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pump();
@@ -111,9 +142,12 @@ void main() {
     await tester.tap(find.text('радио'));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.textContaining('Сервера нет'), findsOneWidget);
+    expect(find.textContaining('похожее по звуку'), findsOneWidget);
     expect(player.similarTailCalls, hasLength(1));
-    expect(player.similarTailCalls.single, hasLength(2)); // b исключён как seed, остаются a и c
+    expect(player.similarTailCalls.single, hasLength(2)); // seed исключён, остаются два других
+    // Главное: на нажатие сервер вообще не трогали (раньше тут висели 8 секунд).
+    expect(api.streamOrderCalls, 0);
+    expect(api.trackVectorsCalls, 0);
     await db.close();
   });
 
@@ -141,7 +175,7 @@ void main() {
     }
     final player = _FakePlayerController();
 
-    await tester.pumpWidget(await _appWith(_NetworkDownApi(), db, player: player));
+    await tester.pumpWidget(await _appWith(_ServerMustNotBeAsked(), db, player: player));
     await tester.binding.setSurfaceSize(const Size(400, 860));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pump();
@@ -171,12 +205,14 @@ void main() {
     await db.close();
   });
 
-  testWidgets('нет отпечатка у seed (reordered:false) — фолбэк НЕ включается, обычный тост', (tester) async {
+  testWidgets('нет отпечатка у песни ни на телефоне, ни у сервера — честный тост, радио не включается', (tester) async {
     final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
     await db.upsertDownloaded(DownloadedTrack(id: 'a', title: 'A', artist: 'X', path: '/tmp/a', bytes: 1, addedAt: 1));
     await db.upsertDownloaded(DownloadedTrack(id: 'b', title: 'B', artist: 'Y', path: '/tmp/b', bytes: 1, addedAt: 2));
+    final api = _ServerKnowsNoFingerprint();
+    final player = _FakePlayerController();
 
-    await tester.pumpWidget(await _appWith(_NoFingerprintApi(), db));
+    await tester.pumpWidget(await _appWith(api, db, player: player));
     await tester.binding.setSurfaceSize(const Size(400, 860));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pump();
@@ -186,6 +222,45 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('нет звукового отпечатка'), findsOneWidget);
+    expect(player.similarTailCalls, isEmpty);
+    // Первым делом спросили сервер про ОДНУ песню (seed), а не про все.
+    expect(api.trackVectorsCalls.first, hasLength(1));
+    await db.close();
+  });
+
+  testWidgets('у самой песни нет отпечатка на телефоне, сервер отдаёт — подтягиваем один и собираем радио', (tester) async {
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+    for (final (i, id) in ['a', 'b', 'c', 'd'].indexed) {
+      await db.upsertDownloaded(DownloadedTrack(
+        id: id, title: id.toUpperCase(), artist: 'Artist$i', path: '/tmp/$id', bytes: 1, addedAt: i + 1,
+      ));
+    }
+    // У a, b, c отпечатки на телефоне есть (углы 0°/30°/60° — разные, не
+    // «тот же трек» по порогу 0.98); у d — нет, его отдаст сервер.
+    await db.setTrackVector('a', _vecBytes([1, 0]));
+    await db.setTrackVector('b', _vecBytes([0.866, 0.5]));
+    await db.setTrackVector('c', _vecBytes([0.5, 0.866]));
+    final api = _ServerGivesVectors({'d': _vecBytes([0.7, 0.7])});
+    final player = _FakePlayerController();
+
+    await tester.pumpWidget(await _appWith(api, db, player: player));
+    await tester.binding.setSurfaceSize(const Size(400, 860));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Радио включаем именно с «d» — у неё на телефоне отпечатка нет.
+    player.now.value = const NowPlaying(id: 'd', title: 'D', artist: 'Artist3');
+    await tester.pump();
+
+    await tester.tap(find.text('радио'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(api.trackVectorsCalls.first, ['d']); // подтянули только один недостающий
+    expect(find.textContaining('похожее по звуку'), findsOneWidget);
+    expect(player.similarTailCalls, hasLength(1));
+    expect(player.similarTailCalls.single, hasLength(3)); // a, b, c
+    expect(await db.trackVector('d'), isNotNull); // и он теперь лежит на телефоне
     await db.close();
   });
 }

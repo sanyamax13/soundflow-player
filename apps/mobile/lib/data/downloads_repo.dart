@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../core/app_log.dart';
 import '../core/config.dart';
 import 'api.dart';
 import 'db.dart';
@@ -284,24 +286,51 @@ class DownloadsRepo {
   /// Докачать отпечатки уже скачанным трекам, у которых их ещё нет — для
   /// офлайн-радио (docs/superpowers/specs/2026-09-13-taste-layers-offline-design.md
   /// §4.4). Пачками по 200 (одна ручка принимает список, не по одному
-  /// треку). Фоном при старте, как backfillCovers/backfillMeta.
-  Future<void> backfillVectors() async {
-    final all = await _db.allDownloaded();
-    final have = await _db.trackVectorsFor([for (final t in all) t.id]);
-    final need = [for (final t in all) if (!have.containsKey(t.id)) t.id];
-    if (need.isEmpty) return;
-    const chunk = 200;
-    for (var i = 0; i < need.length; i += chunk) {
-      final part = need.sublist(i, i + chunk > need.length ? need.length : i + chunk);
-      Map<String, Uint8List> vectors;
-      try {
-        vectors = await _api.trackVectors(part);
-      } catch (_) {
-        return; // нет сети — попробуем в следующий раз
+  /// треку). Фоном при старте, как backfillCovers/backfillMeta, и ещё когда
+  /// радио не нашло отпечаток у песни (player_view.dart _radio).
+  ///
+  /// Принцип Alex (TG 19.09.2026): сервер отпечатки считает и ОТДАЁТ
+  /// телефону, дальше телефон работает сам — радио на нажатие сервер не
+  /// спрашивает, поэтому дыры в доставке отпечатков надо закрывать здесь.
+  /// Одновременно идёт не больше одного прогона (второй вызов ждёт первый).
+  /// В журнал пишется, сколько не хватало и сколько докачалось — чтобы по
+  /// записям с телефона было видно, где именно дыра: связи не было, или
+  /// сервер этих отпечатков не отдал (тогда `got` меньше `need`, а
+  /// `offline=false`).
+  Future<void> backfillVectors() =>
+      _vectorBackfill ??= _backfillVectors().whenComplete(() => _vectorBackfill = null);
+
+  Future<void>? _vectorBackfill;
+
+  Future<void> _backfillVectors() async {
+    try {
+      final all = await _db.allDownloaded();
+      final have = await _db.trackVectorsFor([for (final t in all) t.id]);
+      final need = [for (final t in all) if (!have.containsKey(t.id)) t.id];
+      if (need.isEmpty) return;
+      var got = 0;
+      var offline = false;
+      const chunk = 200;
+      for (var i = 0; i < need.length; i += chunk) {
+        final part = need.sublist(i, i + chunk > need.length ? need.length : i + chunk);
+        Map<String, Uint8List> vectors;
+        try {
+          vectors = await _api.trackVectors(part);
+        } catch (_) {
+          offline = true; // нет сети — попробуем в следующий раз
+          break;
+        }
+        for (final entry in vectors.entries) {
+          await _db.setTrackVector(entry.key, entry.value);
+          got++;
+        }
       }
-      for (final entry in vectors.entries) {
-        await _db.setTrackVector(entry.key, entry.value);
-      }
+      // await, не unawaited: прогон и так идёт в фоне (вызывающие его не
+      // ждут), а так запись в журнал закончена к моменту, когда прогон
+      // считается завершённым — иначе тест удаляет папку под открытым файлом.
+      await AppLog.event('vectors_backfill', {'need': need.length, 'got': got, 'offline': offline});
+    } catch (_) {
+      // Фоновая докачка не должна ронять ни приложение, ни тест.
     }
   }
 
