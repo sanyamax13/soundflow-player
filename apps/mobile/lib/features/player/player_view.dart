@@ -12,12 +12,12 @@ import '../../core/app_log.dart';
 import '../../core/config.dart';
 import '../../core/local_taste.dart';
 import '../../core/removal_reasons.dart';
-import '../../data/api.dart';
 import '../../data/db.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
 import 'cover_art.dart';
 import 'cover_palette.dart';
+import 'dot_matrix_seek.dart';
 import 'player_controller.dart';
 
 /// Полноэкранный плеер — вариант 4.2 «Радио-объект» (Alex TG 18568–18590,
@@ -37,7 +37,9 @@ import 'player_controller.dart';
 /// такого», «почему играет» — других мест в приложении для них не было;
 /// «меньше такого» остался в «Моей музыке». Радио и «убрать совсем» — только
 /// кнопками (таблетка сверху, урна внизу). План упрощения, п.1-2 и 6.
-/// Волна внизу — перемотка (вести пальцем), зона касания на всю высоту.
+/// Точечная матрица с цифрами внизу — перемотка (тап или вести пальцем по
+/// точкам), см. [DotMatrixSeek]; вариант 19, Alex TG 19.09.2026 (раньше была
+/// волна из 64 столбиков с сервера).
 /// «?» вверху — та же инструкция внутри приложения; в первый раз
 /// показывается сама.
 ///
@@ -125,7 +127,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     }
     _syncFav();
     _syncTint();
-    if (mounted) setState(() {}); // волна/название
+    if (mounted) setState(() {}); // название
   }
 
   Future<void> _syncFav() async {
@@ -400,12 +402,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     });
   }
 
-  String _mmss(Duration d) {
-    final m = d.inMinutes;
-    final s = d.inSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
-
   // ── сборка ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -451,16 +447,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                             color: Colors.white.withValues(alpha: 0.6),
                             fontSize: 13)),
                     const SizedBox(height: 18),
-                    _Wave(
+                    DotMatrixSeek(
                         controller: _p,
-                        tint: colors.isFallback ? Afisha.lime : colors.glow,
-                        seedText: now.id,
-                        api: ref.read(apiProvider)),
-                    const SizedBox(height: 4),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 26),
-                      child: _times(),
-                    ),
+                        tint: colors.isFallback ? Afisha.lime : colors.glow),
                     const SizedBox(height: 12),
                     _transport(),
                     const SizedBox(height: 16),
@@ -598,24 +587,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         ),
       );
   }
-
-  Widget _times() => ValueListenableBuilder<Duration>(
-        valueListenable: _p.duration,
-        builder: (_, dur, _) => ValueListenableBuilder<Duration>(
-          valueListenable: _p.position,
-          builder: (_, pos, _) => Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(_mmss(pos),
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 11)),
-              Text(_mmss(dur),
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 11)),
-            ],
-          ),
-        ),
-      );
 
   Widget _transport() => Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -941,186 +912,6 @@ class _LivingBackdrop extends StatelessWidget {
   }
 }
 
-// ── волновой ползунок перемотки ─────────────────────────────────────────
-// Столбики = реальная форма песни (сервер /v1/waveform), не случайные.
-// Пока форма не пришла — прежний вид (детерминированный шум от id).
-class _Wave extends StatefulWidget {
-  const _Wave({
-    required this.controller,
-    required this.tint,
-    required this.seedText,
-    required this.api,
-  });
-
-  final PlayerController controller;
-  final Color tint;
-  final String seedText;
-  final Api api;
-
-  @override
-  State<_Wave> createState() => _WaveState();
-}
-
-class _WaveState extends State<_Wave> with SingleTickerProviderStateMixin {
-  List<double>? _amps;
-  late final AnimationController _bounce =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
-        ..repeat();
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-    widget.controller.playing.addListener(_syncBounce);
-    _syncBounce();
-  }
-
-  @override
-  void didUpdateWidget(covariant _Wave old) {
-    super.didUpdateWidget(old);
-    if (old.seedText != widget.seedText) {
-      setState(() => _amps = null);
-      _load();
-    }
-  }
-
-  void _syncBounce() {
-    if (widget.controller.playing.value) {
-      if (!_bounce.isAnimating) _bounce.repeat();
-    } else {
-      _bounce.stop();
-    }
-  }
-
-  Future<void> _load() async {
-    final id = widget.seedText;
-    final w = await widget.api.waveform(id);
-    if (mounted && id == widget.seedText) setState(() => _amps = w);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.playing.removeListener(_syncBounce);
-    _bounce.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<Duration>(
-      valueListenable: widget.controller.duration,
-      builder: (_, dur, _) => ValueListenableBuilder<Duration>(
-        valueListenable: widget.controller.position,
-        builder: (_, pos, _) {
-          final total = dur.inMilliseconds;
-          final frac =
-              total <= 0 ? 0.0 : (pos.inMilliseconds / total).clamp(0.0, 1.0);
-          void seekAt(double dx, double w) {
-            if (total <= 0 || w <= 0) return;
-            widget.controller.seek(
-                Duration(milliseconds: (total * (dx / w).clamp(0, 1)).round()));
-          }
-
-          return LayoutBuilder(
-            builder: (context, c) => GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (d) => seekAt(d.localPosition.dx, c.maxWidth),
-              onHorizontalDragUpdate: (d) =>
-                  seekAt(d.localPosition.dx, c.maxWidth),
-              child: SizedBox(
-                height: 52,
-                width: double.infinity,
-                child: AnimatedBuilder(
-                  animation: _bounce,
-                  builder: (_, _) => CustomPaint(
-                    painter: _WavePainter(
-                      progress: frac,
-                      seed: _seed(widget.seedText),
-                      amps: _amps,
-                      phase: _bounce.value * 2 * math.pi,
-                      moving: widget.controller.playing.value,
-                      played: widget.tint,
-                      rest: Colors.white.withValues(alpha: 0.16),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  int _seed(String s) => s.codeUnits.fold<int>(7, (p, c) => (p * 31 + c) & 0x7fffffff);
-}
-
-class _WavePainter extends CustomPainter {
-  _WavePainter({
-    required this.progress,
-    required this.seed,
-    required this.amps,
-    required this.phase,
-    required this.moving,
-    required this.played,
-    required this.rest,
-  });
-
-  final double progress;
-  final int seed;
-  final List<double>? amps;
-  final double phase;
-  final bool moving;
-  final Color played;
-  final Color rest;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-    final n = (amps == null || amps!.isEmpty) ? 58 : amps!.length;
-    final gap = size.width / n;
-    final mid = size.height / 2;
-    final headX = progress * size.width;
-    final rnd = amps == null ? math.Random(seed) : null;
-
-    for (var i = 0; i < n; i++) {
-      var base = amps != null ? amps![i] : (0.16 + rnd!.nextDouble() * 0.8);
-      final x = i * gap + gap / 2;
-
-      // лёгкое «дыхание» у бегунка, пока играет музыка
-      if (moving) {
-        final near = (1.0 - (x - headX).abs() / (gap * 3)).clamp(0.0, 1.0);
-        base *= 1.0 + 0.16 * near * (0.5 + 0.5 * math.sin(phase + i * 0.6));
-      }
-      final h = (size.height * base).clamp(3.0, size.height);
-
-      final p = Paint()
-        ..color = (i / n) <= progress ? played : rest
-        ..strokeWidth = gap * 0.55
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(Offset(x, mid - h / 2), Offset(x, mid + h / 2), p);
-    }
-
-    // тонкий бегунок
-    canvas.drawLine(
-      Offset(headX.clamp(1.0, size.width - 1), mid - size.height / 2),
-      Offset(headX.clamp(1.0, size.width - 1), mid + size.height / 2),
-      Paint()
-        ..color = played.withValues(alpha: 0.9)
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _WavePainter old) =>
-      old.progress != progress ||
-      old.played != played ||
-      old.amps != amps ||
-      old.phase != phase ||
-      old.moving != moving;
-}
-
 // ── инструкция «как пользоваться» внутри приложения ─────────────────────
 class _HelpOverlay extends StatelessWidget {
   const _HelpOverlay({required this.onClose});
@@ -1187,7 +978,7 @@ class _HelpOverlay extends StatelessWidget {
                 row(Icons.swipe, 'Смахнуть вбок', 'следующая / предыдущая песня'),
                 row(Icons.keyboard_arrow_up, 'Смахнуть вверх', 'очередь «Дальше»'),
                 row(Icons.keyboard_arrow_down, 'Смахнуть вниз', 'свернуть плеер'),
-                row(Icons.graphic_eq, 'Вести по волне', 'перемотка'),
+                row(Icons.more_horiz, 'Вести по точкам', 'перемотка'),
                 row(Icons.delete_outline, 'Урна внизу',
                     'убрать песню с телефона совсем (спросит причину)'),
                 const SizedBox(height: 16),
