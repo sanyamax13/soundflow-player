@@ -1,0 +1,203 @@
+‹ Настройки
+Журнал сервера
+Техническая история событий — для разбора, если что-то пошло не так. Для повседневной работы не нужен.
+00:57:24  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:57:22  info скан папки: G:\музыка
+00:57:22  info телефонный API слушает 0.0.0.0:8091
+00:57:22  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+00:56:01  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:55:59  info скан папки: G:\музыка
+00:55:58  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:55:56  info скан папки: G:\музыка
+00:42:14  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:41:39  info скан папки: G:\музыка
+00:41:39  info телефонный API слушает 0.0.0.0:8091
+00:41:39  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+00:31:32  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:31:30  info скан папки: G:\музыка
+00:29:25  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:29:23  info скан папки: G:\музыка
+00:28:25  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:28:22  info скан папки: G:\музыка
+00:28:22  info телефонный API слушает 0.0.0.0:8091
+00:28:22  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+00:27:33  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:27:31  info скан папки: G:\музыка
+00:15:58  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:15:56  info скан папки: G:\музыка
+00:15:33  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:15:31  info скан папки: G:\музыка
+00:08:31  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:08:28  info скан папки: G:\музыка
+00:07:28  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:07:26  info скан папки: G:\музыка
+00:07:25  info телефонный API слушает 0.0.0.0:8091
+00:07:25  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+00:06:12  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+00:06:10  info скан папки: G:\музыка
+00:06:09  info телефонный API слушает 0.0.0.0:8091
+00:06:09  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+23:41:29  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+23:41:27  info скан папки: G:\музыка
+23:39:38  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+23:39:36  info скан папки: G:\музыка
+23:30:54  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+23:30:52  info скан папки: G:\музыка
+23:30:51  info телефонный API слушает 0.0.0.0:8091
+23:30:51  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+23:23:34  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+23:23:32  info скан папки: G:\музыка
+23:23:18  error сайдкар: Post "http://127.0.0.1:8001/find-audio": dial tcp 127.0.0.1:8001: connectex: No connection could be made because the target machine actively refused it.
+23:23:18  info поиск и скачивание запущены
+23:23:18  error сайдкар: Post "http://127.0.0.1:8001/find-audio": dial tcp 127.0.0.1:8001: connectex: No connection could be made because the target machine actively refused it.
+23:23:18  info поиск и скачивание запущены
+23:23:18  error сайдкар: Post "http://127.0.0.1:8001/find-audio": dial tcp 127.0.0.1:8001: connectex: No connection could be made because the target machine actively refused it.
+23:23:18  info поиск и скачивание запущены
+23:23:18  error сайдкар: Post "http://127.0.0.1:8001/find-audio": dial tcp 127.0.0.1:8001: connectex: No connection could be made because the target machine actively refused it.
+23:23:18  info поиск и скачивание запущены
+23:23:18  error сайдкар: Post "http://127.0.0.1:8001/find-audio": dial tcp 127.0.0.1:8001: connectex: No connection could be made because the target machine actively refused it.
+23:23:18  info поиск и скачивание запущены
+21:36:57  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+21:36:55  info скан папки: G:\музыка
+21:36:55  info телефонный API слушает 0.0.0.0:8091
+21:36:55  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+21:32:56  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+21:32:54  info скан папки: G:\музыка
+21:32:53  info телефонный API слушает 0.0.0.0:8091
+21:32:53  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+20:55:35  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+20:55:33  info скан папки: G:\музыка
+20:52:33  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+20:52:31  info скан папки: G:\музыка
+20:52:31  info телефонный API слушает 0.0.0.0:8091
+20:52:31  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+19:36:58  info скан завершён: добавлено 0, пропущено 68, ошибок 0
+19:36:58  info скан папки: G:\музыка
+19:25:50  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+19:25:48  info скан папки: G:\музыка
+19:25:47  info телефонный API слушает 0.0.0.0:8091
+19:25:47  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+18:51:24  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+18:51:22  info скан папки: G:\музыка
+18:51:22  info телефонный API слушает 0.0.0.0:8091
+18:51:22  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+18:51:12  info каталог: слито 51 двойных записей одной песни, поправлено 0 записей сборников (этап 120)
+18:45:33  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+18:45:31  info скан папки: G:\музыка
+18:43:18  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+18:43:16  info скан папки: G:\музыка
+18:43:07  info шаг 2 из 2: 15 песен с исправленными именами поставлены в план на скачивание
+18:42:45  info шаг 1 из 2: 15 песен со старыми именами (с цифрами) сняты с телефона в план удаления, потом скачаются заново (вопрос 6, Alex TG 19994)
+18:42:37  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+18:42:35  info скан папки: G:\музыка
+18:41:50  info скан завершён: добавлено 51, пропущено 8916, ошибок 0
+18:40:30  info скан папки: G:\музыка
+18:16:31  info с телефона убраны 8 копий песен, которые ты убрал 19.09 (вторая запись на тот же файл)
+18:03:29  info каталог: слито 139 двойных записей одной песни, поправлено 112 записей сборников (этап 120)
+17:04:33  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+17:04:02  info скан папки: G:\музыка
+16:40:15  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+16:40:13  info скан папки: G:\музыка
+16:40:02  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+16:40:00  info скан папки: G:\музыка
+16:40:00  info телефонный API слушает 0.0.0.0:8091
+16:40:00  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+14:45:40  info скан папки: G:\музыка
+14:45:20  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+14:45:18  info скан папки: G:\музыка
+14:45:07  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+14:45:05  info скан папки: G:\музыка
+14:45:00  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+14:44:58  info скан папки: G:\музыка
+14:42:44  info удалён полностью из окна ПК (телефон+каталог+диск, помечен «не качать»)
+14:42:39  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+14:42:37  info скан папки: G:\музыка
+14:31:14  info пересчёт завершён: посчитано 96, ошибок 1; первая причина: волна: ffmpeg: exit status 0xbebbb1b7: [in#0 @ 000001be40458140] invalid start code ID3[3] in RIFF header [in#0 @ 000001be40457e80] Error opening input: Invalid data found when processing input Error opening input file G:\музыка\-=VA - Dance Mission=-\Dance Mission Vol. 05\05_Mike L.G. - Whenewer I Cant Say.mp3. Error opening input files: Invalid data found when processing input
+14:28:57  info телефонный API слушает 0.0.0.0:8091
+14:28:57  info пересчёт отпечатков/волн: 97 треков
+14:28:57  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+14:24:05  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+14:23:55  info скан папки: G:\музыка
+14:21:39  info пересчёт завершён: посчитано 373, ошибок 5; первая причина: отпечаток: ffmpeg: exit status 0xbebbb1b7: [in#0 @ 0000014459ea87c0] invalid start code ID3[3] in RIFF header [in#0 @ 0000014459ea8500] Error opening input: Invalid data found when processing input Error opening input file pipe:0. Error opening input files: Invalid data found when processing input
+14:19:45  info пересчёт отпечатков/волн: 5833 треков
+14:19:45  info телефонный API слушает 0.0.0.0:8091
+14:19:45  info SoundFlow запущен (E:\soundflow-data\soundflow.db), модель: есть
+14:04:57  error 2026-09-18T07:20:18.483719 слой: flutter SocketException: Connection timed out (OS Error: Connection timed out, errno = 110), address = 192.168.1.104, port = 36618 #0 _NativeSocket.startConnect (dart:io-patch/socket_patch.dart:817) #1 _RawSocket.startConnect (dart:io-patch/socket_patch.dart:2281) #2 RawSocket.startConnect (dart:io-patch/socket_patch.dart:41) #3 Socket._startConnect (dart:io-patch/socket_patch.dart:2542) #4 Socket.startConnect (dart:io/socket.dart:897) #5 _ConnectionTarget.connect (dart:_http/http_impl.dart:2699) #6 _HttpClient._getConnection.connect (dart:_http/http_impl.dart:3197) #7 _HttpClient._getConnection (dart:_http/http_impl.dart:3202) #8 _HttpClient._openUrl (dart:_http/http_impl.dart:3021) #9 _HttpClient.getUrl (dart:_http/http_impl.dart:2868) #10 NetworkImage._loadAsync (package:flutter/src/painting/_network_image_io.dart:120) #11 NetworkImage.loadImage (package:flutter/src/painting/_network_image_io.dart:82)
+13:19:25  error 2026-09-18T07:20:18.483719 слой: flutter SocketException: Connection timed out (OS Error: Connection timed out, errno = 110), address = 192.168.1.104, port = 36618 #0 _NativeSocket.startConnect (dart:io-patch/socket_patch.dart:817) #1 _RawSocket.startConnect (dart:io-patch/socket_patch.dart:2281) #2 RawSocket.startConnect (dart:io-patch/socket_patch.dart:41) #3 Socket._startConnect (dart:io-patch/socket_patch.dart:2542) #4 Socket.startConnect (dart:io/socket.dart:897) #5 _ConnectionTarget.connect (dart:_http/http_impl.dart:2699) #6 _HttpClient._getConnection.connect (dart:_http/http_impl.dart:3197) #7 _HttpClient._getConnection (dart:_http/http_impl.dart:3202) #8 _HttpClient._openUrl (dart:_http/http_impl.dart:3021) #9 _HttpClient.getUrl (dart:_http/http_impl.dart:2868) #10 NetworkImage._loadAsync (package:flutter/src/painting/_network_image_io.dart:120) #11 NetworkImage.loadImage (package:flutter/src/painting/_network_image_io.dart:82)
+12:15:40  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+12:15:38  info скан папки: G:\музыка
+12:04:30  error 2026-09-18T07:20:18.483719 слой: flutter SocketException: Connection timed out (OS Error: Connection timed out, errno = 110), address = 192.168.1.104, port = 36618 #0 _NativeSocket.startConnect (dart:io-patch/socket_patch.dart:817) #1 _RawSocket.startConnect (dart:io-patch/socket_patch.dart:2281) #2 RawSocket.startConnect (dart:io-patch/socket_patch.dart:41) #3 Socket._startConnect (dart:io-patch/socket_patch.dart:2542) #4 Socket.startConnect (dart:io/socket.dart:897) #5 _ConnectionTarget.connect (dart:_http/http_impl.dart:2699) #6 _HttpClient._getConnection.connect (dart:_http/http_impl.dart:3197) #7 _HttpClient._getConnection (dart:_http/http_impl.dart:3202) #8 _HttpClient._openUrl (dart:_http/http_impl.dart:3021) #9 _HttpClient.getUrl (dart:_http/http_impl.dart:2868) #10 NetworkImage._loadAsync (package:flutter/src/painting/_network_image_io.dart:120) #11 NetworkImage.loadImage (package:flutter/src/painting/_network_image_io.dart:82)
+11:46:23  error 2026-09-18T07:20:18.483719 слой: flutter SocketException: Connection timed out (OS Error: Connection timed out, errno = 110), address = 192.168.1.104, port = 36618 #0 _NativeSocket.startConnect (dart:io-patch/socket_patch.dart:817) #1 _RawSocket.startConnect (dart:io-patch/socket_patch.dart:2281) #2 RawSocket.startConnect (dart:io-patch/socket_patch.dart:41) #3 Socket._startConnect (dart:io-patch/socket_patch.dart:2542) #4 Socket.startConnect (dart:io/socket.dart:897) #5 _ConnectionTarget.connect (dart:_http/http_impl.dart:2699) #6 _HttpClient._getConnection.connect (dart:_http/http_impl.dart:3197) #7 _HttpClient._getConnection (dart:_http/http_impl.dart:3202) #8 _HttpClient._openUrl (dart:_http/http_impl.dart:3021) #9 _HttpClient.getUrl (dart:_http/http_impl.dart:2868) #10 NetworkImage._loadAsync (package:flutter/src/painting/_network_image_io.dart:120) #11 NetworkImage.loadImage (package:flutter/src/painting/_network_image_io.dart:82)
+11:46:06  info скан завершён: добавлено 0, пропущено 8967, ошибок 0
+11:45:54  info скан папки: G:\музыка
+11:45:26  info скан завершён: добавлено 0, пропущено 9021, ошибок 0
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:22  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:21  removed убран из плеера
+11:45:18  error 2026-09-18T07:20:18.483719 слой: flutter SocketException: Connection timed out (OS Error: Connection timed out, errno = 110), address = 192.168.1.104, port = 36618 #0 _NativeSocket.startConnect (dart:io-patch/socket_patch.dart:817) #1 _RawSocket.startConnect (dart:io-patch/socket_patch.dart:2281) #2 RawSocket.startConnect (dart:io-patch/socket_patch.dart:41) #3 Socket._startConnect (dart:io-patch/socket_patch.dart:2542) #4 Socket.startConnect (dart:io/socket.dart:897) #5 _ConnectionTarget.connect (dart:_http/http_impl.dart:2699) #6 _HttpClient._getConnection.connect (dart:_http/http_impl.dart:3197) #7 _HttpClient._getConnection (dart:_http/http_impl.dart:3202) #8 _HttpClient._openUrl (dart:_http/http_impl.dart:3021) #9 _HttpClient.getUrl (dart:_http/http_impl.dart:2868) #10 NetworkImage._loadAsync (package:flutter/src/painting/_network_image_io.dart:120) #11 NetworkImage.loadImage (package:flutter/src/painting/_network_image_io.dart:82)
+11:45:09  info скан папки: G:\музыка

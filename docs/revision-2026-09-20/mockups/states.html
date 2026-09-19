@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>SoundFlow — язык состояний</title>
+<style>
+:root{
+  --acc:#B2FF00; --acc-ink:#0A0A0A; --acc-tint:#F2FFD1;
+  --bg:#FFFFFF; --bg-2:#F7F7F9; --fill:#F2F2F5; --fill-2:#E8E8ED;
+  --line:#E3E3E8; --line-2:#D0D0D8;
+  --ink:#16161A; --ink-2:#55555F; --ink-3:#6B6B76;
+  --ok:#2E7D14; --ok-bg:#EEF8E7; --warn:#8A6300; --warn-bg:#FDF4E0;
+  --err:#C0362C; --err-bg:#FDECEA; --info:#175E96; --info-bg:#E8F3FC;
+  --r-s:6px; --r-m:10px; --r-l:14px;
+  --sh-1:0 1px 2px rgba(0,0,0,.05), 0 0 0 1px rgba(0,0,0,.04);
+  --sh-2:0 8px 24px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.07);
+  --sh-3:0 24px 64px rgba(0,0,0,.24);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg-2);color:var(--ink);padding:32px;
+  font:400 15px/1.45 -apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}
+h1{font-size:28px;line-height:32px;font-weight:700;letter-spacing:-.02em;margin-bottom:4px}
+.lead{font-size:13px;color:var(--ink-2);margin-bottom:28px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;max-width:1040px}
+.cell{background:var(--bg);border-radius:var(--r-l);box-shadow:var(--sh-1);padding:20px}
+.cap{font:700 11px/14px inherit;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+.bar{height:4px;border-radius:2px;background:var(--fill-2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:2px}
+.bar.ind i{width:46%;margin-left:22%;
+  background:linear-gradient(90deg,rgba(178,255,0,0),var(--acc) 38%,var(--acc) 62%,rgba(178,255,0,0))}
+.r1{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+.r1 b{font-size:15px;font-weight:600}.r1 .g{flex:1}
+.r1 span{font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.cur{font-size:12px;color:var(--ink-3);margin-top:8px}
+.pill{display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px;border-radius:999px;
+  font-size:12px;font-weight:600}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.info{background:var(--info-bg);color:var(--info)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.err{background:var(--err-bg);color:var(--err)}
+.done{display:flex;align-items:center;gap:12px}
+.done .mk{width:32px;height:32px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;flex-shrink:0}
+.done b{font-size:15px;font-weight:600;display:block}
+.done span{font-size:13px;color:var(--ink-2)}
+.errbox{display:flex;gap:12px;background:var(--err-bg);border-radius:var(--r-m);padding:14px 16px}
+.errbox .mk{color:var(--err);flex-shrink:0;margin-top:1px}
+.errbox b{font-size:14px;font-weight:600;color:var(--err);display:block;margin-bottom:3px}
+.errbox p{font-size:13px;color:var(--ink-2);line-height:18px}
+.btn{height:32px;padding:0 14px;border-radius:var(--r-m);border:0;font:600 13px/1 inherit;
+  background:var(--fill);color:var(--ink);cursor:default;display:inline-flex;align-items:center;gap:7px;margin-top:12px}
+.btn.pri{background:var(--acc);color:var(--acc-ink)}
+.toast{display:flex;align-items:center;gap:14px;background:rgba(22,22,26,.92);backdrop-filter:blur(20px);
+  color:#fff;border-radius:var(--r-m);padding:12px 14px 12px 16px;box-shadow:var(--sh-2)}
+.toast span{flex:1;font-size:14px}
+.toast button{border:0;background:transparent;color:var(--acc);font:600 14px/1 inherit;cursor:default;padding:6px 8px}
+.steps{display:flex;flex-direction:column;gap:11px}
+.step{display:flex;align-items:center;gap:12px;font-size:13px}
+.step .mk{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex-shrink:0}
+.step.done2 .mk{background:var(--ok);color:#fff}.step.done2{color:var(--ink-2)}
+.step.now .mk{border:2px solid var(--info);border-right-color:transparent;transform:rotate(-45deg)}
+.step.now{font-weight:600}
+.step.wait .mk{border:2px solid var(--line-2)}.step.wait{color:var(--ink-3)}
+.sk{display:flex;flex-direction:column;gap:14px}
+.skrow{display:flex;align-items:center;gap:12px}
+.skrow i{display:block;border-radius:var(--r-s);background:linear-gradient(90deg,var(--fill) 25%,var(--fill-2) 37%,var(--fill) 63%)}
+.skrow .a{width:40px;height:40px;flex-shrink:0}
+.skrow .b{height:12px;width:46%;border-radius:4px}
+.skrow .c{height:10px;width:28%;border-radius:4px;margin-top:6px}
+.empty{text-align:center;padding:14px 0 6px}
+.empty .ic{color:var(--ink-3);margin-bottom:12px}
+.empty b{font-size:22px;font-weight:700;letter-spacing:-.01em;display:block;margin-bottom:6px}
+.empty p{font-size:15px;color:var(--ink-2);max-width:340px;margin:0 auto 4px}
+.dlg{background:var(--bg);border-radius:var(--r-l);box-shadow:var(--sh-3);width:400px;padding:22px 22px 18px;margin:0 auto;text-align:center}
+.dlg b{font-size:17px;font-weight:600;display:block;margin-bottom:8px}
+.dlg p{font-size:13px;color:var(--ink-2);line-height:18px;margin-bottom:18px}
+.dlg .row{display:flex;gap:10px}
+.dlg .row button{flex:1;height:36px;border-radius:var(--r-m);border:0;font:600 15px/1 inherit;cursor:default}
+.dlg .row .no{background:var(--fill);color:var(--ink)}
+.dlg .row .yes{background:var(--err);color:#fff}
+.scrim{background:rgba(22,22,26,.45);border-radius:var(--r-m);padding:22px 10px}
+</style></head>
+<body>
+<h1>Язык состояний</h1>
+<div class="lead">Одинаково выглядит везде: и в окне на компьютере, и в приложении на телефоне.</div>
+<div class="grid">
+
+  <div class="cell"><div class="cap">Идёт работа — знаем сколько</div>
+    <div class="r1"><b>Отправляю новые песни</b><span class="g"></span><span>43 из 214</span></div>
+    <div class="bar"><i style="width:20%"></i></div>
+    <div class="cur">сейчас: Ricky Martin — No Importa La Distancia</div>
+  </div>
+
+  <div class="cell"><div class="cap">Идёт работа — сколько неизвестно</div>
+    <div class="r1"><b>Ищу новые песни в папке</b><span class="g"></span><span class="pill info"><span class="dot"></span>идёт</span></div>
+    <div class="bar ind"><i></i></div>
+    <div class="cur">G:\Музыка — уже просмотрено 3 140 файлов</div>
+  </div>
+
+  <div class="cell"><div class="cap">Идёт синхронизация — шаги видны</div>
+    <div class="steps">
+      <div class="step done2"><span class="mk"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></span>Сравнил компьютер и телефон</div>
+      <div class="step now"><span class="mk"></span>Отправляю 214 песен</div>
+      <div class="step wait"><span class="mk"></span>Обновлю список на телефоне</div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="cap">Получилось</div>
+    <div class="done"><span class="mk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></span>
+      <span><b>Телефон обновлён</b><span>214 новых песен · 3 минуты</span></span></div>
+    <div style="margin-top:14px"><span class="pill ok"><span class="dot"></span>Всё в порядке</span></div>
+  </div>
+
+  <div class="cell"><div class="cap">Не получилось</div>
+    <div class="errbox"><span class="mk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/></svg></span>
+      <span><b>Телефон пропал из сети</b><p>Отправил 43 песни из 214. Проверь, что телефон рядом и Wi-Fi включён — остальное доедет само.</p></span></div>
+    <button class="btn pri">Попробовать снова</button>
+  </div>
+
+  <div class="cell"><div class="cap">Убрано — можно вернуть</div>
+    <div class="toast"><span>Убрал «Kenny Rogers» с телефона</span><button>Вернуть</button></div>
+    <div class="cur" style="margin-top:12px">Живёт 6 секунд, выезжает снизу. «Вернуть» — всегда, даже для удаления файла.</div>
+  </div>
+
+  <div class="cell"><div class="cap">Загружается — вместо слова «загрузка»</div>
+    <div class="sk">
+      <div class="skrow"><i class="a"></i><span style="flex:1"><i class="b" style="display:block"></i><i class="c" style="display:block"></i></span></div>
+      <div class="skrow"><i class="a"></i><span style="flex:1"><i class="b" style="display:block;width:62%"></i><i class="c" style="display:block;width:34%"></i></span></div>
+      <div class="skrow"><i class="a"></i><span style="flex:1"><i class="b" style="display:block;width:38%"></i><i class="c" style="display:block;width:22%"></i></span></div>
+    </div>
+  </div>
+
+  <div class="cell"><div class="cap">Пусто</div>
+    <div class="empty">
+      <div class="ic"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+      <b>Здесь пока пусто</b>
+      <p>Добавь папку с музыкой — и всё, что в ней есть, появится тут.</p>
+      <button class="btn pri" style="margin-top:14px">Добавить папку</button>
+    </div>
+  </div>
+
+  <div class="cell" style="grid-column:1 / -1"><div class="cap">Подтверждение — только для необратимого</div>
+    <div class="scrim"><div class="dlg">
+      <b>Удалить 51 песню с компьютера?</b>
+      <p>Эти песни ты убрал на телефоне. Файлы уедут в корзину Windows — оттуда их ещё можно достать.</p>
+      <div class="row"><button class="no">Отмена</button><button class="yes">Удалить</button></div>
+    </div></div>
+  </div>
+
+</div>
+</body></html>
