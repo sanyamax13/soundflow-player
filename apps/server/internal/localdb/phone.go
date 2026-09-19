@@ -111,8 +111,11 @@ func (d *DB) SaveSync(dev Device, events []SyncEvent) ([]string, error) {
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			accepted = append(accepted, e.UUID)
-			// play/like/delete в общий журнал не пишем — только blocked через delete
-			if e.Kind == "delete" && e.TrackID != "" {
+			// play/like/delete в общий журнал не пишем — только blocked через delete.
+			// Кроме причин «плохое качество»/«не та версия»: там сервер ищет замену
+			// (api.deleteAndReacquire), а метка заставила бы acquire отказать.
+			if reason := eventReason(e.Payload); e.Kind == "delete" && e.TrackID != "" &&
+				reason != "bad_quality" && reason != "wrong_version" {
 				_, _ = tx.Exec(`
 					INSERT INTO legacy_marks (normalized_key,kind,artist,title,marked_at)
 					SELECT t.normalized_key,'blocked',t.artist,t.title,?
