@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
+import '../../core/format.dart';
+import '../../core/notice.dart';
 import '../../core/theme.dart';
 import '../../core/removal_reasons.dart';
 import '../../data/db.dart';
-import '../library/library_screen.dart';
+import '../sync/sync_offer_card.dart';
 import '../player/player_controller.dart';
 import 'artist_grouping.dart';
 
@@ -212,17 +214,6 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     return '${(bytes / (1 << 20)).toStringAsFixed(1)} МБ';
   }
 
-  /// 7543 → «7 543» (неразрывный пробел: число не рвётся на две строки).
-  String _fmtInt(int n) {
-    final s = n.toString();
-    final b = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) b.write('\u00A0');
-      b.write(s[i]);
-    }
-    return b.toString();
-  }
-
   /// Обложка исполнителя — первая из его песен, что реально лежит на диске.
   /// Запоминаем: на каждый кадр прокрутки опрашивать диск по всем песням папки дорого.
   String? _artistCover(ArtistFolder f) => _covers.putIfAbsent(f.key, () {
@@ -300,17 +291,14 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   /// экране такого действия не было вообще — только жёсткое удаление.
   Future<void> _lessLike(DownloadedTrack t) async {
     await ref.read(syncProvider).record('less_like', trackId: t.id);
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Буду реже ставить похожее')));
+    Notice.show('Буду реже ставить похожее');
   }
 
   Future<void> _deleteArtist(ArtistFolder folder) async {
     final d = ref.read(downloadsProvider);
     if (!await _confirm(
       'Удалить всего исполнителя?',
-      '«${folder.display}» — ${folder.count} ${_songWord(folder.count)}. '
+      '«${folder.display}» — ${folder.count} ${songWord(folder.count)}. '
           'Все файлы сотрутся с телефона. Скачать заново можно с сервера.',
       'Удалить всё',
     )) {
@@ -381,13 +369,6 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     }
     await ref.read(downloadsProvider).delete(t.id, reason: 'broken_tag');
     await _refresh();
-  }
-
-  String _songWord(int n) {
-    final m10 = n % 10, m100 = n % 100;
-    if (m10 == 1 && m100 != 11) return 'песня';
-    if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'песни';
-    return 'песен';
   }
 
   // ─── поиск ─────────────────────────────────────────────────────────────
@@ -489,8 +470,8 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                 if (_items != null)
                   Text(
                     _onlyFav
-                        ? '${_fmtInt(n)} ${_songWord(n)} в избранном'
-                        : '${_fmtInt(n)} ${_songWord(n)} на телефоне',
+                        ? '${fmtInt(n)} ${songWord(n)} в избранном'
+                        : '${fmtInt(n)} ${songWord(n)} на телефоне',
                     style: const TextStyle(
                       color: Afisha.inkDim,
                       fontSize: 12.5,
@@ -518,6 +499,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
               ],
             ),
           ),
+          const SyncOfferCard(),
           const Divider(height: 1, color: Afisha.line),
           Expanded(
             child: _items == null
@@ -784,7 +766,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       label: f.display,
     ),
     title: f.display,
-    subtitle: '${f.count} ${_songWord(f.count)}',
+    subtitle: '${f.count} ${songWord(f.count)}',
     trailing: PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert, color: Afisha.inkDim),
       onSelected: (v) {
@@ -934,7 +916,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Имя не читается — ${_broken.length} ${_songWord(_broken.length)}',
+              'Имя не читается — ${_broken.length} ${songWord(_broken.length)}',
               style: const TextStyle(
                 color: Afisha.inkDim,
                 fontSize: 12.5,
@@ -971,7 +953,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Имя не читается — ${_broken.length} ${_songWord(_broken.length)}',
+          'Имя не читается — ${_broken.length} ${songWord(_broken.length)}',
           style: const TextStyle(
             color: Afisha.inkDim,
             fontSize: 12.5,
@@ -1058,7 +1040,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
             child: Row(
               children: [
                 Text(
-                  '${tracks.length} ${_songWord(tracks.length)}',
+                  '${tracks.length} ${songWord(tracks.length)}',
                   style: const TextStyle(color: Afisha.inkDim),
                 ),
                 // FittedBox: на узком экране или с крупным шрифтом кнопки
@@ -1139,19 +1121,14 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _onlyFav ? 'В избранном пока пусто' : 'Пока ничего не скачано',
+            _onlyFav
+                ? 'В избранном пока пусто'
+                : 'На телефоне пока пусто.\nПесни для телефона отмечаются в '
+                      'программе на компьютере — когда что-то появится, здесь '
+                      'будет кнопка «Скачать».',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Afisha.inkDim, height: 1.5),
           ),
-          if (!_onlyFav) ...[
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
-              ),
-              child: const Text('Скачать музыку'),
-            ),
-          ],
         ],
       ),
     ),

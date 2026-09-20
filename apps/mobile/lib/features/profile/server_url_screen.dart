@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
+import '../../core/notice.dart';
 import '../../core/server_discovery.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
@@ -68,9 +69,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     if (!mounted) return;
     setState(() => _scanning = false);
     if (found == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не нашёл в сети — впиши адрес вручную')),
-      );
+      Notice.show('Не нашёл в сети', subtitle: 'Впиши адрес вручную', kind: NoticeKind.warn);
       return;
     }
     _ctrl.text = found;
@@ -81,9 +80,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     // терялся, если забыл нажать «Сохранить»).
     await _persist(found);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Нашёл и сохранил: $found')),
-    );
+    Notice.show('Нашёл и сохранил', subtitle: found, kind: NoticeKind.done);
   }
 
   Future<void> _persist(String raw) async {
@@ -100,9 +97,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     await _persist(_ctrl.text);
     if (!mounted) return;
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Адрес сохранён: ${ref.read(apiProvider).baseUrl}')),
-    );
+    Notice.show('Адрес сохранён', subtitle: ref.read(apiProvider).baseUrl, kind: NoticeKind.done);
     Navigator.of(context).pop();
   }
 
@@ -120,9 +115,8 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
       _reachable = null;
     });
     if (last == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Рабочий адрес ещё не запоминали — подставил обычный (USB)'),
-      ));
+      Notice.show('Рабочий адрес ещё не запоминали',
+          subtitle: 'Подставил обычный (USB)', kind: NoticeKind.warn);
     }
   }
 

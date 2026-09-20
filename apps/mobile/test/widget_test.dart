@@ -6,6 +6,7 @@ import 'package:soundflow/app/providers.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
+import 'package:soundflow/data/sync_offer.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/main.dart';
@@ -51,6 +52,7 @@ Future<Widget> _app() async {
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(PlayerController()),
       syncProvider.overrideWithValue(sync),
+      syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
     ],
     child: const SoundFlowApp(),
   );
@@ -78,7 +80,7 @@ void main() {
     await tester.tap(find.text('Моя музыка'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Пока ничего не скачано'), findsOneWidget);
+    expect(find.textContaining('На телефоне пока пусто'), findsOneWidget);
     // Вид «Б» (20.09.2026): в шапке только число песен, без исполнителей и гигабайтов.
     expect(find.text('0 песен на телефоне'), findsOneWidget);
     expect(find.textContaining('МБ'), findsNothing);
@@ -102,7 +104,9 @@ void main() {
     await tester.tap(find.text('Сервер'));
     await tester.pumpAndSettle();
     expect(find.text('Всё отправлено'), findsOneWidget);
-    expect(find.text('Синхронизировать сейчас'), findsOneWidget);
+    // Кнопки «Синхронизировать сейчас» больше нет: события уходят сами, а
+    // песни телефон предлагает скачать карточкой (Alex TG 20158, 20167).
+    expect(find.text('Синхронизировать сейчас'), findsNothing);
   });
 
   // Экран «Сервер» упрощён (Опус-ревью телефона 14.09.2026, пункт 8): вместо
@@ -118,24 +122,20 @@ void main() {
 
     await tester.tap(find.text('Сервер'));
     await tester.pumpAndSettle();
-    expect(find.text('СИНХРОНИЗАЦИЯ'), findsOneWidget);
+    expect(find.text('ЧТО УХОДИТ НА КОМПЬЮТЕР'), findsOneWidget);
     expect(find.text('СВЯЗЬ С КОМПЬЮТЕРОМ'), findsOneWidget);
     expect(find.text('БОЛЬШЕ НЕ КАЧАТЬ'), findsNothing);
     expect(find.text('Компьютер на связи'), findsOneWidget);
   });
 
-  testWidgets('в Профиле есть «Скачать музыку», кнопка «докачать ещё» на месте', (tester) async {
+  testWidgets('в Профиле вместо «Скачать музыку» — строка «Музыка с компьютера»', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Скачать музыку'), findsOneWidget);
-
-    await tester.tap(find.text('Скачать музыку'));
-    await tester.pumpAndSettle();
-    expect(find.text('Скачано: 0 песен, 0 Б'), findsOneWidget);
-    expect(find.text('Докачать ещё 10 ГБ'), findsOneWidget);
+    expect(find.text('Скачать музыку'), findsNothing);
+    expect(find.text('Музыка с компьютера'), findsOneWidget);
   });
 
   // Alex TG 19943 (19.09.2026): «убранные только в программе на сервере, а не в
@@ -147,7 +147,7 @@ void main() {
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
     expect(find.text('Убранные'), findsNothing);
-    expect(find.text('Скачать музыку'), findsOneWidget);
+    expect(find.text('Скачать музыку'), findsNothing);
     expect(find.text('Сервер'), findsOneWidget);
   });
 

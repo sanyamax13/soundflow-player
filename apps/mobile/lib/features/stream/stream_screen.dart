@@ -9,7 +9,6 @@ import '../../core/app_log.dart';
 import '../../core/local_taste.dart';
 import '../../core/theme.dart';
 import '../../data/db.dart';
-import '../library/library_screen.dart';
 import '../player/player_controller.dart';
 import '../player/player_view.dart';
 
@@ -183,16 +182,10 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
                   style: TextStyle(fontSize: 18, color: Afisha.ink)),
               const SizedBox(height: 8),
               const Text(
-                'Скачай музыку — Поток играет уже скачанное без интернета.',
+                'Поток играет то, что уже на телефоне, без интернета. '
+                'Песни для телефона отмечаются в программе на компьютере.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Afisha.inkDim),
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
-                ),
-                child: const Text('Скачать музыку'),
               ),
             ],
           ),

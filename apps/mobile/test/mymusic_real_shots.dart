@@ -16,6 +16,7 @@ import 'package:soundflow/core/theme.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
+import 'package:soundflow/data/sync_offer.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/my_music/my_music_screen.dart';
 import 'package:soundflow/features/player/player_controller.dart';
@@ -74,6 +75,7 @@ Future<Widget> _app() async {
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(PlayerController()),
       syncProvider.overrideWithValue(sync),
+      syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
     ],
     // Рендерим сам экран, без Shell/Потока — чтобы в кадр не лез мини-плеер и
     // авто-старт «Потока» не дёргал just_audio (для картинок это лишний шум).

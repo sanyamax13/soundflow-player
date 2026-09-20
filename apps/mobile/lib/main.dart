@@ -9,12 +9,14 @@ import 'app/providers.dart';
 import 'app/shell.dart';
 import 'core/config.dart';
 import 'core/crash_log.dart';
+import 'core/notice.dart';
 import 'core/server_discovery.dart';
 import 'core/theme.dart';
 import 'data/api.dart';
 import 'data/auto_sync.dart';
 import 'data/db.dart';
 import 'data/downloads_repo.dart';
+import 'data/sync_offer.dart';
 import 'data/sync_repo.dart';
 import 'features/player/audio_handler.dart';
 import 'features/player/player_controller.dart';
@@ -33,6 +35,9 @@ Future<void> _boot() async {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
+    // Обложка не подгрузилась по сети (не дома, нет связи) — это не падение
+    // приложения; раньше такое попадало в «Последний сбой» (Alex TG 20169).
+    if (isHarmlessImageError(details)) return;
     CrashLog.write(details.exception, details.stack, where: 'flutter');
   };
   ui.PlatformDispatcher.instance.onError = (error, stack) {
@@ -108,7 +113,8 @@ Future<void> _boot() async {
   unawaited(downloads.backfillVectors());
   // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
   // (06.09.2026). Живёт всё время работы приложения.
-  AutoSync(sync, downloads).start();
+  final offer = SyncOffer(downloads);
+  AutoSync(sync, downloads, offer).start();
   // Было падение в прошлый раз — отправить его текст на компьютер (в ленту
   // «что делал сервер»). Файл не стираем: он ещё покажется в Профиле, Alex
   // уберёт кнопкой. Нет связи — попробуем при следующем запуске.
@@ -127,6 +133,7 @@ Future<void> _boot() async {
         downloadsProvider.overrideWithValue(downloads),
         playerProvider.overrideWithValue(player),
         syncProvider.overrideWithValue(sync),
+        syncOfferProvider.overrideWithValue(offer),
       ],
       child: const SoundFlowApp(),
     ),
@@ -142,6 +149,10 @@ class SoundFlowApp extends StatelessWidget {
       title: 'SoundFlow',
       debugShowCheckedModeBanner: false,
       theme: Afisha.theme(),
+      navigatorKey: rootNavigatorKey,
+      // Плашка сообщений (core/notice.dart) — над всеми экранами и окнами.
+      builder: (context, child) =>
+          NoticeHost(child: child ?? const SizedBox.shrink()),
       // Входа нет — сразу вкладки. Плеер личный, сервер в домашней сети.
       home: const Shell(),
     );

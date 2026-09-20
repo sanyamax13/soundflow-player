@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import 'downloads_repo.dart';
+import 'sync_offer.dart';
 import 'sync_repo.dart';
 
 /// Сам отправляет накопленные события (лайки, удаления, что слушал) на
@@ -14,13 +15,18 @@ import 'sync_repo.dart';
 ///
 /// Связь отдельно не проверяем — просто пробуем отправить. Не вышло (сервер
 /// не в домашней сети / молчит) — молча ждём следующего раза: события лежат
-/// в очереди, дедуп по uuid не даёт задвоить. Кнопка «Синхронизировать
-/// сейчас» в профиле остаётся как была.
+/// в очереди, дедуп по uuid не даёт задвоить.
+///
+/// План с компьютера (что скачать / что стереть) отсюда больше НЕ выполняется:
+/// с 20.09.2026 телефон его только смотрит и предлагает ([SyncOffer.refresh]),
+/// а качает и стирает по нажатию (Alex TG 20167: места на телефоне может не
+/// хватить, решать ему).
 class AutoSync with WidgetsBindingObserver {
-  AutoSync(this._sync, this._downloads);
+  AutoSync(this._sync, this._downloads, [this._offer]);
 
   final SyncRepo _sync;
   final DownloadsRepo _downloads;
+  final SyncOffer? _offer;
 
   static const _period = Duration(minutes: 3);
   static const _debounce = Duration(seconds: 5);
@@ -29,7 +35,6 @@ class AutoSync with WidgetsBindingObserver {
   Timer? _periodic;
   Timer? _debounced;
   bool _started = false;
-  bool _applyingPlan = false;
 
   void start() {
     if (_started) return;
@@ -78,19 +83,8 @@ class AutoSync with WidgetsBindingObserver {
       final favs = await _downloads.favoritesForReport();
       await _sync.reportFavorites(favs);
     } catch (_) {}
-    // План ручной синхронизации (Alex собрал в окне на компе — кнопка,
-    // галочки, «Далее»). Проверяем каждый заход, даже когда событий в
-    // очереди нет: телефон «только принимает инфу» (Alex TG 19002).
-    // Закачка плана может быть долгой — не пускаем два прохода разом.
-    if (!_applyingPlan) {
-      _applyingPlan = true;
-      try {
-        await _downloads.applyPendingPlan();
-      } catch (_) {
-        // Нет связи / план не забрали — подхватим в следующий раз.
-      } finally {
-        _applyingPlan = false;
-      }
-    }
+    // Что ждёт на компьютере (план из окна программы) — только смотрим и
+    // предлагаем; связи нет — карточка сама скажет, попробуем в следующий раз.
+    await _offer?.refresh();
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:soundflow/app/providers.dart';
 import 'package:soundflow/core/config.dart';
+import 'package:soundflow/core/notice.dart';
 import 'package:soundflow/core/theme.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
@@ -18,7 +19,11 @@ Future<Widget> _app(Db db, Api api) async => ProviderScope(
         apiProvider.overrideWithValue(api),
         dbProvider.overrideWithValue(db),
       ],
-      child: MaterialApp(theme: Afisha.theme(), home: const ServerUrlScreen()),
+      child: MaterialApp(
+        theme: Afisha.theme(),
+        builder: (context, child) => NoticeHost(child: child ?? const SizedBox.shrink()),
+        home: const ServerUrlScreen(),
+      ),
     );
 
 void main() {

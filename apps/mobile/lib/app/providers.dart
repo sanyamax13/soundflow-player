@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/api.dart';
 import '../data/db.dart';
 import '../data/downloads_repo.dart';
+import '../data/sync_offer.dart';
 import '../data/sync_repo.dart';
 import '../features/player/player_controller.dart';
 
@@ -29,3 +30,6 @@ final syncProvider =
 
 final dbProvider =
     Provider<Db>((ref) => _missing('dbProvider'));
+
+final syncOfferProvider =
+    Provider<SyncOffer>((ref) => _missing('syncOfferProvider'));

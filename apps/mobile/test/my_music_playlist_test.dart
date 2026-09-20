@@ -6,6 +6,7 @@ import 'package:soundflow/app/providers.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
+import 'package:soundflow/data/sync_offer.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/main.dart';
@@ -36,6 +37,7 @@ Future<Widget> _appWith(Db db, PlayerController player) async {
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(player),
       syncProvider.overrideWithValue(sync),
+      syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
     ],
     child: const SoundFlowApp(),
   );

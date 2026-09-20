@@ -10,14 +10,32 @@ import 'api.dart';
 import 'db.dart';
 import 'sync_repo.dart';
 
-/// Флажок «остановить скачивание» для [DownloadsRepo.downloadMore] — кнопка
-/// «Стоп» на экране (Опус-ревью телефона 14.09.2026, пункт 7: раньше
-/// начатую порцию было нельзя прервать). Проверяется между треками — текущий
-/// докачивается до конца, следующий уже не начинается.
+/// Флажок «остановить скачивание» для [DownloadsRepo.applyPendingPlan] — кнопка
+/// «Стоп» на карточке синхронизации (Опус-ревью телефона 14.09.2026, пункт 7:
+/// раньше начатую порцию было нельзя прервать). Проверяется между треками —
+/// текущий докачивается до конца, следующий уже не начинается.
 class DownloadCancelToken {
   bool _cancelled = false;
   void cancel() => _cancelled = true;
   bool get isCancelled => _cancelled;
+}
+
+/// Что ждёт телефон по плану с компьютера: сколько песен скачать (и сколько
+/// это весит) и сколько стереть. Считается только по тому, что ещё не сделано
+/// на этом телефоне.
+class PlanPreview {
+  const PlanPreview({this.addCount = 0, this.addBytes = 0, this.removeCount = 0});
+
+  static const empty = PlanPreview();
+
+  final int addCount;
+  final int addBytes;
+  final int removeCount;
+
+  bool get isEmpty => addCount == 0 && removeCount == 0;
+
+  /// Отпечаток предложения — чтобы одно и то же не объявлять по кругу.
+  String get signature => '$addCount/$addBytes/$removeCount';
 }
 
 /// Скачивание треков с сервера в память телефона и учёт скачанного —
@@ -76,7 +94,16 @@ class DownloadsRepo {
   Future<int> download(Map<String, dynamic> track) async {
     final id = '${track['id']}';
     final path = await localPath(id);
-    await _api.downloadTrack(id, path);
+    try {
+      await _api.downloadTrack(id, path);
+    } catch (_) {
+      // Оборвалось посреди файла — недокачанный обрубок не оставляем.
+      try {
+        final f = File(path);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+      rethrow;
+    }
     final size = await File(path).length();
 
     // Обложка — необязательно: нет ссылки или сайт с картинкой не ответил —
@@ -330,95 +357,110 @@ class DownloadsRepo {
   /// Поиск по каталогу сервера (что уже скачано на домашний компьютер).
   Future<List<Map<String, dynamic>>> searchCatalog(String q) => _api.searchCatalog(q);
 
-  /// «Докачать ещё»: спрашивает сервер, что из библиотеки ещё не скачано
-  /// (избранное — вперёд), и качает порцию по budgetBytes (по умолчанию
-  /// 20 ГБ). onProgress зовётся после каждого трека: (сколько скачано,
-  /// сколько всего в порции, название текущего). Останавливаем скачивание
-  /// без сети или другой ошибки — то, что успело, уже в «Моей музыке».
-  Future<({int downloaded, int bytes, int failed})> downloadMore({
-    int budgetBytes = 10 * 1024 * 1024 * 1024,
-    void Function(int done, int total, String title)? onProgress,
-    DownloadCancelToken? cancelToken,
-  }) async {
-    final excludeIds = (await _db.allDownloaded()).map((t) => t.id).toList();
-    final batch = await _api.nextLibraryBatch(excludeIds: excludeIds, budgetBytes: budgetBytes);
-    final total = batch.tracks.length;
-    // id телефона — чтобы слать прогресс на сервер (окно «Устройства» на
-    // компьютере). Нет SyncRepo — просто не шлём, скачивание идёт как раньше.
+  /// Что ждёт этот телефон по плану с компьютера — только смотрим, ничего не
+  /// качаем и не стираем (Alex TG 20167: «не автоматически, а с вопросом»).
+  /// Считаем лишь то, что реально надо сделать здесь: уже скачанное и уже
+  /// стёртое в счёт не идёт. Если по плану на этом телефоне делать нечего —
+  /// план тихо закрывается, чтобы не висел. Нет связи — бросит исключение.
+  Future<PlanPreview> previewPlan() async {
     final devId = await _sync?.deviceId();
-    var done = 0;
-    var bytes = 0;
-    var failed = 0;
-    for (final track in batch.tracks) {
-      // Кнопка «Стоп» (пункт 7) — проверяем между треками: текущий уже
-      // докачан, следующий не начинаем. Недокачанное подберётся в другой
-      // раз (id уже скачанных остаётся в excludeIds).
-      if (cancelToken?.isCancelled ?? false) break;
-      final label = '${track['artist'] ?? ''} — ${track['title'] ?? ''}';
-      onProgress?.call(done, total, label);
-      if (devId != null) {
-        await _api.syncProgress(
-            deviceId: devId, done: done, total: total, current: label, active: true);
-      }
+    if (devId == null) return PlanPreview.empty;
+    final plan = await _api.deviceSyncPlan(devId);
+    if (plan == null) return PlanPreview.empty;
+    final todo = await _todo(plan.add, plan.remove);
+    if (todo.add.isEmpty && todo.remove.isEmpty) {
       try {
-        bytes += await download(track);
-      } catch (_) {
-        // Один плохой трек (сеть моргнула, файл пропал) не должен рвать
-        // всю порцию — пробуем следующий, недокачанное подберётся в
-        // следующий раз (его id не попадёт в excludeIds).
-        failed++;
-      }
-      done++;
+        await _api.ackSyncPlan(devId);
+      } catch (_) {}
+      return PlanPreview.empty;
     }
-    onProgress?.call(done, total, '');
-    if (devId != null) {
-      await _api.syncProgress(
-          deviceId: devId, done: done, total: total, current: '', active: false);
+    var bytes = 0;
+    for (final t in todo.add) {
+      bytes += (t['size_bytes'] as num?)?.toInt() ?? 0;
     }
-    return (downloaded: done - failed, bytes: bytes, failed: failed);
+    return PlanPreview(
+      addCount: todo.add.length,
+      addBytes: bytes,
+      removeCount: todo.remove.length,
+    );
   }
 
-  /// Выполнить план ручной синхронизации, собранный Alex в окне на компе
-  /// (кнопка «Синхронизировать» → галочки → «Далее», Alex TG 19000, 19002).
-  /// Телефон только исполняет: качает отмеченное к добавлению, стирает
-  /// отмеченное к удалению (локально, без события), потом отчитывается —
-  /// сервер удаляет план. Плана нет — тихо выходим (0/0/0). Нет связи —
-  /// бросит исключение вызывающему (AutoSync его глотает, подхватим позже).
-  /// onProgress зовётся как в [downloadMore]: (сделано, всего, что сейчас).
-  Future<({int added, int removed, int failed})> applyPendingPlan({
-    void Function(int done, int total, String title)? onProgress,
-  }) async {
-    final devId = await _sync?.deviceId();
-    if (devId == null) return (added: 0, removed: 0, failed: 0);
-    final plan = await _api.deviceSyncPlan(devId);
-    if (plan == null) return (added: 0, removed: 0, failed: 0);
+  /// Из плана — только то, что на этом телефоне ещё не сделано.
+  Future<({List<Map<String, dynamic>> add, List<String> remove})> _todo(
+    List<Map<String, dynamic>> add,
+    List<String> remove,
+  ) async {
+    final a = <Map<String, dynamic>>[];
+    for (final t in add) {
+      if (!await isDownloaded('${t['id']}')) a.add(t);
+    }
+    final r = <String>[];
+    for (final id in remove) {
+      if (await _db.downloadedById(id) != null) r.add(id);
+    }
+    return (add: a, remove: r);
+  }
 
-    final total = plan.add.length + plan.remove.length;
+  /// Выполнить план с компьютера (Alex TG 19000, 19002: выбор делает комп —
+  /// кнопка в меню окна или «Синхронизировать» с галочками; телефон только
+  /// исполняет). С 20.09.2026 — только по нажатию на телефоне («Скачать» /
+  /// «Стереть»), а не само раз в 3 минуты: [adds] — качать отмеченное,
+  /// [removes] — стирать отмеченное (локально, без события: убрать трек
+  /// решил компьютер). [cancelToken] — кнопка «Стоп»: текущая песня
+  /// докачивается, следующая не начинается.
+  ///
+  /// План закрывается на сервере, ТОЛЬКО когда по нему на этом телефоне
+  /// больше нечего делать. Обрыв связи, «Стоп», не скачавшаяся песня — план
+  /// остаётся, недоделанное предложится снова (раньше подтверждение слалось
+  /// даже при ошибках, и недокачанные песни терялись; ревизия 20.09, п. 1в).
+  /// Нет связи с сервером в самом начале — бросит исключение.
+  Future<({int added, int removed, int failed, bool stopped})> applyPendingPlan({
+    void Function(int done, int total, String title)? onProgress,
+    DownloadCancelToken? cancelToken,
+    bool adds = true,
+    bool removes = true,
+  }) async {
+    const nothing = (added: 0, removed: 0, failed: 0, stopped: false);
+    final devId = await _sync?.deviceId();
+    if (devId == null) return nothing;
+    final plan = await _api.deviceSyncPlan(devId);
+    if (plan == null) return nothing;
+
+    final todo = await _todo(plan.add, plan.remove);
+    final addList = adds ? todo.add : const <Map<String, dynamic>>[];
+    final removeList = removes ? todo.remove : const <String>[];
+    final total = addList.length + removeList.length;
     var done = 0;
     var added = 0;
     var removed = 0;
     var failed = 0;
+    var stopped = false;
 
-    for (final track in plan.add) {
+    for (final track in addList) {
+      if (cancelToken?.isCancelled ?? false) {
+        stopped = true;
+        break;
+      }
       final label = '${track['artist'] ?? ''} — ${track['title'] ?? ''}';
       onProgress?.call(done, total, label);
       await _api.syncProgress(
           deviceId: devId, done: done, total: total, current: label, active: true);
       try {
-        final id = '${track['id']}';
-        if (!await isDownloaded(id)) {
-          await download(track);
-          added++;
-        }
+        await download(track);
+        added++;
       } catch (_) {
-        // Один плохой трек не рвёт весь план — недокачанное останется в
-        // плане до ack и подберётся в следующий заход.
+        // Одна плохая песня не рвёт весь план — она останется в плане и
+        // предложится снова.
         failed++;
       }
       done++;
     }
 
-    for (final id in plan.remove) {
+    for (final id in removeList) {
+      if (cancelToken?.isCancelled ?? false) {
+        stopped = true;
+        break;
+      }
       onProgress?.call(done, total, '');
       try {
         await _deleteLocalOnly(id);
@@ -433,13 +475,13 @@ class DownloadsRepo {
     await _api.syncProgress(
         deviceId: devId, done: done, total: total, current: '', active: false);
 
-    // Отчитались — сервер уберёт план. Не вышло (сеть моргнула) — план
-    // останется, подхватим позже; уже скачанное пропускается (isDownloaded).
+    // Закрываем план, только если на этом телефоне по нему всё сделано.
     try {
-      await _api.ackSyncPlan(devId);
+      final left = await _todo(plan.add, plan.remove);
+      if (left.add.isEmpty && left.remove.isEmpty) await _api.ackSyncPlan(devId);
     } catch (_) {}
 
-    return (added: added, removed: removed, failed: failed);
+    return (added: added, removed: removed, failed: failed, stopped: stopped);
   }
 
   /// Файл трека пропал с диска, а запись о нём в базе — цела (см.

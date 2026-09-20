@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/crash_log.dart';
+import '../../core/net_hint.dart';
+import '../../core/notice.dart';
 import '../../core/theme.dart';
 import '../../core/update_check.dart';
 import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
-import '../library/library_screen.dart';
+import '../sync/sync_offer_card.dart';
 import '../settings/settings_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
@@ -23,18 +25,11 @@ class ProfileScreen extends StatelessWidget {
       body: ListView(
         children: [
           const _CrashCard(),
-          _Row(
-            icon: Icons.download_outlined,
-            title: 'Скачать музыку',
-            subtitle: 'докачать музыку с сервера',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const LibraryScreen()),
-            ),
-          ),
+          const SyncOfferCard(showIdle: true),
           _Row(
             icon: Icons.dns_outlined,
             title: 'Сервер',
-            subtitle: 'состояние, синхронизация, устройства, события',
+            subtitle: 'связь с компьютером, полный сброс',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
             ),
@@ -77,7 +72,6 @@ class _CrashCardState extends ConsumerState<_CrashCard> {
   Future<void> _open() async {
     final text = _text;
     if (text == null) return;
-    final messenger = ScaffoldMessenger.of(context);
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -91,11 +85,9 @@ class _CrashCardState extends ConsumerState<_CrashCard> {
                 await ref
                     .read(apiProvider)
                     .reportCrash(await ref.read(syncProvider).deviceId(), text);
-                messenger.showSnackBar(
-                    const SnackBar(content: Text('Отправлено на компьютер')));
+                Notice.show('Отправлено на компьютер', kind: NoticeKind.done);
               } catch (_) {
-                messenger.showSnackBar(
-                    const SnackBar(content: Text('Компьютер сейчас недоступен')));
+                showServerUnreachable(lead: 'Компьютер сейчас недоступен');
               }
             },
             child: const Text('Отправить на компьютер'),
@@ -196,15 +188,11 @@ class _UpdateRowState extends State<_UpdateRow> {
     final u = _available;
     if (u == null || _busy) return;
     setState(() => _busy = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await downloadAndInstallUpdate(u.apkUrl);
     } catch (_) {
-      if (mounted) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Не получилось скачать обновление')),
-        );
-      }
+      Notice.show('Не получилось скачать обновление',
+          subtitle: 'Проверь интернет и нажми ещё раз', kind: NoticeKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -223,7 +211,7 @@ class _UpdateRowState extends State<_UpdateRow> {
     }
     return _Row(
       icon: Icons.system_update_outlined,
-      title: _busy ? 'Скачивание…' : 'Доступно обновление v${u.version}',
+      title: _busy ? 'Скачивание…' : 'Доступно обновление v${u.versionCode}',
       subtitle: u.changelog.isEmpty ? 'нажми, чтобы поставить' : u.changelog,
       onTap: _busy ? null : _install,
     );

@@ -8,6 +8,7 @@ import 'package:soundflow/app/providers.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
 import 'package:soundflow/data/downloads_repo.dart';
+import 'package:soundflow/data/sync_offer.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/features/player/player_view.dart';
@@ -110,6 +111,7 @@ Future<Widget> _app({
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(player ?? PlayerController()),
       syncProvider.overrideWithValue(sync),
+      syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
     ],
     child: const SoundFlowApp(),
   );
@@ -118,26 +120,14 @@ Future<Widget> _app({
 void main() {
   setUpAll(sqfliteFfiInit);
 
-  testWidgets('Поток без скачанного — подсказка скачать музыку', (tester) async {
+  // Кнопки «Скачать музыку» больше нет (Alex TG 20158, 20167): что качать,
+  // решает компьютер, телефон только предлагает — карточка и плашка.
+  testWidgets('Поток без скачанного — подсказка, без кнопки «Скачать музыку»', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     expect(find.text('В Потоке пока пусто'), findsOneWidget);
-    expect(find.text('Скачать музыку'), findsOneWidget);
-  });
-
-  // Раньше кнопка вела на вкладку «Моя музыка», которая сама по себе тоже
-  // пустая и отправляла в несуществующую «Библиотеку» — тупик (Опус-ревью
-  // телефона 14.09.2026, пункт 3). Теперь ведёт прямо на настоящий экран
-  // скачивания.
-  testWidgets('кнопка из пустого Потока ведёт прямо на экран скачивания', (tester) async {
-    await tester.pumpWidget(await _app());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Скачать музыку'));
-    await tester.pumpAndSettle();
-
-    expect(find.widgetWithText(AppBar, 'Скачать музыку'), findsOneWidget);
+    expect(find.text('Скачать музыку'), findsNothing);
   });
 
   testWidgets(

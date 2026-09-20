@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/net_hint.dart';
+import '../../core/notice.dart';
 import '../../core/theme.dart';
 
 /// «Сервер» — упрощено до того, что реально нужно Alex на ЭТОМ экране
@@ -28,7 +29,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
   int? _pending;
   DateTime? _lastSync;
-  bool _syncBusy = false;
 
   @override
   void didChangeDependencies() {
@@ -64,36 +64,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _reachable = false;
         _loading = false;
       });
-    }
-  }
-
-  Future<void> _syncNow() async {
-    final downloads = ref.read(downloadsProvider);
-    final sync = ref.read(syncProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _syncBusy = true);
-    try {
-      final bytes = (await downloads.summary()).bytes;
-      final r = await sync.sync(musicBytes: bytes);
-      // Кнопка должна делать ПОЛНЫЙ обмен: отдать события И забрать/выполнить
-      // план, который собрали в окне на компе (Alex 08.09.2026 — жал
-      // «Синхронизировать сейчас», а план не подхватывался, качалось только
-      // по таймеру раз в 3 мин).
-      final plan = await downloads.applyPendingPlan();
-      final parts = <String>[
-        if (r.sent > 0) 'отправлено ${r.sent}',
-        if (plan.added > 0) 'скачано ${plan.added}',
-        if (plan.removed > 0) 'убрано ${plan.removed}',
-        if (plan.failed > 0) 'не вышло ${plan.failed}',
-      ];
-      messenger.showSnackBar(SnackBar(
-        content: Text(parts.isEmpty ? 'Всё уже синхронизировано' : parts.join(', ')),
-      ));
-    } catch (_) {
-      if (mounted) showServerUnreachableSnackBar(context, messenger);
-    } finally {
-      if (mounted) setState(() => _syncBusy = false);
-      await _load();
     }
   }
 
@@ -162,21 +132,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           const SizedBox(height: 4),
           Text('Последняя синхронизация: ${fmt(_lastSync)}',
               style: const TextStyle(color: Afisha.inkDim)),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: (_syncBusy || pending == null) ? null : _syncNow,
-            child: _syncBusy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Синхронизировать сейчас'),
-          ),
           const SizedBox(height: 8),
           const Text(
             'Лайки, удаления и что слушал копятся на телефоне и работают без '
-            'сети. Уходят на сервер сами, как появляется связь. Кнопка — если '
-            'нужно прямо сейчас.',
+            'сети. Уходят на компьютер сами, как только появляется связь.',
             style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 12.5),
           ),
         ],
@@ -190,7 +149,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       children: [
         _section('Связь с компьютером'),
         _connectivityRow(),
-        _section('Синхронизация'),
+        _section('Что уходит на компьютер'),
         _syncBlock(),
         _section('Опасно'),
         _resetBlock(),
@@ -253,13 +212,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     );
     if (ok != true || !mounted) return;
     final downloads = ref.read(downloadsProvider);
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _resetBusy = true);
     try {
       await downloads.fullReset();
-      messenger.showSnackBar(const SnackBar(content: Text('Готово — телефон как новый')));
+      Notice.show('Готово', subtitle: 'Телефон как новый', kind: NoticeKind.done);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не вышло: $e')));
+      Notice.show('Не вышло', subtitle: '$e', kind: NoticeKind.error);
     } finally {
       if (mounted) setState(() => _resetBusy = false);
       await _load();

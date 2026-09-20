@@ -11,6 +11,7 @@ import '../../app/providers.dart';
 import '../../core/app_log.dart';
 import '../../core/config.dart';
 import '../../core/local_taste.dart';
+import '../../core/notice.dart';
 import '../../core/removal_reasons.dart';
 import '../../data/db.dart';
 import '../../core/cover_thumb.dart';
@@ -76,9 +77,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 
   bool _showHelp = false;
 
-  String? _toastText;
-  Timer? _toastTimer;
-
   @override
   void initState() {
     super.initState();
@@ -107,7 +105,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 
   @override
   void dispose() {
-    _toastTimer?.cancel();
     _controller?.now.removeListener(_onNow);
     _bg.dispose();
     _heart.dispose();
@@ -179,15 +176,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     if (v) _heart.forward(from: 0);
   }
 
-  void _swipeNext() {
-    _toast('Дальше');
-    _p.next();
-  }
+  // «Дальше» / «Назад» плашкой не подписываем: смену песни и так видно по
+  // обложке и названию, а плашка на каждый свайп только мельтешила.
+  void _swipeNext() => _p.next();
 
-  void _swipePrev() {
-    _toast('Назад');
-    _p.prev();
-  }
+  void _swipePrev() => _p.prev();
 
   /// Спросить причину (список общий с «Моей музыкой», core/removal_reasons.dart)
   /// и убрать трек с телефона (и с сервера — обычным синком). Раньше рядом
@@ -201,7 +194,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     await ref.read(downloadsProvider).delete(now.id, reason: reason);
     if (!mounted) return;
     await _p.next();
-    _toast('Убрал с телефона');
+    Notice.show('Убрал с телефона',
+        subtitle: '${now.artist} — ${now.title}', kind: NoticeKind.removed);
   }
 
   /// Радио «по этой песне». Всё считает ТЕЛЕФОН по уже лежащим на нём
@@ -219,7 +213,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   Future<void> _radio(NowPlaying now) async {
     if (_p.radio.value) {
       await _p.stopRadio();
-      _toast('Радио выключил');
+      Notice.show('Радио выключил');
       return;
     }
     final hidden = await ref.read(dbProvider).hiddenArtists();
@@ -243,7 +237,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       if (!mounted) return;
       if (tail == null) {
         unawaited(AppLog.event('radio_no_fingerprint', {'elapsed_ms': sw.elapsedMilliseconds}));
-        _toast('У этой песни нет звукового отпечатка на телефоне — похожее не подобрать');
+        Notice.show('Похожее не подобрать',
+            subtitle: 'У этой песни нет звукового отпечатка на телефоне',
+            kind: NoticeKind.warn);
         unawaited(ref.read(downloadsProvider).backfillVectors());
         return;
       }
@@ -252,11 +248,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         'picked': tail.length,
       }));
       await _p.setSimilarTail(tail);
-      _toast('Дальше — похожее по звуку');
+      Notice.show('Дальше — похожее по звуку');
       unawaited(_offlineRadioTopUp(sw));
     } catch (_) {
       unawaited(AppLog.event('radio_error', {'elapsed_ms': sw.elapsedMilliseconds}));
-      _toast('Радио не собралось');
+      Notice.show('Радио не собралось', kind: NoticeKind.warn);
     }
   }
 
@@ -392,16 +388,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     }));
   }
 
-  // ── подсказки/сообщения ───────────────────────────────────────────────
-  void _toast(String text) {
-    if (!mounted) return;
-    setState(() => _toastText = text);
-    _toastTimer?.cancel();
-    _toastTimer = Timer(const Duration(milliseconds: 1700), () {
-      if (mounted) setState(() => _toastText = null);
-    });
-  }
-
   // ── сборка ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -458,7 +444,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 ),
               ),
               _heartPop(),
-              _toastPlashka(),
               if (_showHelp) _HelpOverlay(onClose: () => setState(() => _showHelp = false)),
             ],
           ),
@@ -709,35 +694,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 ),
               );
             },
-          ),
-        ),
-      );
-
-  Widget _toastPlashka() => SafeArea(
-        child: IgnorePointer(
-          child: Align(
-            alignment: const Alignment(0, -0.72),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: _toastText == null
-                  ? const SizedBox.shrink()
-                  : Container(
-                      key: ValueKey(_toastText),
-                      margin: const EdgeInsets.symmetric(horizontal: 32),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.82),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12)),
-                      ),
-                      child: Text(_toastText!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 13)),
-                    ),
-            ),
           ),
         ),
       );
