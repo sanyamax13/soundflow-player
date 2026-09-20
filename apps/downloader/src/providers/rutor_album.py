@@ -266,6 +266,7 @@ def _add_torrent_paused(qbt: qbittorrentapi.Client, torrent_bytes: bytes) -> Non
         save_path=str(config.albums_dir),
         category=QBT_CATEGORY,
         is_paused=True,
+        use_auto_tmm=False,
     )
 
 

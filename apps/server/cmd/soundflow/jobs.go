@@ -152,6 +152,11 @@ var audioExt = map[string]string{
 // остались бы).
 func skipScanDir(name string) bool { return strings.EqualFold(name, "_deleted") }
 
+// scanFreshFor — файл, изменённый позже этого срока назад, скан пропускает: он ещё пишется (торрент качает
+// альбом прямо в папку с музыкой, файл копируют), и недокачанное попало бы в каталог обрезком. Такой файл
+// подхватит следующий скан (по таймеру, при возврате в окно, после торрент-скачивания — rescanSoon).
+var scanFreshFor = 3 * time.Minute
+
 func (jr *JobRunner) StartScan(dir string) string {
 	j, ctx, ok := jr.begin("scan", "Скан папки "+dir)
 	if !ok {
@@ -189,6 +194,9 @@ func (jr *JobRunner) StartScan(dir string) string {
 				skipped++
 				j.Done++
 				return nil // этот файл уже в каталоге — теги не читаем, второй раз не добавляем
+			}
+			if fi, err := d.Info(); err == nil && time.Since(fi.ModTime()) < scanFreshFor {
+				return nil // ещё пишется — заберём на следующем скане
 			}
 			if cuePath, cue, ok := cuesplit.FindFor(path); ok {
 				n, f := splitByCue(s, path, cuePath, cue)

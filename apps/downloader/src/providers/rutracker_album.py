@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from urllib.parse import quote
@@ -37,7 +38,10 @@ from ._fsutil import _file_matches, normalize_key
 
 log = logging.getLogger(__name__)
 
-QBT_CATEGORY = "soundflow-prefetch"
+# 21.09.2026: категория для торрент-альбомов, что качает программа. Прежняя soundflow-prefetch остаётся
+# как есть (там лежат старые альбомы, на которые ссылается каталог): смена пути ЕЁ категории заставила бы
+# qBittorrent перенести торренты в авто-режиме. Путь новой — папка альбомов на диске G.
+QBT_CATEGORY = "soundflow-albums"
 DOWNLOAD_TIMEOUT_SEC = 240  # базовый срок. Малосидируемые альбомы качаются медленно — было 120, не хватало
 # 20.09.2026: альбом 128 МБ на 2 сидерах шёл живо (58% за 3 мин) и был убит на 240 с вместе с недокачанными
 # файлами. Теперь после базового срока ждём дальше, ПОКА байты прибывают, но не дольше DOWNLOAD_MAX_SEC и не
@@ -450,6 +454,28 @@ def _wait_torrent_complete(qbt: qbittorrentapi.Client, info_hash: str) -> dict[s
         info_hash, int(time.time() - start_time), max(last_bytes, 0), int(time.time() - last_growth),
     )
     return None
+
+
+def discard_album(album_dir: str) -> None:
+    """Убрать из qBittorrent торрент альбома, который не подошёл (не та длина и т. п.), вместе с файлами.
+
+    21.09.2026: торренты теперь пишутся в папку с музыкой, а её сканирует программа — не подошедший
+    альбом остался бы на диске и его песни попали бы в каталог. Трогает только торренты НАШЕЙ категории
+    и только тот, чьё содержимое лежит ровно в этой папке; саму папку альбомов (albums_dir) — никогда."""
+    if not album_dir:
+        return
+    want = os.path.normcase(os.path.normpath(str(album_dir)))
+    if want == os.path.normcase(os.path.normpath(str(config.albums_dir))):
+        return  # альбом «в корне» папки альбомов — по папке не отличить от чужих, не трогаем
+    try:
+        qbt = _qbt_client()
+        for t in qbt.torrents.info(category=QBT_CATEGORY):
+            cp = os.path.normcase(os.path.normpath(str(t.get("content_path") or "")))
+            if cp and cp == want:
+                qbt.torrents.delete(torrent_hashes=t["hash"], delete_files=True)
+                log.info("torrent %s: альбом не подошёл, удалён вместе с файлами (%s)", t["hash"], album_dir)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("не смог убрать не подошедший альбом %s: %s", album_dir, exc)
 
 
 def _wait_torrent_metadata(qbt: qbittorrentapi.Client, info_hash: str) -> list[dict[str, Any]] | None:

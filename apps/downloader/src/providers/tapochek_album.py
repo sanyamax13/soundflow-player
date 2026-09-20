@@ -271,6 +271,7 @@ def _do_find_and_download(
                 save_path=str(config.albums_dir),
                 category=QBT_CATEGORY,
                 is_paused=True,
+                use_auto_tmm=False,
             )
         except qbittorrentapi.Conflict409Error:
             log.info("tapochek_album: torrent уже есть в qBittorrent, скип")

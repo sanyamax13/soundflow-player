@@ -116,6 +116,9 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 			s.jobs.finishAmbient(aj, note)
 			_ = s.db.AddServerLog("added", artist, title, "скачано ("+res.Source+")", 0)
 			s.onTrackAdded(res.TrackID)
+			if strings.HasSuffix(res.Source, "_album") {
+				s.rescanSoon() // остальные песни скачанного альбома лежат рядом — скан заберёт их, когда файлы «остынут»
+			}
 			// Отпечаток — фоном, не держим ответ. Нет движка/ffmpeg — трек
 			// просто не попадёт в умное радио, не ошибка.
 			go func(id string) {

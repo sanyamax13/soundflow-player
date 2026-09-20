@@ -353,3 +353,18 @@ func (s *Service) relinkMoved(key, newPath string) bool {
 	}
 	return s.db.RelinkFile(id, newPath, fi.Size()) == nil
 }
+
+// rescanSoon — через scanFreshFor и чуть больше просканировать папку-источник: только что скачанный торрент-альбом
+// ещё «горячий» (скан такие файлы пропускает), а его песни должны попасть в каталог сами.
+func (s *Service) rescanSoon() {
+	time.AfterFunc(scanFreshFor+15*time.Second, func() {
+		if s.db == nil || s.jobs == nil {
+			return
+		}
+		if dir, _, _ := s.db.GetSetting(settingWatchDir); dir != "" {
+			if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+				s.jobs.StartScan(dir)
+			}
+		}
+	})
+}

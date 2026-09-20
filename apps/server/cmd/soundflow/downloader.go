@@ -52,6 +52,17 @@ func trackCacheDir() string {
 	return `G:\Музыка\Яндекс`
 }
 
+// albumsDir — куда qBittorrent кладёт скачанные торрент-альбомы. С 21.09.2026 — диск G, в папку с музыкой
+// (Alex TG 20226/20228: «не на диск Е, а на диск G/музыка»; раньше — E:\soundflow-data\music). Отдельная
+// подпапка «Торренты», а не корень: корень остаётся для собранной коллекции, а качалка вправе стирать
+// проигравшие раздачи только внутри своей папки (как и с «Яндекс»).
+func albumsDir() string {
+	if v := os.Getenv("SOUNDFLOW_ALBUMS_DIR"); v != "" {
+		return v
+	}
+	return `G:\Музыка\Торренты`
+}
+
 // findDownloaderDir — где лежит качалка. env SOUNDFLOW_DOWNLOADER → рядом с exe
 // (downloader/) → apps/downloader от рабочей папки (dev). "" — не нашли.
 func findDownloaderDir() string {
@@ -217,6 +228,9 @@ func (d *downloaderProc) startOnce() error {
 		// места мало). Дефолт — под переопределение своим SOUNDFLOW_TRACK_
 		// CACHE_DIR, если у кого-то G: не диск с музыкой.
 		"TRACK_CACHE_DIR=" + trackCacheDir(),
+		// торрент-альбомы: и место закачки qBittorrent, и путь в ответах качалки (CANONICAL_ALBUMS_DIR
+		// не задаём — тогда пути не переписываются, как и должно быть на этом компьютере)
+		"ALBUMS_DIR=" + albumsDir(),
 	)
 	// Лог качалки — рядом с ней, перезаписываем при старте. Нужен, когда
 	// что-то не качается: окно консоли скрыто, иначе диагностики нет.
