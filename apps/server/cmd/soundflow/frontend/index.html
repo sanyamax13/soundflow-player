@@ -197,12 +197,12 @@
   #syncBody details.sgrp>summary{cursor:pointer; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
   #syncBody .sfilter{width:100%; height:30px; margin-bottom:6px; border:1px solid var(--line); border-radius:7px; padding:0 9px; font:inherit; font-size:12px; background:var(--field)}
   /* окно «убрано на телефоне» (Alex TG 19943/19948) */
-  #rmBody .rnote, #msBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin-bottom:10px}
-  #rmBody .rlist, #msBody .rlist{max-height:44vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
-  #rmBody .rrow, #msBody .rrow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
-  #rmBody .rrow:last-child, #msBody .rrow:last-child{border-bottom:0}
-  #rmBody .rrow .rt, #msBody .rrow .rt{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  #rmBody .rrow .rm, #msBody .rrow .rm{color:var(--mut); white-space:nowrap; font-size:11px}
+  #rmBody .rnote, #msBody .rnote, #bfBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin-bottom:10px}
+  #rmBody .rlist, #msBody .rlist, #bfBody .rlist{max-height:44vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
+  #rmBody .rrow, #msBody .rrow, #bfBody .rrow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
+  #rmBody .rrow:last-child, #msBody .rrow:last-child, #bfBody .rrow:last-child{border-bottom:0}
+  #rmBody .rrow .rt, #msBody .rrow .rt, #bfBody .rrow .rt{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #rmBody .rrow .rm, #msBody .rrow .rm, #bfBody .rrow .rm{color:var(--mut); white-space:nowrap; font-size:11px}
   #rmBody .rrow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--field); color:var(--mut); white-space:nowrap}
   /* телефон в программе: плитки по исполнителям */
   .dtiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
@@ -301,6 +301,7 @@
     <div class="pill busy" id="jobPill" hidden title="Открыть Каталог"><span class="dot"></span><span id="jobPillTxt"></span></div>
     <div class="pill busy" id="rmPill" hidden title="Показать список убранного на телефоне"><span class="dot"></span><span id="rmPillTxt"></span></div>
     <div class="pill busy" id="msPill" hidden title="Файлы этих песен пропали с диска — убрать записи из каталога?"><span class="dot"></span><span id="msPillTxt"></span></div>
+    <div class="pill busy" id="bfPill" hidden title="У этих песен стоит «больше не качать», а файлы лежат на диске — стереть?"><span class="dot"></span><span id="bfPillTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -417,6 +418,22 @@
           <div class="modal-foot">
             <span id="msSummary" class="muted"></span>
             <button class="btn danger" id="msConfirm">Убрать из каталога</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Окно «не качать, а файл лежит на диске» (Alex TG 20245/20249, 21.09.2026): песни с меткой «больше не качать»,
+           чьи файлы остались в папках-сборниках. Стирает насовсем ТОЛЬКО по кнопке; метка остаётся. -->
+      <div id="bfModal" class="modal" hidden>
+        <div class="modal-card">
+          <div class="modal-head">
+            <b>Песни из «не качать» на диске</b>
+            <button class="x" id="bfClose" title="Позже">✕</button>
+          </div>
+          <div id="bfBody" class="modal-body"></div>
+          <div class="modal-foot">
+            <span id="bfSummary" class="muted"></span>
+            <button class="btn danger" id="bfConfirm">Стереть с компьютера навсегда</button>
           </div>
         </div>
       </div>
@@ -2346,11 +2363,61 @@ $("#msConfirm").onclick = async () => {
   checkMissing();
 };
 
+/* ---------- «не качать», а файл лежит на диске (Alex TG 20245/20249) ---------- */
+let _bf = null, _bfBusy = false, _bfLast = 0;
+function renderBlocked(){
+  const d = _bf; if(!d) return;
+  $("#bfBody").innerHTML =
+    `<div class="rnote">У ${nfmt(d.songs)} песен стоит метка «больше не качать», но их файлы лежат на диске (около ${gb(d.bytes)}) — `+
+    `в основном в папках-сборниках. Стереть эти файлы с компьютера насовсем? Вернуть их будет нельзя. `+
+    `Из каталога и с плана телефона песни уйдут, метка «не качать» останется — программа больше не будет их предлагать и скачивать. `+
+    `Перед стиранием программа сама сохранит копию базы (каталог и метки).</div>`+
+    `<div class="rlist">`+ d.folders.map(f =>
+      `<div class="rrow"><span class="rt">${esc(f.folder)}</span><span class="rm">${nfmt(f.songs)}</span></div>`).join("")+`</div>`;
+  $("#bfSummary").textContent = "Песен: "+nfmt(d.songs);
+  $("#bfConfirm").disabled = _bfBusy;
+}
+async function checkBlocked(){
+  if(_bfBusy || Date.now() - _bfLast < 60000) return;
+  _bfLast = Date.now();
+  let d;
+  try{ d = await jget("/api/catalog/blocked-files"); }catch(e){ return; }
+  _bf = d;
+  $("#bfPill").hidden = !d.songs;
+  if(d.songs) $("#bfPillTxt").textContent = "«не качать», а файлы на диске: "+nfmt(d.songs)+" песен — стереть";
+  if(!$("#bfModal").hidden){                       // окно уже открыто: обновить или закрыть, если таких песен не осталось
+    if(!d.songs) $("#bfModal").hidden = true; else renderBlocked();
+  }
+}
+$("#bfClose").onclick = () => { $("#bfModal").hidden = true; };
+$("#bfPill").onclick = () => { if(_bf && _bf.songs){ renderBlocked(); $("#bfModal").hidden = false; } };
+$("#bfConfirm").onclick = async () => {
+  if(_bfBusy || !_bf || !_bf.songs) return;
+  if(!confirm("Стереть с компьютера файлы "+nfmt(_bf.songs)+" песен насовсем? Вернуть их будет нельзя.")) return;
+  _bfBusy = true; renderBlocked();
+  $("#bfConfirm").textContent = "стираю…";
+  let msg = "";
+  try{
+    const r = await fetch("/api/catalog/blocked-files/erase", {method:"POST"});
+    if(!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    msg = "Стёрто песен: "+nfmt(d.deleted)+", файлов: "+nfmt(d.files_erased)+(d.copies ? ", копий: "+nfmt(d.copies) : "")+
+      (d.failed ? ". Не удалось: "+nfmt(d.failed)+" — они остались" : "")+(d.backup ? ". Копия базы перед стиранием: "+d.backup : "");
+  }catch(e){ msg = "Не получилось стереть: "+(e.message||e); }
+  _bfBusy = false;
+  $("#bfConfirm").textContent = "Стереть с компьютера навсегда";
+  $("#bfModal").hidden = true; _bfLast = 0;
+  alert(msg);
+  loadCatalog();
+  checkBlocked();
+};
+
 /* ---------- обновление ---------- */
 function tick(){
   loadInfo();
   checkRemovals();
   checkMissing();
+  checkBlocked();
   loadJobs(); // и для «Отменить пересчёт» в шапке каталога, не только вкладки «Задачи»
   const on = id => $("#v-"+id).classList.contains("on");
   if(on("find")){ if($("#fm-torrent").hidden) loadAcqLog(); else loadTorLog(); }

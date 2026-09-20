@@ -236,6 +236,13 @@ func (s *Service) hDeleteForever(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteResult, error) {
+	return s.deleteForeverWith(ctx, rawIDs, true)
+}
+
+// deleteForeverWith — то же с выбором: withCopies=false не трогает копии песни в других папках (массовое
+// стирание «не качать», blockedfiles.go: Alex видит в списке только основные файлы, чужие копии молча не стираем —
+// если копия есть, скан её заново занесёт, и плашка покажет её отдельно).
+func (s *Service) deleteForeverWith(ctx context.Context, rawIDs []string, withCopies bool) (deleteResult, error) {
 	var res deleteResult
 	seen := map[string]bool{}
 	ids := make([]string, 0, len(rawIDs))
@@ -253,7 +260,10 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 		res.Backup = p
 	}
 	stopAt := s.libraryRoots()
-	copies := s.findCopyFiles(ctx, s.copiesWanted(ctx, ids)) // один проход по папке на всю пачку
+	copies := map[string][]string{}
+	if withCopies {
+		copies = s.findCopyFiles(ctx, s.copiesWanted(ctx, ids)) // один проход по папке на всю пачку
+	}
 
 	var removed []string
 	var erasedDirs []string

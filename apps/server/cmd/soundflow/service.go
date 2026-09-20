@@ -224,6 +224,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
 	r.Get("/api/catalog/missing", s.hMissing)
 	r.Post("/api/catalog/missing/clean", localOnly(s.hMissingClean))
+	r.Get("/api/catalog/blocked-files", s.hBlockedFiles)
+	r.Post("/api/catalog/blocked-files/erase", localOnly(s.hBlockedFilesErase))
 	r.Post("/api/tracks/copies", localOnly(s.hTrackCopies))
 	r.Post("/api/reveal", localOnly(s.hReveal))
 	r.Post("/api/open-folder", localOnly(s.hOpenFolder))

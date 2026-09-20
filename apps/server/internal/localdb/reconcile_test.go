@@ -110,3 +110,38 @@ func TestRemoveFileRecordsEmptyIsNoop(t *testing.T) {
 		t.Error("пустой вызов что-то убрал")
 	}
 }
+
+// Песни из «не качать» с файлами: отдаются только они (и только принятые файлы); песня без метки и «избранное» — нет.
+func TestBlockedTrackFiles(t *testing.T) {
+	d := reconcileDB(t)
+	addOne(t, d, "a") // будет «не качать»
+	addOne(t, d, "b") // без метки
+	addOne(t, d, "c") // «избранное»
+	addOne(t, d, "e") // «не качать», но файл отвергнут
+	key := func(id string) string { return "art " + id + "__title " + id }
+	if _, err := d.ImportBlocked([]BlockedMark{
+		{NormalizedKey: key("a"), Artist: "Art a", Title: "Title a"},
+		{NormalizedKey: key("e"), Artist: "Art e", Title: "Title e"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.sql.Exec(`INSERT INTO legacy_marks (normalized_key,kind,artist,title,marked_at) VALUES (?, 'favorite', 'Art c', 'Title c', '2026-09-20T00:00:00Z')`, key("c")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.sql.Exec(`UPDATE track_files SET rejected = 1 WHERE id = 'f_e'`); err != nil {
+		t.Fatal(err)
+	}
+	// у песни a вторая копия — обе записи отдаются
+	if _, err := d.sql.Exec(`INSERT INTO track_files (id,track_id,normalized_key,file_path,downloaded_at)
+		VALUES ('f_a2','a','a-copy',?, '2026-09-20T00:00:00Z')`, `G:\m\a2.mp3`); err != nil {
+		t.Fatal(err)
+	}
+
+	refs, err := d.BlockedTrackFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 2 || refs[0].TrackID != "a" || refs[1].TrackID != "a" {
+		t.Fatalf("ждали две записи файлов песни a, получили %+v", refs)
+	}
+}
