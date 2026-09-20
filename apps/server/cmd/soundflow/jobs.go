@@ -160,7 +160,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 	go func() {
 		s := jr.svc
 		_ = s.db.AddServerLog("info", "", "", "скан папки: "+dir, 0)
-		var added, skipped, failed int
+		var added, skipped, failed, relinked int
 		compDirs := map[string]string{} // папка → альбом-сборник («» — не сборник)
 		// файлы, уже записанные в каталог под любым именем (см. localdb.KnownFilePaths)
 		known, err := s.db.KnownFilePaths()
@@ -215,6 +215,9 @@ func (jr *JobRunner) StartScan(dir string) string {
 			}
 			key := quality.NormalizedKey(ar, ti)
 			if exists, _ := s.db.TrackExistsByKey(key); exists {
+				if s.relinkMoved(key, path) {
+					relinked++ // песня уже была, её файл пропал с прежнего места, а здесь лежит — запись переехала
+				}
 				skipped++
 				j.Done++
 				return nil
@@ -251,11 +254,15 @@ func (jr *JobRunner) StartScan(dir string) string {
 			return nil
 		})
 		note := fmt.Sprintf("добавлено %d, пропущено %d, ошибок %d", added, skipped, failed)
+		if relinked > 0 {
+			note += fmt.Sprintf(", перенесено %d", relinked)
+		}
 		_ = s.db.AddServerLog("info", "", "", "скан завершён: "+note, 0)
 		jr.finish(note)
 		if added > 0 {
 			s.covers.Kick() // новые песни — сразу проверить обложки (coverkeeper.go)
 		}
+		s.recon.AfterScan() // и заодно сверить каталог с диском: пропавшие файлы убрать (reconcile.go)
 	}()
 	return j.ID
 }

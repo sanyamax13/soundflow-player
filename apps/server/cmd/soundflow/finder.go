@@ -20,6 +20,12 @@ var torrentProviders = []string{"nnmclub", "rutor", "tapochek"}
 // скачивание альбома. Обычных 8 минут клиента на это может не хватить.
 const torrentStageTimeout = 11 * time.Minute
 
+// torrentSlot — торрент-заход идёт по одному. Он держит слот качалки минуты (поиск по трекерам и
+// скачивание альбома), а «скачать все» по волне ставит в очередь сотню песен разом: без очереди десятки
+// торрентов качались бы одновременно, забивая диск и слоты качалки, а быстрые песни из Яндекса стояли
+// бы за ними.
+var torrentSlot = make(chan struct{}, 1)
+
 // localFinder — acquire.Finder для нового сервера. Скачивание (FindAudio),
 // теги (ID3Info) и обложки Яндекса (YandexTrackCover) по-прежнему через
 // Python-сайдкар (тонкий, без torch). А «звуковой отпечаток» — локально,
@@ -45,6 +51,13 @@ func (f *localFinder) FindAudio(ctx context.Context, artist, title string, expec
 	}
 	if len(torrentProviders) == countSkipped(skip, torrentProviders) {
 		return res, nil // торренты вызывающий отключил сам
+	}
+	select {
+	case torrentSlot <- struct{}{}:
+		defer func() { <-torrentSlot }()
+	case <-ctx.Done():
+		log.Printf("торренты для «%s — %s»: не дождалась очереди: %v", artist, title, ctx.Err())
+		return res, nil
 	}
 	start := f.startTorrents
 	if start == nil {

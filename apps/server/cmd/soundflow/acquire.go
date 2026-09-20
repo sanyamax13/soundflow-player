@@ -105,7 +105,8 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 	aj := s.jobs.beginAmbient("acquire", "Скачиваю: "+artist+" — "+title)
 	_ = s.db.AddServerLog("info", artist, title, "поиск и скачивание запущены", 0)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+		// 45 минут, а не 12: торрент-заходы идут по одной очереди (torrentSlot), песня может ждать своей очереди
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 		defer cancel()
 		res, err := svc.Acquire(ctx, acquire.Request{Artist: artist, Title: title})
 		switch {

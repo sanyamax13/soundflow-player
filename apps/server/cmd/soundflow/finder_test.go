@@ -9,7 +9,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"soundflow/server/internal/sidecar"
 )
@@ -210,5 +212,52 @@ func TestQbtLaunchCmdNoSplash(t *testing.T) {
 	want := []string{exe, "--no-splash"}
 	if strings.Join(cmd.Args, "|") != strings.Join(want, "|") {
 		t.Errorf("команда: %v", cmd.Args)
+	}
+}
+
+// Торрент-заходы идут по одному, даже когда «скачать все» ставит в очередь много песен разом.
+func TestFindAudioTorrentStagesRunOneAtATime(t *testing.T) {
+	sc := newFindSidecar(t) // на всё отвечает «не найдено»
+	var cur, peak int32
+	start := func() error {
+		n := atomic.AddInt32(&cur, 1)
+		for {
+			m := atomic.LoadInt32(&peak)
+			if n <= m || atomic.CompareAndSwapInt32(&peak, m, n) {
+				break
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		atomic.AddInt32(&cur, -1)
+		return nil
+	}
+	f := &localFinder{Client: sidecar.New(sc.srv.URL), startTorrents: start}
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = f.FindAudio(context.Background(), "a", "b", 0, nil)
+		}()
+	}
+	wg.Wait()
+	if p := atomic.LoadInt32(&peak); p != 1 {
+		t.Errorf("торрент-заходов одновременно было до %d, ждали 1", p)
+	}
+}
+
+// Не дождалась очереди на торренты до конца срока — для вызывающего «не найдено», qBittorrent не трогаем.
+func TestFindAudioTorrentQueueTimeoutIsNotFound(t *testing.T) {
+	sc := newFindSidecar(t)
+	started := 0
+	f := &localFinder{Client: sidecar.New(sc.srv.URL), startTorrents: func() error { started++; return nil }}
+	torrentSlot <- struct{}{} // слот занят чужим заходом
+	defer func() { <-torrentSlot }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	res, err := f.FindAudio(ctx, "a", "b", 0, nil)
+	if err != nil || res.Found || started != 0 {
+		t.Fatalf("res=%+v err=%v started=%d", res, err, started)
 	}
 }

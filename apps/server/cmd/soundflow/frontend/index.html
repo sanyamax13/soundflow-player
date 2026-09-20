@@ -192,12 +192,12 @@
   #syncBody details.sgrp>summary{cursor:pointer; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
   #syncBody .sfilter{width:100%; height:30px; margin-bottom:6px; border:1px solid var(--line); border-radius:7px; padding:0 9px; font:inherit; font-size:12px; background:var(--field)}
   /* окно «убрано на телефоне» (Alex TG 19943/19948) */
-  #rmBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin-bottom:10px}
-  #rmBody .rlist{max-height:44vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
-  #rmBody .rrow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
-  #rmBody .rrow:last-child{border-bottom:0}
-  #rmBody .rrow .rt{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  #rmBody .rrow .rm{color:var(--mut); white-space:nowrap; font-size:11px}
+  #rmBody .rnote, #msBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin-bottom:10px}
+  #rmBody .rlist, #msBody .rlist{max-height:44vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
+  #rmBody .rrow, #msBody .rrow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
+  #rmBody .rrow:last-child, #msBody .rrow:last-child{border-bottom:0}
+  #rmBody .rrow .rt, #msBody .rrow .rt{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #rmBody .rrow .rm, #msBody .rrow .rm{color:var(--mut); white-space:nowrap; font-size:11px}
   #rmBody .rrow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--field); color:var(--mut); white-space:nowrap}
   /* телефон в программе: плитки по исполнителям */
   .dtiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
@@ -295,6 +295,7 @@
     <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
     <div class="pill busy" id="jobPill" hidden title="Открыть Каталог"><span class="dot"></span><span id="jobPillTxt"></span></div>
     <div class="pill busy" id="rmPill" hidden title="Показать список убранного на телефоне"><span class="dot"></span><span id="rmPillTxt"></span></div>
+    <div class="pill busy" id="msPill" hidden title="Файлы этих песен пропали с диска — убрать записи из каталога?"><span class="dot"></span><span id="msPillTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -395,6 +396,22 @@
           <div class="modal-foot">
             <span id="rmSummary" class="muted"></span>
             <button class="btn danger" id="rmConfirm">Стереть с компьютера навсегда</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Окно «пропали файлы» (Alex TG 20231, 21.09.2026): программа сверяет каталог с диском и мелкое убирает сама,
+           а когда разом пропало много (папки удалили Проводником) — спрашивает здесь. Убирает только строки каталога. -->
+      <div id="msModal" class="modal" hidden>
+        <div class="modal-card">
+          <div class="modal-head">
+            <b>Пропали файлы</b>
+            <button class="x" id="msClose" title="Позже">✕</button>
+          </div>
+          <div id="msBody" class="modal-body"></div>
+          <div class="modal-foot">
+            <span id="msSummary" class="muted"></span>
+            <button class="btn danger" id="msConfirm">Убрать из каталога</button>
           </div>
         </div>
       </div>
@@ -2247,10 +2264,63 @@ $("#rmConfirm").onclick = async () => {
   await checkRemovals();
 };
 
+/* ---------- пропавшие файлы: сверка каталога с диском (Alex TG 20231) ---------- */
+let _ms = null, _msDismissed = null, _msBusy = false, _msLast = 0;
+const _msKey = d => d.files + "|" + d.songs;
+function renderMissing(){
+  const d = _ms; if(!d) return;
+  $("#msBody").innerHTML =
+    `<div class="rnote">У ${nfmt(d.songs)} песен в каталоге больше нет файлов на диске (около ${gb(d.bytes)}): папки удалили или перенесли. `+
+    `Такие песни не играют, а «Волна» и скачивание считают их «уже есть». Убрать их из каталога? Музыка на диске, лайки и избранное не трогаются. `+
+    `На телефоне песни сами не сотрутся: в «Плане синхронизации» они будут «нет в каталоге», там решишь сам.</div>`+
+    `<div class="rlist">`+ d.folders.map(f =>
+      `<div class="rrow"><span class="rt">${esc(f.folder)}</span><span class="rm">${nfmt(f.songs)}</span></div>`).join("")+`</div>`;
+  $("#msSummary").textContent = "Песен: "+nfmt(d.songs);
+  $("#msConfirm").disabled = _msBusy;
+}
+async function checkMissing(){
+  if(_msBusy || Date.now() - _msLast < 20000) return;
+  _msLast = Date.now();
+  let d;
+  try{ d = await jget("/api/catalog/missing"); }catch(e){ return; }
+  _ms = d;
+  const need = !!d.needs_confirm;
+  $("#msPill").hidden = !need;
+  if(need) $("#msPillTxt").textContent = "пропали файлы у "+nfmt(d.songs)+" песен — убрать из каталога";
+  if(!$("#msModal").hidden){                       // окно уже открыто: обновить или закрыть, если пропаж не стало
+    if(!need) $("#msModal").hidden = true; else renderMissing();
+    return;
+  }
+  if(need && _msKey(d) !== _msDismissed && $("#rmModal").hidden && $("#syncModal").hidden){
+    renderMissing(); $("#msModal").hidden = false;
+  }
+}
+$("#msClose").onclick = () => { _msDismissed = _ms ? _msKey(_ms) : null; $("#msModal").hidden = true; };
+$("#msPill").onclick = () => { if(_ms){ renderMissing(); $("#msModal").hidden = false; } };
+$("#msConfirm").onclick = async () => {
+  if(_msBusy) return;
+  _msBusy = true; renderMissing();
+  $("#msConfirm").textContent = "убираю…";
+  let msg = "";
+  try{
+    const r = await fetch("/api/catalog/missing/clean", {method:"POST"});
+    if(!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    msg = "Убрано песен: "+nfmt(d.songs)+(d.backup ? ". Копия базы перед уборкой: "+d.backup : "");
+  }catch(e){ msg = "Не получилось убрать: "+(e.message||e); }
+  _msBusy = false;
+  $("#msConfirm").textContent = "Убрать из каталога";
+  $("#msModal").hidden = true; _msDismissed = null; _msLast = 0;
+  alert(msg);
+  loadCatalog();
+  checkMissing();
+};
+
 /* ---------- обновление ---------- */
 function tick(){
   loadInfo();
   checkRemovals();
+  checkMissing();
   loadJobs(); // и для «Отменить пересчёт» в шапке каталога, не только вкладки «Задачи»
   const on = id => $("#v-"+id).classList.contains("on");
   if(on("find")){ if($("#fm-torrent").hidden) loadAcqLog(); else loadTorLog(); }

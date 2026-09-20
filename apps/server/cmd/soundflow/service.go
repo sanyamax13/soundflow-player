@@ -45,6 +45,7 @@ type Service struct {
 	dl        *downloaderProc  // дочерний Python «качалка» (Найти трек / торренты)
 	store     *litestore.Store // та же БД для acquire из окна
 	covers    *coverKeeper     // сама ищет обложки песням, у которых их нет (coverkeeper.go)
+	recon     *reconciler      // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
 	waveMu    sync.Mutex       // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
 	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
@@ -140,6 +141,8 @@ func NewService() (*Service, error) {
 	go s.startPhoneServer()
 	s.covers = newCoverKeeper(s)
 	s.covers.Start()
+	s.recon = newReconciler(s)
+	s.recon.Start()
 	return s, nil
 }
 
@@ -161,6 +164,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	}
 	s.dl.shutdown()
 	s.covers.Stop()
+	s.recon.Stop()
 	s.jobs.CancelAll()
 	if s.eng != nil {
 		_ = s.eng.Close()
@@ -210,6 +214,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/phone/state", s.hPhoneState)
 	r.Post("/api/phone/plan", localOnly(s.hPhonePlan))
 	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
+	r.Get("/api/catalog/missing", s.hMissing)
+	r.Post("/api/catalog/missing/clean", localOnly(s.hMissingClean))
 	r.Post("/api/tracks/copies", localOnly(s.hTrackCopies))
 	r.Post("/api/reveal", localOnly(s.hReveal))
 	r.Post("/api/open-folder", localOnly(s.hOpenFolder))
