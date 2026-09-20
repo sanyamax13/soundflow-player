@@ -30,6 +30,12 @@ func New(baseURL string) *Client {
 	}
 }
 
+// WithTimeout — копия клиента с другим предельным временем одного запроса.
+// Нужна торрент-ступени: она качает альбом целиком, это дольше обычных 8 минут.
+func (c *Client) WithTimeout(d time.Duration) *Client {
+	return &Client{base: c.base, http: &http.Client{Timeout: d}}
+}
+
 func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -104,9 +110,10 @@ type FindAudioResult struct {
 	ProviderURL string `json:"provider_url"`
 }
 
-// FindAudio — поиск+скачивание через цепочку (Яндекс 320 → musify → торренты).
+// FindAudio — поиск+скачивание через цепочку (Яндекс 320 → торренты).
 // skipProviders — какие источники не трогать (мы всегда гасим soundcloud,
-// youtube_music, soulseek). expectedDurationSec 0 — сайдкар сам спросит Яндекс.
+// youtube_music, youtube, soulseek, musify). expectedDurationSec 0 — сайдкар
+// сам спросит Яндекс.
 func (c *Client) FindAudio(ctx context.Context, artist, title string, expectedDurationSec int, skipProviders []string) (FindAudioResult, error) {
 	body := map[string]any{
 		"artist":         artist,

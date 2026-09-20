@@ -38,7 +38,12 @@ from ._fsutil import _file_matches, normalize_key
 log = logging.getLogger(__name__)
 
 QBT_CATEGORY = "soundflow-prefetch"
-DOWNLOAD_TIMEOUT_SEC = 240  # hard cap. Малосидируемые альбомы качаются медленно — было 120, не хватало
+DOWNLOAD_TIMEOUT_SEC = 240  # базовый срок. Малосидируемые альбомы качаются медленно — было 120, не хватало
+# 20.09.2026: альбом 128 МБ на 2 сидерах шёл живо (58% за 3 мин) и был убит на 240 с вместе с недокачанными
+# файлами. Теперь после базового срока ждём дальше, ПОКА байты прибывают, но не дольше DOWNLOAD_MAX_SEC и не
+# дольше TORRENT_STALL_SEC без единого нового байта.
+DOWNLOAD_MAX_SEC = 600
+TORRENT_STALL_SEC = 60
 METADATA_TIMEOUT_SEC = 60  # время на получение metadata (имена файлов в торренте)
 POLL_INTERVAL_SEC = 3
 # Early-abort на мёртвый торрент. Два окна:
@@ -388,13 +393,24 @@ def _wait_torrent_complete(qbt: qbittorrentapi.Client, info_hash: str) -> dict[s
     с rutor блокировали chain на полный DOWNLOAD_TIMEOUT_SEC.
     """
     start_time = time.time()
-    deadline = start_time + DOWNLOAD_TIMEOUT_SEC
-    while time.time() < deadline:
+    last_bytes = -1
+    last_growth = start_time
+    while True:
+        now = time.time()
+        waited = now - start_time
+        if waited >= DOWNLOAD_TIMEOUT_SEC and (
+            waited >= DOWNLOAD_MAX_SEC or now - last_growth > TORRENT_STALL_SEC
+        ):
+            break
         torrents = qbt.torrents.info(torrent_hashes=info_hash)
         if not torrents:
             log.warning("torrent %s исчез из qBittorrent", info_hash)
             return None
         t = torrents[0]
+        bytes_now = int(t.get("downloaded") or 0)
+        if bytes_now > last_bytes:
+            last_bytes = bytes_now
+            last_growth = now
         state = t.get("state")
         progress = t.get("progress", 0)
         if progress >= 1.0 or state in ("uploading", "stalledUP", "queuedUP", "pausedUP", "forcedUP"):
@@ -429,7 +445,10 @@ def _wait_torrent_complete(qbt: qbittorrentapi.Client, info_hash: str) -> dict[s
             info_hash, state, progress, t.get("num_seeds"), t.get("dlspeed"),
         )
         time.sleep(POLL_INTERVAL_SEC)
-    log.warning("torrent %s timeout по %d сек", info_hash, DOWNLOAD_TIMEOUT_SEC)
+    log.warning(
+        "torrent %s timeout: ждали %d сек, скачано %d байт, без новых байт %d сек",
+        info_hash, int(time.time() - start_time), max(last_bytes, 0), int(time.time() - last_growth),
+    )
     return None
 
 

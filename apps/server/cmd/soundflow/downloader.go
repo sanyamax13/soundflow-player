@@ -354,11 +354,7 @@ func ensureQBittorrent() error {
 	if exe == "" {
 		return fmt.Errorf("qBittorrent не найден — поставь его для торрент-режима")
 	}
-	cmd := exec.Command(exe)
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	if err := cmd.Start(); err != nil {
+	if err := launchMinimized(exe); err != nil {
 		return fmt.Errorf("не смог запустить qBittorrent: %w", err)
 	}
 	// Дать Web UI подняться.
@@ -372,6 +368,27 @@ func ensureQBittorrent() error {
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("qBittorrent запущен, но Web UI на :8080 не ответил — включи Web UI в настройках qBittorrent")
+}
+
+// launchMinimized — запустить программу свёрнутой, чтобы окно qBittorrent не
+// выскакивало поверх того, чем Alex занят. На Windows — через `cmd /c start
+// /min` (у самой qBittorrent ключа «свёрнутым» нет), чёрное окно cmd скрыто.
+func launchMinimized(exe string) error {
+	cmd := qbtLaunchCmd(exe)
+	if runtime.GOOS != "windows" {
+		return cmd.Start()
+	}
+	return cmd.Run() // cmd start возвращается сразу, сама qBittorrent остаётся жить
+}
+
+// qbtLaunchCmd — команда запуска (отдельно, чтобы проверить её состав тестом).
+func qbtLaunchCmd(exe string) *exec.Cmd {
+	if runtime.GOOS != "windows" {
+		return exec.Command(exe)
+	}
+	cmd := exec.Command("cmd", "/c", "start", "/min", "", exe)
+	hideChildWindow(cmd)
+	return cmd
 }
 
 // hideChildWindow — не показывать консольное окно дочернего python на Windows.

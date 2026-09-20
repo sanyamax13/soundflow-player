@@ -249,3 +249,18 @@ func TestAcquireID3MatchOK(t *testing.T) {
 		t.Fatalf("ждал успех, получил %+v %v", r, err)
 	}
 }
+
+// Musify закрыт проверкой «вы не робот» (20.09.2026) — из цепочки сайдкара он убран навсегда.
+func TestSkipProvidersHasMusify(t *testing.T) {
+	for _, want := range []string{"soundcloud", "youtube_music", "youtube", "soulseek", "musify"} {
+		found := false
+		for _, p := range skipProviders {
+			if p == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("в skipProviders нет %q: %v", want, skipProviders)
+		}
+	}
+}

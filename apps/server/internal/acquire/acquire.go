@@ -1,6 +1,7 @@
 // Package acquire — «найти и скачать трек»: дёргает Python-сайдкар (Яндекс 320 →
-// musify → торренты), прогоняет результат через правила качества (этап 5) и
-// кладёт в каталог. YouTube и Soulseek не вызываем (Alex, TG 17999).
+// торренты), прогоняет результат через правила качества (этап 5) и кладёт в
+// каталог. YouTube и Soulseek не вызываем (Alex, TG 17999); Musify отключён
+// 20.09.2026 — сайт закрыт проверкой «вы не робот», качать оттуда нечем.
 package acquire
 
 import (
@@ -17,7 +18,7 @@ import (
 )
 
 // Всегда гасим эти источники в цепочке сайдкара.
-var skipProviders = []string{"soundcloud", "youtube_music", "youtube", "soulseek"}
+var skipProviders = []string{"soundcloud", "youtube_music", "youtube", "soulseek", "musify"}
 
 var (
 	ErrRejected   = errors.New("трек отклонён правилами (концерт/караоке/мусор)")
