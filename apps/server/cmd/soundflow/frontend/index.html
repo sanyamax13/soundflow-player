@@ -23,6 +23,7 @@
   .top .sp{flex:1}
   .pill{display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
     color:var(--ok); background:#f1f9ec; border:1px solid #d5ead0; padding:5px 10px; border-radius:999px}
+  .pill[hidden]{display:none}   /* без этого display:flex перебивал hidden — две пустые синие плашки в шапке (ревизия 20.09.2026) */
   .pill .dot{width:8px; height:8px; border-radius:50%; background:var(--ok)}
   .pill.off{color:var(--warn); background:#fbf6e8; border-color:#eadfc4}
   .pill.off .dot{background:var(--warn)}
@@ -441,26 +442,6 @@
           <div class="dsec-body" hidden>
             <div class="hint" id="discHint">загрузка…</div>
             <div class="dsongs" id="discBody"></div>
-          </div>
-        </div>
-
-        <!-- Старые лайки с телефона (Alex TG 15.09.2026): библиотеку стёрли, а на телефоне остались лайки
-             песен, которых больше нет в каталоге — только название. Телефон присылает список сам (AutoSync),
-             тут показ и докачка тем же /api/acquire. -->
-        <div class="dsec" id="sec-phone">
-          <div class="dsec-head" data-sec="phone" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
-            <span class="chev">▸</span>
-            <h2>Старые лайки с телефона</h2>
-            <span class="dsec-sum" id="phoneSum"></span>
-            <span class="dsec-btns">
-              <button class="btn" id="phoneFavSelAll">Выбрать все</button>
-              <button class="btn" id="phoneFavRefresh">Обновить</button>
-              <button class="btn primary" id="phoneFavDlAll">Скачать выбранные</button>
-            </span>
-          </div>
-          <div class="dsec-body" hidden>
-            <div class="hint" id="phoneFavHint">загрузка…</div>
-            <div class="dsongs" id="phoneFavBody"></div>
           </div>
         </div>
       </section>
@@ -1733,27 +1714,28 @@ async function loadTaste(){
 }
 
 /* ---------- Настройки ---------- */
-/* ---------- Открытия: волна, лайки Яндекса, старые лайки с телефона ----------
+/* ---------- Открытия: волна и лайки Яндекса ----------
    Alex TG 14.09.2026: «возьмём моё избранное из Яндекса... нужно это в программе как-то разместить,
    может отдельную вкладку». Закачка — тем же /api/acquire, что и «Найти и скачать» (ищет по Яндексу/
    торрентам, проверяет качество — код не дублируем). Дизлайки Яндекса — молча в чёрный список.
    Alex TG 20073 (19.09.2026): (1) каждый раздел свёрнут, по нажатию раскрывается и только тогда грузится;
    (2) каждую песню можно послушать — полная, из Яндекса, через /api/yandex/preview; (3) у каждой песни
    кнопка «Удалить» — убрать из списка (только скрытие, лайк в Яндексе/на телефоне не трогаем; «Вернуть»
-   после удаления). */
+   после удаления).
+   Alex TG 20111 (20.09.2026): раздел «Старые лайки с телефона» убран — нужные песни он уже вернул. Ручка
+   /api/phone/missing-favorites и отчёт телефона /api/phone/favorites остались на сервере; сам раздел — в
+   git-истории этой страницы. */
 let _discItems = [];        // лайки Яндекса
 let _waveItems = [];        // волна
-let _phoneFavItems = [];    // старые лайки с телефона
 let _discDislikesDone = false;
 let _discPlayKey = "";      // какая песня из «Открытий» сейчас играет: вид|артист|название
 
-const _discOpen = {wave:false, likes:false, phone:false};
-const _discLoaded = {wave:false, likes:false, phone:false};
-const _discLoader = {wave: () => loadWave(), likes: () => loadDiscover(), phone: () => loadPhoneFavorites()};
+const _discOpen = {wave:false, likes:false};
+const _discLoaded = {wave:false, likes:false};
+const _discLoader = {wave: () => loadWave(), likes: () => loadDiscover()};
 const _discKind = {
   wave:  {items: () => _waveItems,     body: "#waveBody",    one: "_waveOne",     pick: "wavePick"},
   likes: {items: () => _discItems,     body: "#discBody",    one: "_discOne",     pick: "discPick"},
-  phone: {items: () => _phoneFavItems, body: "#phoneFavBody", one: "_phoneFavOne", pick: "phoneFavPick"},
 };
 
 function _discToggle(name){
@@ -1815,12 +1797,6 @@ function _discRender(kind){
       `из них уже в каталоге — <b>${nfmt(items.length-left)}</b>, можно докачать — <b>${nfmt(left)}</b>. `+
       `Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`;
     $("#likesSum").textContent = nfmt(items.length)+" песен · докачать "+nfmt(left);
-  } else {
-    $("#phoneFavHint").innerHTML = items.length
-      ? `<b>${nfmt(items.length)}</b> песен были лайкнуты на телефоне, но их нет в каталоге. `+
-        `Нажми на песню — она заиграет здесь (ищу её в Яндексе); отметь галочками, что докачать, или сразу «Скачать выбранные».`
-      : "Пусто — либо телефон ещё не присылал лайки, либо всё уже в каталоге.";
-    $("#phoneSum").textContent = items.length ? nfmt(items.length)+" песен" : "";
   }
   _discMarkPlaying();
   _discSelUpdate(kind);
@@ -1850,19 +1826,6 @@ async function loadWave(){
     return;
   }
   _discRender("wave");
-}
-
-async function loadPhoneFavorites(){
-  const hint = $("#phoneFavHint"), box = $("#phoneFavBody");
-  hint.textContent = "загрузка…";
-  box.innerHTML = "";
-  try{
-    _phoneFavItems = await jget("/api/phone/missing-favorites");
-  }catch(e){
-    hint.textContent = "Не вышло получить список: "+friendlyError(e);
-    return;
-  }
-  _discRender("phone");
 }
 
 /* --- слушать: полная песня из Яндекса, играет в общем плеере внизу --- */
@@ -1978,13 +1941,11 @@ async function _acquireOne(kind, i){
 }
 const _discOne = i => _acquireOne("likes", i);
 const _waveOne = i => _acquireOne("wave", i);
-const _phoneFavOne = i => _acquireOne("phone", i);
 
 /* --- выбрать все / скачать выбранные (Alex TG 20083: «нет кнопки выделить все песни») --- */
 const _discIds = {
   wave:  {sel: "#waveSelAll",     dl: "#waveDlAll"},
   likes: {sel: "#discSelAll",     dl: "#discDlAll"},
-  phone: {sel: "#phoneFavSelAll", dl: "#phoneFavDlAll"},
 };
 const _discBoxes = kind => [...document.querySelectorAll(_discKind[kind].body + " input." + _discKind[kind].pick)];
 // подписи кнопок: «Выбрать все» ↔ «Снять выбор», «Скачать выбранные (N)»
@@ -2016,13 +1977,10 @@ async function _discDlPicked(kind, askAll){
 }
 $("#discRefresh").onclick = loadDiscover;
 $("#waveRefresh").onclick = loadWave;
-$("#phoneFavRefresh").onclick = loadPhoneFavorites;
 $("#discSelAll").onclick = () => _discSelAll("likes");
 $("#waveSelAll").onclick = () => _discSelAll("wave");
-$("#phoneFavSelAll").onclick = () => _discSelAll("phone");
 $("#discDlAll").onclick = () => _discDlPicked("likes", n => `Скачать все ${n} песен, которых ещё нет в каталоге?`);
 $("#waveDlAll").onclick = () => _discDlPicked("wave", n => `Скачать все ${n} песен волны?`);
-$("#phoneFavDlAll").onclick = () => _discDlPicked("phone", n => `Скачать все ${n} песен?`);
 
 async function loadSettings(){
   if(!window._info){ try{ await loadInfo(); }catch(e){} }
