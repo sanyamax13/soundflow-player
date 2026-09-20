@@ -44,6 +44,7 @@ type Service struct {
 	phoneAPI  *api.Server      // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
 	dl        *downloaderProc  // дочерний Python «качалка» (Найти трек / торренты)
 	store     *litestore.Store // та же БД для acquire из окна
+	covers    *coverKeeper     // сама ищет обложки песням, у которых их нет (coverkeeper.go)
 	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
 	acqT      *acqTracker // последние попытки «Найти трек»
@@ -139,6 +140,8 @@ func NewService() (*Service, error) {
 	}
 	writeServerLogSafe = func(m string) error { return s.db.AddServerLog("info", "", "", m, 0) }
 	go s.startPhoneServer()
+	s.covers = newCoverKeeper(s)
+	s.covers.Start()
 	return s, nil
 }
 
@@ -159,6 +162,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 		_ = s.phoneSrv.Close()
 	}
 	s.dl.shutdown()
+	s.covers.Stop()
 	s.jobs.CancelAll()
 	if s.eng != nil {
 		_ = s.eng.Close()

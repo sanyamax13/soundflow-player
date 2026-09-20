@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"soundflow/server/internal/coverfind"
 )
 
 type Client struct {
@@ -174,6 +176,19 @@ func (c *Client) YandexTrackCover(ctx context.Context, artist, title string) (st
 		return "", err
 	}
 	return out.CoverURL, nil
+}
+
+// YandexTrackCandidates — что Яндекс.Музыка знает про трек: несколько найденных треков с их
+// исполнителями, названием и обложками (трека и альбомов). Проверку «тот ли это трек» делает
+// вызывающий (internal/coverfind) — качалка ничего не решает. Пусто — ничего не нашлось.
+func (c *Client) YandexTrackCandidates(ctx context.Context, artist, title string) ([]coverfind.YandexItem, error) {
+	var out struct {
+		Items []coverfind.YandexItem `json:"items"`
+	}
+	if err := c.post(ctx, "/yandex/track-candidates", map[string]any{"artist": artist, "title": title}, &out); err != nil {
+		return nil, err
+	}
+	return out.Items, nil
 }
 
 // YandexLikeItem — трек «Мне нравится» личного аккаунта (Alex TG 14.09.2026).

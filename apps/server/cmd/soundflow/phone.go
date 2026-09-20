@@ -94,7 +94,7 @@ func (s *Service) startPhoneServer() {
 		GeneratedCoversDir: gcov,
 		FoundCoversDir:     s.foundCoversDir(),
 		// Новая скачанная песня сама ложится в план телефона (см. autoplan.go).
-		OnTrackAdded: s.autoPlanAdd,
+		OnTrackAdded: s.onTrackAdded,
 		// Убранное на телефоне не стирается само, а ждёт подтверждения в окне
 		// (Alex TG 19943/19948, см. removals.go).
 		EraseGate: removalGate{db: s.db},

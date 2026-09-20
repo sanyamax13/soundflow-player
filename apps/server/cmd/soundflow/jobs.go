@@ -241,6 +241,9 @@ func (jr *JobRunner) StartScan(dir string) string {
 		note := fmt.Sprintf("добавлено %d, пропущено %d, ошибок %d", added, skipped, failed)
 		_ = s.db.AddServerLog("info", "", "", "скан завершён: "+note, 0)
 		jr.finish(note)
+		if added > 0 {
+			s.covers.Kick() // новые песни — сразу проверить обложки (coverkeeper.go)
+		}
 	}()
 	return j.ID
 }
