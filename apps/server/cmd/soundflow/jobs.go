@@ -161,6 +161,11 @@ func (jr *JobRunner) StartScan(dir string) string {
 		_ = s.db.AddServerLog("info", "", "", "скан папки: "+dir, 0)
 		var added, skipped, failed int
 		compDirs := map[string]string{} // папка → альбом-сборник («» — не сборник)
+		// файлы, уже записанные в каталог под любым именем (см. localdb.KnownFilePaths)
+		known, err := s.db.KnownFilePaths()
+		if err != nil {
+			_ = s.db.AddServerLog("error", "", "", "скан: не смог прочитать список известных файлов: "+err.Error(), 0)
+		}
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -177,6 +182,12 @@ func (jr *JobRunner) StartScan(dir string) string {
 			mime, isAudio := audioExt[strings.ToLower(filepath.Ext(path))]
 			if !isAudio {
 				return nil
+			}
+			if _, ok := known[localdb.PathKey(path)]; ok {
+				j.Total++
+				skipped++
+				j.Done++
+				return nil // этот файл уже в каталоге — теги не читаем, второй раз не добавляем
 			}
 			if cuePath, cue, ok := cuesplit.FindFor(path); ok {
 				n, f := splitByCue(s, path, cuePath, cue)
