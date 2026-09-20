@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -124,6 +125,44 @@ class Api {
   /// Скачать файл трека в указанный путь.
   Future<void> downloadTrack(String id, String toPath) async {
     await _dio.download('/v1/music/$id/file', toPath);
+  }
+
+  /// Какие песни компьютер просит вернуть с телефона (разовый возврат стёртого
+  /// с ПК, Alex TG 20261–20269, 21.09.2026): id, исполнитель, название, размер.
+  /// Компьютер без этой ручки (старая версия программы) ответит 404 — бросит
+  /// исключение, вызывающий код его глотает.
+  Future<List<Map<String, dynamic>>> restoreWanted() async {
+    final res = await _dio.get<List<dynamic>>('/api/restore/wanted');
+    return (res.data ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Отдать компьютеру файл песни — он положит его на прежнее место. true —
+  /// принят (или уже лежит там); false — компьютер файл не принял (не тот
+  /// формат, обрезок, песни нет в списке): повторять бессмысленно. Нет связи
+  /// или сбой на компьютере — бросит исключение, прогон остановится.
+  Future<bool> restoreUpload(String id, File file) async {
+    final len = await file.length();
+    try {
+      await _dio.put<dynamic>(
+        '/api/restore/upload/$id',
+        data: file.openRead(),
+        options: Options(headers: {
+          Headers.contentLengthHeader: len,
+          Headers.contentTypeHeader: 'application/octet-stream',
+        }),
+      );
+      return true;
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code != null && code >= 400 && code < 500) return false;
+      rethrow;
+    }
+  }
+
+  /// Сообщить компьютеру, каких из просимых песен на телефоне нет — ждать их
+  /// файлы он перестаёт.
+  Future<void> restoreMissing(List<String> ids) async {
+    await _dio.post<dynamic>('/api/restore/missing', data: {'ids': ids});
   }
 
   /// Скачать обложку по прямой ссылке (Яндекс.Музыка) — чтобы играть офлайн

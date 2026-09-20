@@ -486,6 +486,66 @@ class DownloadsRepo {
     return (added: added, removed: removed, failed: failed, stopped: stopped);
   }
 
+  /// Разовый возврат песен на компьютер (Alex TG 20261–20269, 21.09.2026): Alex
+  /// стёр часть песен с ПК, а на телефоне они остались — «может скопируешь их
+  /// с телефона сам». Компьютер держит список «жду файл» (`/api/restore/wanted`);
+  /// телефон сам, тихо, без кнопок и карточек отдаёт по очереди то, что у него
+  /// есть (компьютер кладёт каждую на её прежнее место), а чего нет — сообщает,
+  /// чтобы компьютер не ждал. Список пуст (почти всегда) — один дешёвый запрос и
+  /// всё. Нет связи / старая программа на ПК — молча выходит, попробует при
+  /// следующем заходе. Одновременно идёт один прогон. ВРЕМЕННЫЙ код: убрать,
+  /// когда возврат закончен.
+  Future<void> returnFilesToPc() =>
+      _returning ??= _returnFilesToPc().whenComplete(() => _returning = null);
+
+  Future<void>? _returning;
+
+  Future<void> _returnFilesToPc() async {
+    try {
+      final wanted = await _api.restoreWanted();
+      if (wanted.isEmpty) return;
+      var sent = 0;
+      var rejected = 0;
+      var offline = false;
+      final absent = <String>[];
+      for (final w in wanted) {
+        final id = '${w['id']}';
+        final row = await _db.downloadedById(id);
+        final file = row == null ? null : File(row.path);
+        if (file == null || !file.existsSync() || file.lengthSync() == 0) {
+          absent.add(id);
+          continue;
+        }
+        try {
+          if (await _api.restoreUpload(id, file)) {
+            sent++;
+          } else {
+            rejected++;
+          }
+        } catch (_) {
+          offline = true; // связь пропала или сбой на ПК — остальное в следующий раз
+          break;
+        }
+      }
+      if (!offline && absent.isNotEmpty) {
+        try {
+          await _api.restoreMissing(absent);
+        } catch (_) {
+          offline = true;
+        }
+      }
+      await AppLog.event('restore_to_pc', {
+        'wanted': wanted.length,
+        'sent': sent,
+        'rejected': rejected,
+        'absent': absent.length,
+        'offline': offline,
+      });
+    } catch (_) {
+      // Возврат не должен ронять ни приложение, ни тест.
+    }
+  }
+
   /// Файл трека пропал с диска, а запись о нём в базе — цела (см.
   /// `PlayerController.onMissingFile` — плеер словил недостающий файл в
   /// очереди, Alex TG 15.09.2026: «давай чинить, а не пропускать»).

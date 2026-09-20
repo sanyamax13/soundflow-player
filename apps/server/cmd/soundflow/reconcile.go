@@ -40,6 +40,7 @@ const (
 
 type missingFile struct {
 	FileID, TrackID, Path, Folder string
+	DBPath                        string // путь так, как записан в каталоге (Path — уже пересчитанный под этот компьютер)
 	Size                          int64
 }
 
@@ -53,6 +54,7 @@ type missingReport struct {
 	Songs   int // песен, у которых не осталось ни одного файла на диске
 	Bytes   int64
 	Folders []folderCount // по убыванию, не больше 12
+	Dead    []missingFile // по одной записи на песню из Songs — для возврата с телефона (restore.go)
 }
 
 // pathParts — диск и папки/файл пути без пустых частей (разделители и \, и /).
@@ -108,7 +110,11 @@ func (s *Service) findMissing() missingReport {
 	}
 	rootOK := map[string]bool{}
 	gone := map[string]int{}
+	restoring, _ := s.db.RestoreWantedIDs() // ждут файл с телефона (restore.go) — не «пропавшие», убирать из каталога нельзя
 	for _, r := range refs {
+		if r.TrackID != "" && restoring[r.TrackID] {
+			continue
+		}
 		local := s.localPath(r.Path)
 		root := pathRoot(local)
 		ok, seen := rootOK[root]
@@ -123,7 +129,7 @@ func (s *Service) findMissing() missingReport {
 		if _, err := os.Stat(local); !errors.Is(err, fs.ErrNotExist) {
 			continue // файл на месте (или проверить не вышло — тоже не считаем пропавшим)
 		}
-		rep.Files = append(rep.Files, missingFile{FileID: r.ID, TrackID: r.TrackID, Path: local, Folder: pathFolder(local), Size: r.Size})
+		rep.Files = append(rep.Files, missingFile{FileID: r.ID, TrackID: r.TrackID, Path: local, DBPath: r.Path, Folder: pathFolder(local), Size: r.Size})
 		if r.TrackID != "" {
 			gone[r.TrackID]++
 		}
@@ -137,6 +143,7 @@ func (s *Service) findMissing() missingReport {
 		}
 		counted[m.TrackID] = true
 		rep.Songs++
+		rep.Dead = append(rep.Dead, m)
 		perFolder[m.Folder]++
 	}
 	for f, n := range perFolder {

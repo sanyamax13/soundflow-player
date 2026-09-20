@@ -85,6 +85,13 @@ func Open(path string) (*DB, error) {
 		// Отпечатки кандидатов «Волны» (21.09.2026, сторож по звуку): считаются один раз на песню, живут несколько дней.
 		`CREATE TABLE IF NOT EXISTS wave_vectors (
 			yandex_id TEXT PRIMARY KEY, vec BLOB NOT NULL, at TEXT NOT NULL DEFAULT '')`,
+		// Возврат песен с телефона на ПК (Alex TG 20261–20267, 21.09.2026): песни, чьи файлы стёрты с компьютера, а на
+		// телефоне остались. state: wanted | done | phone_missing | failed; path — прежний путь файла (песня возвращается
+		// ровно туда), см. cmd/soundflow/restore.go.
+		`CREATE TABLE IF NOT EXISTS restore_request (
+			track_id TEXT PRIMARY KEY, file_id TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '',
+			size_bytes INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'wanted',
+			detail TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

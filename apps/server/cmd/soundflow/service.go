@@ -233,6 +233,14 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
 	r.Get("/api/catalog/missing", s.hMissing)
 	r.Post("/api/catalog/missing/clean", localOnly(s.hMissingClean))
+	// возврат песен с телефона на ПК, разово и без кнопок (restore.go): очередь ставим только с этого компьютера,
+	// телефон сам забирает список и отдаёт файлы
+	r.Post("/api/restore/request", localOnly(s.hRestoreRequest))
+	r.Post("/api/restore/cancel", localOnly(s.hRestoreCancel))
+	r.Get("/api/restore/status", s.hRestoreStatus)
+	r.Get("/api/restore/wanted", s.hRestoreWanted)
+	r.Post("/api/restore/missing", s.hRestoreMissing)
+	r.Put("/api/restore/upload/{id}", s.hRestoreUpload)
 	r.Get("/api/catalog/blocked-files", s.hBlockedFiles)
 	r.Post("/api/catalog/blocked-files/erase", localOnly(s.hBlockedFilesErase))
 	r.Post("/api/tracks/copies", localOnly(s.hTrackCopies))
