@@ -41,13 +41,14 @@ type Service struct {
 	jobs      *JobRunner
 	phoneAddr string
 	phoneSrv  *http.Server
-	phoneAPI  *api.Server      // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
-	dl        *downloaderProc  // дочерний Python «качалка» (Найти трек / торренты)
-	store     *litestore.Store // та же БД для acquire из окна
-	covers    *coverKeeper     // сама ищет обложки песням, у которых их нет (coverkeeper.go)
-	recon     *reconciler      // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
-	waveMu    sync.Mutex       // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
-	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
+	phoneAPI  *api.Server        // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
+	dl        *downloaderProc    // дочерний Python «качалка» (Найти трек / торренты)
+	store     *litestore.Store   // та же БД для acquire из окна
+	covers    *coverKeeper       // сама ищет обложки песням, у которых их нет (coverkeeper.go)
+	recon     *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
+	waveMu    sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
+	waveStop  context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
+	pm        pathmap.Mapper     // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
 	acqT      *acqTracker // последние попытки «Найти трек»
 	torOnce   sync.Once
@@ -143,6 +144,9 @@ func NewService() (*Service, error) {
 	s.covers.Start()
 	s.recon = newReconciler(s)
 	s.recon.Start()
+	waveCtx, waveStop := context.WithCancel(context.Background())
+	s.waveStop = waveStop
+	go s.waveDailyLoop(waveCtx)
 	return s, nil
 }
 
@@ -165,6 +169,9 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	s.dl.shutdown()
 	s.covers.Stop()
 	s.recon.Stop()
+	if s.waveStop != nil {
+		s.waveStop()
+	}
 	s.jobs.CancelAll()
 	if s.eng != nil {
 		_ = s.eng.Close()
@@ -197,6 +204,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/yandex/playlist", s.hYandexPlaylist)
 	r.Post("/api/yandex/dislikes/import", s.hYandexDislikesImport)
 	r.Get("/api/yandex/wave", s.hYandexWave)
+	r.Get("/api/yandex/wave/days", s.hYandexWaveDays)
 	r.Post("/api/phone/favorites", s.hPhoneFavoritesReport)
 	r.Get("/api/phone/missing-favorites", s.hPhoneFavoritesMissing)
 	r.Post("/api/discover/dismiss", localOnly(s.hDiscoverDismiss))
@@ -296,7 +304,7 @@ func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"addr":            addr,
 		"local_url":       s.localURL(), // окно проигрывает звук по нему, а не через себя (см. frontend _audioBase)
-		"running":         listening, // раньше было true всегда — теперь по факту привязки порта
+		"running":         listening,    // раньше было true всегда — теперь по факту привязки порта
 		"listen_error":    listenErr,
 		"addr_fell_back":  fellBack, // порт из настроек был занят, взяли следующий свободный
 		"configured_addr": localAddr(s.phoneAddr),

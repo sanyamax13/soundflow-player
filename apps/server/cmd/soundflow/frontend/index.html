@@ -161,6 +161,11 @@
     border-radius:9px; font-size:13px; background:#fff}
   .findbox .btn{height:38px}
   #v-find .hint{margin:10px 0 18px; max-width:680px}
+  .wsegbar{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; margin:0 0 10px}   /* дни «Волны» (21.09.2026) */
+  .wsegbar[hidden]{display:none}
+  .wseg{border:0; background:#fff; padding:7px 14px; font-size:12.5px; font-weight:700; color:var(--mut); cursor:pointer}
+  .wseg.on{background:var(--lime); color:var(--lime-ink)}
+  .wseg+.wseg{border-left:1px solid var(--line)}
   .segbar{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; margin-bottom:18px}
   .seg{border:0; background:#fff; padding:8px 16px; font-size:12.5px; font-weight:700; color:var(--mut); cursor:pointer}
   .seg.on{background:var(--lime); color:var(--lime-ink)}
@@ -461,7 +466,7 @@
         <div class="dsec" id="sec-wave">
           <div class="dsec-head" data-sec="wave" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
             <span class="chev">▸</span>
-            <h2>Волна на сегодня — подборка по твоему вкусу</h2>
+            <h2>Волна — подборка по твоему вкусу</h2>
             <span class="dsec-sum" id="waveSum"></span>
             <span class="dsec-btns">
               <button class="btn" id="waveSelAll">Выбрать все</button>
@@ -470,6 +475,7 @@
             </span>
           </div>
           <div class="dsec-body" hidden>
+            <div class="wsegbar" id="waveDays" hidden></div>
             <div class="hint" id="waveHint">загрузка…</div>
             <div class="dsongs" id="waveBody"></div>
           </div>
@@ -1777,6 +1783,8 @@ async function loadTaste(){
 let _plItems = [];          // плейлист по ссылке
 let _plTitle = "";
 let _waveItems = [];        // волна
+let _waveDay = 0;           // какой день волны показан: 0 — сегодня, 1 — вчера… (история 3 дня, Alex TG 20212/20214)
+let _waveDays = [];         // за какие дни есть списки: [{day, label, count}] — с сервера
 let _discPlayKey = "";      // какая песня из «Открытий» сейчас играет: вид|артист|название
 
 const _discOpen = {wave:false, pl:false};
@@ -1832,10 +1840,16 @@ function _discRender(kind){
   const box = $(_discKind[kind].body), items = _discKind[kind].items();
   box.innerHTML = items.map((t,i) => _discRow(kind, t, i)).join("");
   if(kind === "wave"){
+    const past = _waveDay > 0, name = _waveDayName(_waveDay);
+    const tail = ` Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`;
     $("#waveHint").innerHTML = items.length
-      ? `Сегодня подобрано — <b>${nfmt(items.length)}</b> песен. Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`
-      : "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.";
-    $("#waveSum").textContent = items.length ? nfmt(items.length)+" песен" : "";
+      ? (past
+          ? `${esc(name)} было подобрано — <b>${nfmt(items.length)}</b> песен, которых ещё нет в каталоге.` + tail
+          : `Сегодня подобрано — <b>${nfmt(items.length)}</b> песен.` + tail)
+      : (past
+          ? "За этот день ничего не осталось: всё уже скачано или убрано из списка."
+          : "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.");
+    $("#waveSum").textContent = items.length ? (past ? name+" · " : "") + nfmt(items.length)+" песен" : "";
   } else if(kind === "pl"){
     const left = items.filter(t=>!t.already_have).length;
     $("#plHint").innerHTML = items.length
@@ -1884,13 +1898,28 @@ function _plClose(){
 }
 
 // force — «Пересобрать волну» (Alex TG 20208): собрать заново, минуя кэш дня; не вышло — остаётся прежний список
+// Прошлые дни (_waveDay > 0) открываются из сохранённого — ничего не пересобирается, кнопки «Пересобрать» там нет.
+const _waveDayName = d => (_waveDays.find(x => x.day === d) || {}).label || (d === 0 ? "Сегодня" : d === 1 ? "Вчера" : d+" дня назад");
+async function loadWaveDays(){
+  try{ _waveDays = await jget("/api/yandex/wave/days"); }catch(e){ return; }
+  if(!_waveDays.some(x => x.day === _waveDay)){ _waveDay = 0; loadWave(); return; }   // такого дня уже нет — на сегодня
+  const bar = $("#waveDays");
+  bar.hidden = _waveDays.length < 2;
+  bar.innerHTML = _waveDays.map(x =>
+    `<button class="wseg${x.day === _waveDay ? " on" : ""}" data-day="${x.day}">${esc(x.label)}${x.count ? " · "+nfmt(x.count) : ""}</button>`).join("");
+  bar.querySelectorAll(".wseg").forEach(b => b.onclick = () => { _waveDay = +b.dataset.day; loadWave(); });
+}
 async function loadWave(force){
   const hint = $("#waveHint"), box = $("#waveBody"), btn = $("#waveRefresh");
-  hint.textContent = force ? "пересобираю волну — это занимает около минуты…" : "подбираю песни по твоему вкусу — это может занять минуту…";
+  const past = _waveDay > 0;
+  force = force && !past;
+  hint.textContent = past ? "открываю список за этот день…"
+    : force ? "пересобираю волну — это занимает около минуты…" : "подбираю песни по твоему вкусу — это может занять минуту…";
   if(!force) box.innerHTML = "";
+  btn.style.display = past ? "none" : "";
   btn.disabled = true;
   try{
-    _waveItems = await jget("/api/yandex/wave" + (force ? "?refresh=1" : ""));
+    _waveItems = await jget("/api/yandex/wave" + (past ? "?day=" + _waveDay : force ? "?refresh=1" : ""));
   }catch(e){
     btn.disabled = false;
     if(force && _waveItems.length){
@@ -1903,6 +1932,7 @@ async function loadWave(force){
   }
   btn.disabled = false;
   _discRender("wave");
+  loadWaveDays();          // подписи дней и числа обновить: за время работы часть песен могла попасть в каталог
 }
 
 /* --- слушать: полная песня из Яндекса, играет в общем плеере внизу --- */

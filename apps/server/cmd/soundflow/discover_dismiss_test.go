@@ -167,7 +167,7 @@ func TestWaveCachedBatchDropsLiveRecordings(t *testing.T) {
 		{YandexID: "4", Artist: "Depeche Mode", Title: "Enjoy The Silence", Album: "Violator"},
 		{YandexID: "5", Artist: "Various", Title: "Song", Album: "Best Of 2000"},
 	})
-	_ = e.s.db.SetSetting(settingWaveDate, time.Now().UTC().Format("2006-01-02"))
+	_ = e.s.db.SetSetting(settingWaveDate, waveDate(time.Now()))
 	_ = e.s.db.SetSetting(settingWaveBatch, string(batch))
 	rec := httptest.NewRecorder()
 	e.s.hYandexWave(rec, httptest.NewRequest("GET", "/api/yandex/wave", nil))
@@ -193,7 +193,7 @@ func TestWaveCachedBatchHidesDismissed(t *testing.T) {
 		{YandexID: "1", Artist: "Foo", Title: "Bar"},
 		{YandexID: "2", Artist: "Baz", Title: "Qux"},
 	})
-	_ = e.s.db.SetSetting(settingWaveDate, time.Now().UTC().Format("2006-01-02"))
+	_ = e.s.db.SetSetting(settingWaveDate, waveDate(time.Now()))
 	_ = e.s.db.SetSetting(settingWaveBatch, string(batch))
 	if err := e.s.db.DismissDiscover(quality.NormalizedKey("Foo", "Bar"), "Foo", "Bar"); err != nil {
 		t.Fatal(err)

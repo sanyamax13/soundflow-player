@@ -38,7 +38,7 @@ func getWave(e *ctxEnv, query string) (int, []yandexWaveOut, string) {
 func cacheWave(t *testing.T, e *ctxEnv, items ...yandexWaveOut) {
 	t.Helper()
 	buf, _ := json.Marshal(items)
-	_ = e.s.db.SetSetting(settingWaveDate, time.Now().UTC().Format("2006-01-02"))
+	_ = e.s.db.SetSetting(settingWaveDate, waveDate(time.Now()))
 	_ = e.s.db.SetSetting(settingWaveBatch, string(buf))
 }
 
