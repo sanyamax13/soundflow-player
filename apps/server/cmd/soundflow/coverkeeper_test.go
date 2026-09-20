@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +34,44 @@ func testJPEG(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return b.Bytes()
+}
+
+// askLog — какие песни спрашивали у «источников». Работники ищут одновременно, поэтому под замком
+// (обычная map в тесте падала «concurrent map writes»).
+type askLog struct {
+	mu sync.Mutex
+	m  map[string]bool
+}
+
+func (a *askLog) add(title string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.m == nil {
+		a.m = map[string]bool{}
+	}
+	a.m[title] = true
+}
+
+func (a *askLog) has(title string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.m[title]
+}
+
+func (a *askLog) reset() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.m = nil
+}
+
+func (a *askLog) titles() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []string
+	for k := range a.m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func coverMarker(t *testing.T, s *Service, id string) string {
@@ -64,9 +104,9 @@ func TestCoverKeeperPassMarksAndSearches(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(img) }))
 	defer srv.Close()
 
-	asked := map[string]bool{}
+	asked := &askLog{}
 	e, k := keeperEnv(t, func(ctx context.Context, artist, title string) ([]coverfind.Candidate, error) {
-		asked[title] = true
+		asked.add(title)
 		if title == "Title c" {
 			return []coverfind.Candidate{{Artists: []string{artist}, Title: title, Image: srv.URL + "/c.jpg"}}, nil
 		}
@@ -114,7 +154,7 @@ func TestCoverKeeperPassMarksAndSearches(t *testing.T) {
 		t.Errorf("временный файл остался")
 	}
 	for _, id := range []string{"a", "b", "e", "f"} {
-		if asked["Title "+id] {
+		if asked.has("Title " + id) {
 			t.Errorf("по песне %s искать в интернете не должны", id)
 		}
 	}
@@ -132,21 +172,21 @@ func TestCoverKeeperPassMarksAndSearches(t *testing.T) {
 	}
 
 	// второй круг: всё уже помечено — искать больше нечего
-	asked = map[string]bool{}
+	asked.reset()
 	if err := k.pass(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != 0 {
-		t.Errorf("повторный круг не должен искать: %v", asked)
+	if got := asked.titles(); len(got) != 0 {
+		t.Errorf("повторный круг не должен искать: %v", got)
 	}
 }
 
 // Нет интернета (ни один источник не ответил) — песни НЕ помечаются «не нашлась», следующий
 // круг попробует снова; после нескольких таких подряд круг прерывается, а не долбит впустую.
 func TestCoverKeeperOfflineLeavesSongsUnmarked(t *testing.T) {
-	calls := 0
+	var calls atomic.Int32
 	e, k := keeperEnv(t, func(ctx context.Context, artist, title string) ([]coverfind.Candidate, error) {
-		calls++
+		calls.Add(1)
 		return nil, fmt.Errorf("нет сети")
 	})
 	for i := 0; i < 30; i++ {
@@ -162,16 +202,16 @@ func TestCoverKeeperOfflineLeavesSongsUnmarked(t *testing.T) {
 			t.Errorf("песня %s помечена %q, хотя сети не было", id, m)
 		}
 	}
-	if calls >= 30 {
-		t.Errorf("круг должен прерваться после %d неудач подряд, а было %d запросов", coverOfflineStop, calls)
+	if n := calls.Load(); n >= 30 {
+		t.Errorf("круг должен прерваться после %d неудач подряд, а было %d запросов", coverOfflineStop, n)
 	}
 }
 
 // «Не нашлась» неделю назад и раньше — ищем снова; позавчерашнюю — нет.
 func TestCoverKeeperRetriesOldNoneAfterAWeek(t *testing.T) {
-	asked := map[string]bool{}
+	asked := &askLog{}
 	e, k := keeperEnv(t, func(ctx context.Context, artist, title string) ([]coverfind.Candidate, error) {
-		asked[title] = true
+		asked.add(title)
 		return nil, nil
 	})
 	e.addSong(t, "old", "o/o.mp3", "x")
@@ -185,8 +225,8 @@ func TestCoverKeeperRetriesOldNoneAfterAWeek(t *testing.T) {
 	if err := k.pass(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !asked["Title old"] || asked["Title fresh"] {
-		t.Errorf("искали: %v — ждали только old", asked)
+	if !asked.has("Title old") || asked.has("Title fresh") {
+		t.Errorf("искали: %v — ждали только old", asked.titles())
 	}
 	if got := coverMarker(t, e.s, "old"); got != "none@2026-09-20" {
 		t.Errorf("метка old: %q", got)
