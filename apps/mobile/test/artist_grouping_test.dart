@@ -80,4 +80,35 @@ void main() {
       expect(folders.map((f) => f.display), ['ABBA', 'Zivert', 'Баста']);
     });
   });
+
+  group('алфавит: латиница → кириллица → «#»', () {
+    test('порядок папок и буквы разделов', () {
+      final folders = groupArtists([
+        _t('1', '50 Cent', 'a'),
+        _t('2', 'Земляне', 'b'),
+        _t('3', 'Beatles', 'c'),
+        _t('4', 'Ёлка', 'd'),
+        _t('5', 'Éluard', 'e'),
+        _t('6', "'N Sync", 'f'),
+        _t('7', 'Ая', 'g'),
+        _t('8', '2 Unlimited', 'h'),
+      ]).folders;
+      expect(folders.map((f) => f.display),
+          ['Beatles', 'Éluard', "'N Sync", 'Ая', 'Ёлка', 'Земляне', '2 Unlimited', '50 Cent']);
+      expect(folders.map((f) => f.letter), ['B', 'E', 'N', 'А', 'Е', 'З', '#', '#']);
+    });
+
+    test('foldName: регистр, «ё», надстрочные знаки', () {
+      expect(foldName('Motörhead'), 'motorhead');
+      expect(foldName('ЁЛКА'), 'елка');
+      expect(foldName('Édith Piaf'), 'edith piaf');
+    });
+
+    test('sectionLetter: кавычки и знаки в начале не мешают, без букв — «#»', () {
+      expect(sectionLetter('"Weird Al" Yankovic'), 'W');
+      expect(sectionLetter('...And You Will Know Us'), 'A');
+      expect(sectionLetter('???'), '#');
+      expect(sectionLetter('東京事変'), '#');
+    });
+  });
 }

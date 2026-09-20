@@ -70,6 +70,58 @@ int _casingScore(String s) {
   return 2;
 }
 
+/// Основные надстрочные знаки → базовая буква: первый символ строки — буква,
+/// остальные — её варианты.
+const List<String> _accentGroups = [
+  'aàáâãäåāăą', 'cçćč', 'dďđ', 'eèéêëēėęě', 'gğ', 'iìíîïīįı', 'lł', 'nñńň',
+  'oòóôõöøōő', 'rř', 'sśšş', 'tť', 'uùúûüūůűų', 'yýÿ', 'zźżž',
+];
+final Map<int, String> _accentMap = {
+  for (final g in _accentGroups)
+    for (final r in g.runes.skip(1)) r: g[0],
+};
+
+/// Имя для сравнения, поиска и сортировки: нижний регистр, «ё» = «е», без
+/// надстрочных знаков («Motörhead» → «motorhead», «Édith» → «edith»).
+String foldName(String s) {
+  final b = StringBuffer();
+  for (final r in s.toLowerCase().runes) {
+    if (r == 0x451) {
+      b.write('е');
+    } else {
+      b.write(_accentMap[r] ?? String.fromCharCode(r));
+    }
+  }
+  return b.toString();
+}
+
+final RegExp _leadJunk = RegExp(r'^[^\p{L}\p{N}]+', unicode: true);
+
+/// Ключ сортировки: свёрнутое имя без кавычек, скобок и знаков в начале
+/// («'N Sync» встаёт на N, «"Weird Al" Yankovic» — на W).
+String _sortName(String display) {
+  final f = foldName(display.trim());
+  final s = f.replaceFirst(_leadJunk, '');
+  return s.isEmpty ? f : s;
+}
+
+/// Буква раздела в алфавитном списке: латиница A–Z, кириллица А–Я, всё прочее
+/// (цифры, значки, иероглифы) — «#».
+String sectionLetter(String display) {
+  final s = _sortName(display);
+  if (s.isEmpty) return '#';
+  final c = s.runes.first;
+  if (c >= 0x61 && c <= 0x7a) return String.fromCharCode(c).toUpperCase();
+  if (c >= 0x430 && c <= 0x4ff) return String.fromCharCode(c).toUpperCase();
+  return '#';
+}
+
+/// Порядок разделов: сначала латиница, потом кириллица, «#» — в самом конце.
+int sectionRank(String letter) {
+  if (letter == '#') return 2;
+  return letter.runes.first < 0x80 ? 0 : 1;
+}
+
 /// Одна «папка» исполнителя — все его песни во всех написаниях.
 class ArtistFolder {
   ArtistFolder(this.key, this.display, this.tracks);
@@ -77,6 +129,11 @@ class ArtistFolder {
   final String display;
   final List<DownloadedTrack> tracks;
   int get count => tracks.length;
+
+  /// Буква раздела, ключ сортировки и свёрнутое имя (для поиска) — считаются один раз.
+  late final String letter = sectionLetter(display);
+  late final String sortName = _sortName(display);
+  late final String folded = foldName(display);
 }
 
 /// Разложить скачанное по папкам исполнителей + отдельно вернуть песни с
@@ -94,9 +151,16 @@ class ArtistFolder {
     byKey.putIfAbsent(artistKey(t.artist), () => <DownloadedTrack>[]).add(t);
   }
 
+  // Алфавит: латиница, затем кириллица, затем «#» (цифры и значки) — как в
+  // списке с полоской букв справа (Alex 20.09.2026, вид «Б»).
   final folders = [
     for (final e in byKey.entries) ArtistFolder(e.key, _pickDisplay(e.value), e.value),
-  ]..sort((a, b) => a.display.toLowerCase().compareTo(b.display.toLowerCase()));
+  ]..sort((a, b) {
+      final ra = sectionRank(a.letter), rb = sectionRank(b.letter);
+      if (ra != rb) return ra.compareTo(rb);
+      final c = a.sortName.compareTo(b.sortName);
+      return c != 0 ? c : a.display.compareTo(b.display);
+    });
 
   return (folders: folders, broken: broken);
 }

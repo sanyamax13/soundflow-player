@@ -50,6 +50,25 @@ void main() {
     });
   });
 
+  group('takeOverQueue (Поток забирает плеер у избранного/папки/поиска)', () {
+    test('играющая песня остаётся первой, дальше Поток без неё', () {
+      final out = takeOverQueue(_t('fav'), [_t('a'), _t('fav'), _t('b')]);
+      expect(out.map((t) => t.id), ['fav', 'a', 'b']);
+    });
+
+    test('хвост урезается до cap — тысячи песен на играющем плеере вешают звук', () {
+      final stream = [for (var i = 0; i < 500; i++) _t('s$i')];
+      final out = takeOverQueue(_t('fav'), stream, cap: 150);
+      expect(out.length, 151); // текущая + 150
+      expect(out.first.id, 'fav');
+      expect(out[1].id, 's0'); // порядок Потока (под вкус) сохранён
+    });
+
+    test('Поток пуст — остаётся одна играющая песня', () {
+      expect(takeOverQueue(_t('fav'), const []).map((t) => t.id), ['fav']);
+    });
+  });
+
   group('withoutArtistAfter (пункт 6 — скрыть исполнителя чистит очередь)', () {
     NowPlaying ta(String id, String artist) =>
         NowPlaying(id: id, title: id, artist: artist, path: '/tmp/$id');

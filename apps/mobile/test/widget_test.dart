@@ -79,8 +79,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Пока ничего не скачано'), findsOneWidget);
-    // «Полка» (06.09.2026): шапка со счётчиком исполнителей, без строки «Обложки».
-    expect(find.text('0 исполнителей · 0 песен · 0.0 МБ'), findsOneWidget);
+    // Вид «Б» (20.09.2026): в шапке только число песен, без исполнителей и гигабайтов.
+    expect(find.text('0 песен на телефоне'), findsOneWidget);
+    expect(find.textContaining('МБ'), findsNothing);
   });
 
   testWidgets('мини-плеер скрыт, пока ничего не играет', (tester) async {

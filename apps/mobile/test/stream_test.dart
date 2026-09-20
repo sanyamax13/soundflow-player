@@ -44,6 +44,52 @@ class _SlowPlayer extends PlayerController {
       gate.future;
 }
 
+/// Плеер, который ничего не играет, а только записывает, что с ним делал Поток:
+/// `playQueue` ведёт себя как настоящий (сбрасывает счётчик очереди Потока).
+class _RecordingPlayer extends PlayerController {
+  final calls = <String>[];
+  List<NowPlaying>? takenOver;
+  @override
+  Future<void> playQueue(
+    List<NowPlaying> tracks, {
+    int startIndex = 0,
+    bool shuffle = false,
+    bool loop = true,
+    bool autoplay = true,
+  }) async {
+    streamQueueCount = -1;
+    calls.add('playQueue');
+    now.value = tracks[startIndex];
+  }
+
+  @override
+  Future<void> takeOverWithStream(List<NowPlaying> stream) async {
+    calls.add('takeOver');
+    takenOver = stream;
+  }
+
+  @override
+  Future<void> appendNewToQueue(List<NowPlaying> all) async => calls.add('append');
+}
+
+const _someoneElse =
+    NowPlaying(id: 'fav1', title: 'Из избранного', artist: 'Кто-то', path: '/tmp/fav1');
+
+List<DownloadedTrack> _twoTracks() => [
+      DownloadedTrack(
+          id: 'a', title: 'Песня А', artist: 'Кто-то', path: '/tmp/a', bytes: 10, addedAt: 1),
+      DownloadedTrack(
+          id: 'b', title: 'Песня Б', artist: 'Кто-то', path: '/tmp/b', bytes: 20, addedAt: 2),
+    ];
+
+Future<void> _openStream(WidgetTester tester, Widget app) async {
+  await tester.binding.setSurfaceSize(const Size(400, 860));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(app);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
 Future<Widget> _app({
   List<DownloadedTrack> downloaded = const [],
   PlayerController? player,
@@ -143,5 +189,45 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Ничего не играет'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  // Alex TG 20135 (20.09.2026): «нажал на избранное, слушаю оттуда, перешёл на
+  // Поток — играет дальше избранное, подобранные в Потоке уже не включишь».
+  group('Поток забирает плеер у чужой очереди', () {
+    testWidgets('играет чужое (после «Моей музыки») — Поток ставит свою очередь', (tester) async {
+      final player = _RecordingPlayer()..now.value = _someoneElse; // счётчик -1: очередь не Потока
+      await _openStream(tester, await _app(player: player, downloaded: _twoTracks()));
+
+      expect(player.calls, ['takeOver']); // не playQueue (это бы оборвало песню) и не «дозапись в хвост»
+      expect(player.takenOver!.map((t) => t.id).toSet(), {'a', 'b'});
+      expect(player.streamQueueCount, 2);
+    });
+
+    testWidgets('очередь уже Потока и ничего не изменилось — не трогаем', (tester) async {
+      final player = _RecordingPlayer()
+        ..now.value = _someoneElse
+        ..streamQueueCount = 2;
+      await _openStream(tester, await _app(player: player, downloaded: _twoTracks()));
+
+      expect(player.calls, isEmpty);
+    });
+
+    testWidgets('в библиотеке прибавилось — дозапись, а не замена', (tester) async {
+      final player = _RecordingPlayer()
+        ..now.value = _someoneElse
+        ..streamQueueCount = 1; // Поток строил очередь, когда песня была одна
+      await _openStream(tester, await _app(player: player, downloaded: _twoTracks()));
+
+      expect(player.calls, ['append']);
+      expect(player.streamQueueCount, 2);
+    });
+
+    testWidgets('плеер пуст — как раньше: заряжаем на паузе', (tester) async {
+      final player = _RecordingPlayer();
+      await _openStream(tester, await _app(player: player, downloaded: _twoTracks()));
+
+      expect(player.calls, ['playQueue']);
+      expect(player.streamQueueCount, 2); // playQueue сбросил в -1, Поток заявил свою уже после
+    });
   });
 }

@@ -45,6 +45,18 @@ List<NowPlaying> withoutArtistAfter(List<NowPlaying> queue, int afterIndex, Stri
   ];
 }
 
+/// Очередь, когда «Поток» забирает плеер у чужой очереди (избранное, папка
+/// исполнителя, поиск из «Моей музыки»): играющая сейчас песня остаётся первой
+/// (доигрывает, её не прерываем), дальше — песни Потока без неё, не больше [cap]
+/// (целиком тысячи песен на играющем плеере вешают звук на секунды, см.
+/// `_kMaxLiveTail`). Alex TG 20135 (20.09.2026): «нажал на избранное, слушаю
+/// оттуда, перешёл на Поток — играет дальше избранное».
+@visibleForTesting
+List<NowPlaying> takeOverQueue(NowPlaying current, List<NowPlaying> stream, {int cap = 150}) {
+  final rest = [for (final t in stream) if (t.id != current.id) t];
+  return [current, ...(rest.length > cap ? rest.sublist(0, cap) : rest)];
+}
+
 /// Обёртка над проигрывателем. Держит очередь локальных файлов (офлайн),
 /// отдаёт наружу простые ValueNotifier'ы для UI. Фон/локскрин — через
 /// `audio_service` (см. audio_handler.dart). Гэплесс, нормализация —
@@ -147,7 +159,8 @@ class PlayerController {
   final ValueNotifier<int> reloadSeq = ValueNotifier(0);
 
   /// Сколько треков было в «Моей музыке», когда вкладка «Поток» в последний
-  /// раз строила/дополняла очередь — -1 значит ещё ни разу. Живёт здесь (не в
+  /// раз строила/дополняла очередь — -1 значит ещё ни разу, либо после этого
+  /// в плеер заряжена чужая очередь (`playQueue` сбрасывает). Живёт здесь (не в
   /// StreamScreen), потому что StreamScreen пересоздаётся при каждом
   /// переключении вкладок, а очередь и то, что из неё уже сыграно —
   /// состояние самого плеера (см. stream_screen.dart _load, пункт 4).
@@ -258,6 +271,11 @@ class PlayerController {
     bool autoplay = true,
   }) async {
     if (tracks.isEmpty) return;
+    // Любая заряженная очередь считается чужой для Потока: свою он после этого
+    // заявит сам (stream_screen.dart _fillQueue ставит счётчик уже ПОСЛЕ вызова).
+    // Без этого после «Избранного» Поток думал, что очередь всё ещё его, и играл
+    // избранное дальше (Alex TG 20135, 20.09.2026).
+    streamQueueCount = -1;
     // Шаффл — свой (переставляем сам список), а не встроенный в just_audio:
     // тот держит порядок воспроизведения отдельно от списка очереди, и
     // «Дальше» в UI начинает показывать не ту песню, что играет следующей.
@@ -456,9 +474,32 @@ class PlayerController {
   /// `stopRadio`/`setSimilarTail` — не рискуем тем же классом бага зацикливания.
   Future<void> appendNewToQueue(List<NowPlaying> all) async {
     if (_source == null) return;
-    final fresh = newTracksToAppend(_queue, all);
+    // Не больше _kMaxLiveTail за раз: после `takeOverWithStream` в очереди лишь
+    // урезанный кусок Потока, и «чего нет в очереди» — это вся остальная
+    // библиотека (тысячи); обычно же новых песен единицы.
+    final fresh = _capTail(newTracksToAppend(_queue, all));
     if (fresh.isEmpty) return;
     await _reloadFrom([..._queue, ...fresh]);
+  }
+
+  /// «Поток» забирает плеер у чужой очереди (см. `takeOverQueue`): песня, что
+  /// играет сейчас, доигрывает с той же позиции, дальше — Поток вместо
+  /// избранного/папки/поиска. Историю чужой очереди в новую не берём: с
+  /// `LoopMode.all` после кругового прохода Потока она бы вернулась. Радио
+  /// выключается (оно было построено вокруг чужой песни).
+  Future<void> takeOverWithStream(List<NowPlaying> stream) async {
+    final p = _player;
+    if (p == null || _queue.isEmpty) return;
+    final cur = _queue[_index.clamp(0, _queue.length - 1)];
+    final q = takeOverQueue(cur, stream, cap: _kMaxLiveTail);
+    _queue = [q.first];
+    _index = 0;
+    _prevIndex = 0; // новая очередь — не считаем сменой трека
+    radio.value = false;
+    _preRadioTail = null;
+    shuffle.value = false;
+    await p.setLoopMode(LoopMode.all);
+    await _reloadFrom(q);
   }
 
   /// Файл трека [t] докачали заново после `onMissingFile` (см.

@@ -108,7 +108,13 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     // просто открыли заново, трогать нечего; выросло — либо первая зарядка
     // (плеер пуст), либо дозапись новых треков в хвост без остановки того,
     // что уже играет.
-    if (player.streamQueueCount == items.length) return;
+    // Очередь могла стать чужой: в «Моей музыке» нажали «играть» по избранному /
+    // папке / найденному — `playQueue` тогда сбрасывает счётчик в -1, а что-то
+    // играет (now != null). Раньше счётчик оставался «как у Потока» и Поток
+    // продолжал играть избранное (Alex TG 20135, 20.09.2026). Песня, что играет
+    // сейчас, доигрывает, дальше — Поток (`takeOverWithStream`).
+    final foreign = player.now.value != null && player.streamQueueCount < 0;
+    if (!foreign && player.streamQueueCount == items.length) return;
     final sw = Stopwatch()..start();
     // Порядок — под вкус, не просто вперемешку (Alex TG 14.09.2026: «доделай»
     // урезанный пункт 6 — раньше учитывались только скрытые исполнители).
@@ -132,7 +138,9 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
             shuffle: false,
             autoplay: false,
           )
-        : player.appendNewToQueue(queue);
+        : foreign
+            ? player.takeOverWithStream(queue)
+            : player.appendNewToQueue(queue);
     // Счётчик — сразу, не дожидаясь конца зарядки (как и раньше): повторное
     // открытие вкладки за это время не соберёт очередь второй раз.
     player.streamQueueCount = items.length;
