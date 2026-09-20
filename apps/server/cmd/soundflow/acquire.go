@@ -114,6 +114,7 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 			s.acq().set(idx, "done", note)
 			s.jobs.finishAmbient(aj, note)
 			_ = s.db.AddServerLog("added", artist, title, "скачано ("+res.Source+")", 0)
+			s.autoPlanAdd(res.TrackID)
 			// Отпечаток — фоном, не держим ответ. Нет движка/ffmpeg — трек
 			// просто не попадёт в умное радио, не ошибка.
 			go func(id string) {

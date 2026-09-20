@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -61,6 +63,7 @@ func (s *Service) hDevTrackDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	moved := ""
+	copiesMoved := 0
 	if ok {
 		// 2. из каталога ПК
 		if err := s.store.DeleteTrackByKey(ctx, normKey); err != nil {
@@ -77,15 +80,24 @@ func (s *Service) hDevTrackDelete(w http.ResponseWriter, r *http.Request) {
 		} else {
 			moved = m
 		}
+		// 5. копии песни в других папках — туда же (Alex TG 20177, вариант 2)
+		for _, cp := range s.findCopyFiles(ctx, map[string]string{normKey: s.localPath(canonical)})[normKey] {
+			if m, e := s.moveToDeleted(cp); e != nil {
+				_ = s.db.AddServerLog("error", artist, title, "не смог перенести копию в _deleted ("+cp+"): "+e.Error(), 0)
+			} else if m != "" {
+				copiesMoved++
+			}
+		}
 	}
 
 	_ = s.db.AddServerLog("info", artist, title, "удалён полностью из окна ПК (телефон+каталог+диск, помечен «не качать»)", 0)
 	writeJSON(w, map[string]any{
-		"deleted":     true,
-		"in_catalog":  ok,
-		"file_moved":  moved != "",
-		"trash":       moved,
-		"blocked_key": normKey,
+		"deleted":      true,
+		"in_catalog":   ok,
+		"file_moved":   moved != "",
+		"copies_moved": copiesMoved,
+		"trash":        moved,
+		"blocked_key":  normKey,
 	})
 }
 
@@ -124,6 +136,9 @@ func (s *Service) moveToDeleted(local string) (string, error) {
 		return "", err
 	}
 	dst := filepath.Join(dir, time.Now().Format("20060102-150405")+"__"+filepath.Base(local))
+	if _, err := os.Stat(dst); err == nil { // копии одной песни часто зовутся одинаково — ничего не затираем
+		dst = strings.TrimSuffix(dst, filepath.Ext(dst)) + "__" + fmt.Sprint(time.Now().UnixNano()) + filepath.Ext(dst)
+	}
 	if err := os.Rename(local, dst); err == nil {
 		return dst, nil
 	}

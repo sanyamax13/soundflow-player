@@ -992,9 +992,21 @@ async function _ctxPhoneBulk(name, ids, add){
 
 async function _ctxDelete(ids, label, isFolder){
   const big = ids.length > _ctxBig;
+  // Копии: другие файлы этих же песен в других папках (каталог их не показывает, скан пропускает как повторы).
+  // Alex TG 20177: песню удаляем целиком, со всеми копиями — окно говорит, сколько их, до подтверждения.
+  let copies = 0, copySongs = 0;
+  {
+    const closeBusy = _ctxBusy("Ищу копии в других папках…");
+    try{ const c = await _ctxPost("/api/tracks/copies", {ids}); copies = c.copies || 0; copySongs = c.songs || 0; }
+    catch(e){ /* не вышло посчитать — спросим без этой строки, удаление всё равно уберёт копии */ }
+    closeBusy();
+  }
   const lines = [isFolder ? `Папка «${label}»: ${nfmt(ids.length)} ${_wordTrack(ids.length)}, ${_fmtSize(_ctxBytes(ids))}.` : `«${label}»`,
     "Песни уйдут из каталога и с телефона (при его следующем заходе), а в загрузчик попадёт метка «больше не качать».",
     "Файлы не стираются: они переносятся в папку _deleted на том же диске (например G:\\_deleted), оттуда их можно вернуть руками."];
+  if(copies) lines.push(isFolder
+    ? `У ${nfmt(copySongs)} ${_wordTrack(copySongs)} есть ещё ${nfmt(copies)} ${plural(copies,"копия","копии","копий")} в других папках — уберу и их.`
+    : `У этой песни есть ещё ${nfmt(copies)} ${plural(copies,"копия","копии","копий")} в других папках — уберу все.`);
   if(big) lines.push("Перед удалением программа сама сохранит копию базы.");
   const ok = await _ctxConfirm({ title: isFolder ? "Удалить папку навсегда?" : "Удалить песню навсегда?",
     lines, okText: "Удалить", danger: true });
@@ -1004,9 +1016,11 @@ async function _ctxDelete(ids, label, isFolder){
     const r = await _ctxPost("/api/tracks/delete-forever", {ids});
     close();
     let msg = `Удалено: ${nfmt(r.deleted)} ${_wordTrack(r.deleted)}.`;
+    if(r.copies) msg += ` Копий убрано: ${nfmt(r.copies)}.`;
     if(r.trash_dir) msg += ` Файлы лежат в ${r.trash_dir}.`;
     if(r.failed) msg += ` Не удалось: ${nfmt(r.failed)} (файл занят), они остались на месте.`;
-    _ctxToast(msg, !!r.failed);
+    if(r.copies_failed) msg += ` Копий не удалось убрать: ${nfmt(r.copies_failed)} (файл занят), они остались на месте.`;
+    _ctxToast(msg, !!(r.failed || r.copies_failed));
     await loadCatalog();               // явная загрузка: дерево папок берём заново
   }catch(e){ close(); _ctxToast("Не получилось: " + e.message, true); }
 }
@@ -1869,11 +1883,6 @@ async function loadWave(){
 // компьютере (local_url из /api/info) — как это делает браузер, где всё работает. Не в окне — как раньше.
 const _IN_WINDOW = location.hostname === "wails.localhost";
 function _audioBase(){ return (_IN_WINDOW && window._info && window._info.local_url) || ""; }
-// Что творится с плеером в окне, изнутри окна не видно (порта отладки у готовой сборки нет) — события
-// прослушивания дописываются в файл window-debug.log рядом с базой (см. clientlog.go).
-function _clog(msg){
-  try{ fetch("/api/client-log", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({what: msg})}).catch(()=>{}); }catch(e){}
-}
 let _discRel = "";          // тот же адрес без «настоящего» начала — для проверки причины ошибки
 function _discPlay(kind, i){
   const t = _discKind[kind].items()[i];
@@ -1885,8 +1894,7 @@ function _discPlay(kind, i){
   cur = -1;                                   // вышли из «списка каталога»
   _discRel = "/api/yandex/preview?" + new URLSearchParams({id: t.yandex_id||"", artist: t.artist||"", title: t.title||""});
   au.src = _audioBase() + _discRel;
-  _clog("нажата «" + (t.artist||"") + " — " + (t.title||"") + "»: " + (_IN_WINDOW ? "окно" : "браузер") + ", адрес звука " + (_audioBase() || "(через само окно)"));
-  au.play().then(() => _clog("play(): принят"), e => _clog("play(): отклонён " + e.name + " — " + e.message));
+  au.play().catch(() => {});
   $("#player").classList.remove("empty");
   $("#pt1").textContent = t.title || "—";
   $("#pt2").textContent = t.artist || "";
@@ -1925,11 +1933,8 @@ function _discStep(d){
 au.addEventListener("play",  _discMarkPlaying);
 au.addEventListener("pause", _discMarkPlaying);
 // Яндекс не отдал / качалка не ответила — сказать причину, а не молчать
-["loadstart","loadedmetadata","canplay","playing","waiting","stalled","suspend","abort","emptied","ended"].forEach(ev =>
-  au.addEventListener(ev, () => { if(_discPlayKey && au.src.includes("/api/yandex/preview")) _clog(ev + " t=" + au.currentTime.toFixed(1) + " ready=" + au.readyState + " net=" + au.networkState); }));
 au.addEventListener("error", async () => {
   if(!_discPlayKey || !au.src.includes("/api/yandex/preview")) return;
-  _clog("error код=" + (au.error && au.error.code) + " " + (au.error && au.error.message || ""));
   let why = "";
   try{ const r = await fetch(_discRel || au.src, {headers:{Range:"bytes=0-0"}}); if(!r.ok) why = (await r.text()).trim(); }catch(e){}
   _ctxToast("Не получилось включить песню" + (why ? ": " + why : " — Яндекс не отдал её"), true);

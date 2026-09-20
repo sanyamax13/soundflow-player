@@ -76,6 +76,9 @@ func (s *Server) acquireTrack(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		if res.Created {
 			s.logServer(r.Context(), db.LogAdded, req.Artist, req.Title, "скачан по запросу из плеера", 0)
+			if s.OnTrackAdded != nil {
+				s.OnTrackAdded(res.TrackID)
+			}
 			// «Звуковой отпечаток» считаем фоном — не держим ответ телефону
 			// лишние секунды. Догон пропущенного — /v1/admin/reanalyze.
 			go func(id string) {
@@ -184,11 +187,24 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if data, mime, ok := coverart.Embedded(s.PathMap.ToLocal(canonical)); ok {
+	local := s.PathMap.ToLocal(canonical)
+	if data, mime, ok := coverart.Embedded(local); ok {
 		w.Header().Set("Content-Type", mime)
 		w.Header().Set("Cache-Control", "public, max-age=604800") // неделя — обложка файла не меняется
 		_, _ = w.Write(data)
 		return
+	}
+	// Нет в самом файле — картинка в папке альбома (cover.jpg, folder.jpg…), потом
+	// найденная поиском в интернете. Картинки могут заменить — кэш на сутки, не неделя.
+	for _, find := range []func() (string, bool){
+		func() (string, bool) { return coverart.FolderImage(local) },
+		func() (string, bool) { return coverart.Found(s.FoundCoversDir, id) },
+	} {
+		if p, ok := find(); ok {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			http.ServeFile(w, r, p)
+			return
+		}
 	}
 	if url, found, err := s.DB.TrackCoverURL(r.Context(), id); err == nil && found {
 		// ИИ-нарисованная обложка (этап 28): в БД лежит абсолютная ссылка на

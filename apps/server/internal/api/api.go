@@ -32,6 +32,16 @@ type Server struct {
 	// 05.09.2026), отдаётся статикой. Пусто — ручка выключена (404 всем).
 	GeneratedCoversDir string
 
+	// FoundCoversDir — папка с обложками, найденными поиском в интернете
+	// (<id трека>.jpg), 20.09.2026. Смотрим после обложки в самом файле и в
+	// папке альбома. Пусто — не используем.
+	FoundCoversDir string
+
+	// OnTrackAdded — необязательный крючок: в каталог только что попала НОВАЯ скачанная песня
+	// (по запросу из плеера или замена «плохой версии»). Программа на компьютере кладёт её в план
+	// телефона (Alex TG 20159: «программа автономна»). Пусто — ничего не делаем.
+	OnTrackAdded func(trackID string)
+
 	// EraseGate — необязательный шлюз стирания файлов, убранных на телефоне.
 	// Программа на компьютере ставит его, чтобы такие файлы не стирались сами, а
 	// ждали подтверждения Alex в окне (TG 19943/19948, 19.09.2026). Пусто — файл
@@ -360,6 +370,9 @@ func (s *Server) deleteAndReacquire(ctx context.Context, trackID, local, reason 
 		}
 		s.logServer(context.Background(), db.LogReplaced, artist, title, "заменил на версию получше", 0)
 		log.Printf("переудаление %s — %s: нашлась замена, новый трек %s", artist, title, res.TrackID)
+		if res.Created && s.OnTrackAdded != nil {
+			s.OnTrackAdded(res.TrackID)
+		}
 		if res.Created {
 			bg2, cancel2 := context.WithTimeout(context.Background(), 6*time.Minute)
 			defer cancel2()

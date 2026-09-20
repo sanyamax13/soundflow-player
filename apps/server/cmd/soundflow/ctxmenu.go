@@ -189,6 +189,8 @@ type deleteResult struct {
 	FilesMoved   int      `json:"files_moved"`   // файлов перенесено в _deleted
 	FilesMissing int      `json:"files_missing"` // файла на диске уже не было
 	Bytes        int64    `json:"bytes"`
+	Copies       int      `json:"copies"`        // файлов-копий песен перенесено (другие папки, тот же исполнитель и название)
+	CopiesFailed int      `json:"copies_failed"` // копий перенести не удалось (файл занят) — остались на месте
 	TrashDir     string   `json:"trash_dir,omitempty"`
 	Backup       string   `json:"backup,omitempty"`
 	Errors       []string `json:"errors,omitempty"`
@@ -207,7 +209,9 @@ type deleteResult struct {
 //     откатом) в <диск>\_deleted\<дата-время>\<путь без буквы диска>. Тот же
 //     диск — перенос мгновенный (переименование, без копирования гигабайтов), а
 //     вложенные папки сохраняются, чтобы вернуть можно было простым
-//     перетаскиванием. Пустые папки после переноса убираются.
+//     перетаскиванием. Пустые папки после переноса убираются;
+//  5. так же уходят КОПИИ песни — другие файлы с тем же исполнителем и названием в
+//     других папках (Alex TG 20177, вариант 2: «удалять песню целиком»), см. copies.go.
 //
 // Больше bigDeleteThreshold песен — перед удалением копия базы в
 // <папка_базы>\_backup (не вышла копия — не удаляем ничего).
@@ -251,6 +255,7 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 	}
 	stamp := time.Now().Format("20060102-150405")
 	stopAt := s.libraryRoots()
+	copies := s.findCopyFiles(ctx, s.copiesWanted(ctx, ids)) // один проход по папке на всю пачку
 
 	var removed []string
 	var movedDirs []string
@@ -292,6 +297,21 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 		})
 		removed = append(removed, id)
 		res.Deleted++
+		for _, cp := range copies[normKey] { // копии той же песни в других папках
+			cm, cErr := s.moveToDeletedTree(cp, stamp)
+			if cErr != nil {
+				res.CopiesFailed++
+				res.Errors = append(res.Errors, "копия «"+artist+" — "+title+"» ("+cp+"): "+cErr.Error())
+				continue
+			}
+			if cm != "" {
+				res.Copies++
+				if fi, e := os.Stat(cm); e == nil {
+					res.Bytes += fi.Size()
+				}
+				movedDirs = append(movedDirs, filepath.Dir(cp))
+			}
+		}
 		if moved != "" {
 			res.FilesMoved++
 			res.Bytes += size
@@ -313,8 +333,8 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 		pruneEmptyDirs(movedDirs, stopAt)
 	}
 	_ = s.db.AddServerLog("info", "", "", fmt.Sprintf(
-		"удалено навсегда из окна: %d песен (файлов перенесено %d, не удалось %d), файлы в %s, копия базы: %s",
-		res.Deleted, res.FilesMoved, res.Failed, orDash(res.TrashDir), orDash(res.Backup)), res.Bytes)
+		"удалено навсегда из окна: %d песен (файлов перенесено %d, копий перенесено %d, не удалось %d+%d), файлы в %s, копия базы: %s",
+		res.Deleted, res.FilesMoved, res.Copies, res.Failed, res.CopiesFailed, orDash(res.TrashDir), orDash(res.Backup)), res.Bytes)
 	return res, nil
 }
 

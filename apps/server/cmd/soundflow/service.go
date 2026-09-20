@@ -21,6 +21,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"soundflow/server/internal/api"
+	"soundflow/server/internal/coverart"
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/diskspace"
 	"soundflow/server/internal/inference"
@@ -192,7 +193,6 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/yandex/wave", s.hYandexWave)
 	r.Post("/api/phone/favorites", s.hPhoneFavoritesReport)
 	r.Get("/api/phone/missing-favorites", s.hPhoneFavoritesMissing)
-	r.Post("/api/client-log", localOnly(s.hClientLog))
 	r.Post("/api/discover/dismiss", localOnly(s.hDiscoverDismiss))
 	r.Post("/api/discover/undismiss", localOnly(s.hDiscoverUndismiss))
 	r.Get("/api/yandex/preview", localOnly(s.hYandexPreview))
@@ -208,6 +208,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/phone/state", s.hPhoneState)
 	r.Post("/api/phone/plan", localOnly(s.hPhonePlan))
 	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
+	r.Post("/api/tracks/copies", localOnly(s.hTrackCopies))
 	r.Post("/api/reveal", localOnly(s.hReveal))
 	r.Post("/api/open-folder", localOnly(s.hOpenFolder))
 	r.Get("/api/removals", s.hRemovals)
@@ -532,14 +533,32 @@ func (s *Service) hCover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "нет трека", 404)
 		return
 	}
-	c := embeddedCover(s.localPath(path))
+	local := s.localPath(path)
+	c := embeddedCover(local)
 	if c == nil {
+		// нет в самом файле — картинка в папке альбома, потом найденная поиском (см. coverart)
+		if p, ok := coverart.FolderImage(local); ok {
+			w.Header().Set("Cache-Control", "max-age=86400")
+			http.ServeFile(w, r, p)
+			return
+		}
+		if p, ok := coverart.Found(s.foundCoversDir(), id); ok {
+			w.Header().Set("Cache-Control", "max-age=86400")
+			http.ServeFile(w, r, p)
+			return
+		}
 		http.Error(w, "нет обложки", 404)
 		return
 	}
 	w.Header().Set("Content-Type", c.mime)
 	w.Header().Set("Cache-Control", "max-age=86400")
 	_, _ = w.Write(c.data)
+}
+
+// foundCoversDir — папка с обложками, найденными поиском в интернете
+// (<id трека>.jpg): рядом с базой, как generated_covers (20.09.2026).
+func (s *Service) foundCoversDir() string {
+	return filepath.Join(filepath.Dir(s.dbPath), "found_covers")
 }
 
 // localPath — канонический путь -> путь на этой машине. Пока считаем, что exe
