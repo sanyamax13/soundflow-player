@@ -174,3 +174,7 @@ async def yandex_playlist(url: str = "") -> YandexPlaylistResponse:
     title, items, err = await playlist_by_link(url)
     return YandexPlaylistResponse(title=title, items=[YandexLikeItem(**i) for i in items], error=err)
 ```
+
+## Установлено
+
+**Установлено 20.09.2026 в 08:32 (Alex TG 20128 «ставь»), замена №13 (версия 14; v13 отдельно не ставилась — вошла в v14).** Перед закрытием заданий/скачиваний не было, закрыт только `C:\Users\brain\Desktop\SoundFlow\SoundFlow.exe`, предыдущая программа сохранена в `E:\soundflow-data\_exe-backup\SoundFlow-v12-20260920.exe`. Первый скан «добавлено 0, пропущено 8967, ошибок 0», качалку с новым кодом поднял сам SoundFlow (python ← python ← SoundFlow.exe), страница == репо. На установленной программе: `GET /api/yandex/playlist` по ссылке Alex — 200 за 1,5 с, «Мне нравится», 573 песни, 10 уже в каталоге; плохая ссылка, пустая, несуществующий плейлист — 400 с понятным текстом; по LAN-адресу ПК — 200; `/api/yandex/likes` — 404 (убрана); предпросмотр — 206. **Не проверено на устройстве:** окно Alex — вставит ли он ссылку и увидит ли список; звук в «Открытиях» в окне (v12) по-прежнему без ответа Alex.
