@@ -77,6 +77,12 @@
     padding:3px 11px; font:inherit; font-weight:700; cursor:pointer}
   .ctxtoast .undo:hover{background:rgba(255,255,255,.15)}
   /* «Открытия»: разделы сворачиваются (Alex TG 20073) */
+  .dlink{display:flex; gap:10px; margin-bottom:10px; flex-shrink:0}
+  .dlink input{flex:1; min-width:0; height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--field); font:inherit; font-size:14px; color:var(--ink)}
+  .dlink input:focus{outline:2px solid var(--ink); outline-offset:-1px; background:#fff}
+  .dlink .btn{height:40px; padding:0 20px; font-size:13px}
+  #plMsg{margin:-2px 2px 10px; flex-shrink:0}
+  #plMsg.bad{color:#b3261e}
   .dsec{border:1px solid var(--line); border-radius:10px; margin-bottom:10px; flex-shrink:0}
   .dsec-head{display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; user-select:none; border-radius:10px}
   .dsec-head:hover{background:var(--field)}
@@ -406,6 +412,31 @@
            каждый раздел СВЁРНУТ, по нажатию на заголовок раскрывается; каждую песню можно послушать
            (полная, из Яндекса, через качалку); у каждой песни — «Удалить» (убрать из списка, не из Яндекса). -->
       <section class="view" id="v-discover">
+        <!-- Плейлист по ссылке (Alex TG 20117–20122, 20.09.2026): Alex сам вставляет ссылку на плейлист Яндекс.Музыки
+             (например, «Мне нравится» → «Поделиться»), а раздел «Твои лайки из Яндекс.Музыки», который подтягивался сам по
+             токену, убран (его ответ «2»). Один плейлист за раз: новая ссылка заменяет прежний. Песни — тем же списком. -->
+        <div class="dlink" id="plBar">
+          <input type="text" id="plUrl" placeholder="Вставь ссылку на плейлист Яндекс.Музыки (у плейлиста «Поделиться»)" autocomplete="off" spellcheck="false" aria-label="Ссылка на плейлист Яндекс.Музыки">
+          <button class="btn primary" id="plShow">Показать</button>
+        </div>
+        <div class="hint" id="plMsg" hidden></div>
+        <div class="dsec" id="sec-pl" hidden>
+          <div class="dsec-head" data-sec="pl" role="button" tabindex="0" aria-expanded="false" title="нажми — свернётся или раскроется">
+            <span class="chev">▸</span>
+            <h2 id="plTitle">Плейлист</h2>
+            <span class="dsec-sum" id="plSum"></span>
+            <span class="dsec-btns">
+              <button class="btn" id="plSelAll">Выбрать все</button>
+              <button class="btn primary" id="plDlAll">Скачать выбранные</button>
+              <button class="btn" id="plClose" title="убрать этот плейлист с экрана (в Яндексе ничего не меняется)">Закрыть</button>
+            </span>
+          </div>
+          <div class="dsec-body" hidden>
+            <div class="hint" id="plHint"></div>
+            <div class="dsongs" id="plBody"></div>
+          </div>
+        </div>
+
         <!-- Волна ПЕРВОЙ (Alex TG 15.09.2026 поймал: «где новое предложенное?»). Шаг 2, без личной
              рекомендации Яндекса (Alex TG 14.09.2026 — «алгоритм их изучи, что бы мы сделали похожее для
              себя»). Кандидаты — ещё треки у лайкнутых артистов, похожие жанры, похожие артисты, артисты,
@@ -424,24 +455,6 @@
           <div class="dsec-body" hidden>
             <div class="hint" id="waveHint">загрузка…</div>
             <div class="dsongs" id="waveBody"></div>
-          </div>
-        </div>
-
-        <!-- Лайки из Яндекс.Музыки (Alex TG 14.09.2026, шаг 1). Полные песни, без превью-обрезков. -->
-        <div class="dsec" id="sec-likes">
-          <div class="dsec-head" data-sec="likes" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
-            <span class="chev">▸</span>
-            <h2>Твои лайки из Яндекс.Музыки</h2>
-            <span class="dsec-sum" id="likesSum"></span>
-            <span class="dsec-btns">
-              <button class="btn" id="discSelAll">Выбрать все</button>
-              <button class="btn" id="discRefresh">Обновить</button>
-              <button class="btn primary" id="discDlAll">Скачать выбранные</button>
-            </span>
-          </div>
-          <div class="dsec-body" hidden>
-            <div class="hint" id="discHint">загрузка…</div>
-            <div class="dsongs" id="discBody"></div>
           </div>
         </div>
       </section>
@@ -1714,7 +1727,7 @@ async function loadTaste(){
 }
 
 /* ---------- Настройки ---------- */
-/* ---------- Открытия: волна и лайки Яндекса ----------
+/* ---------- Открытия: плейлист по ссылке и волна ----------
    Alex TG 14.09.2026: «возьмём моё избранное из Яндекса... нужно это в программе как-то разместить,
    может отдельную вкладку». Закачка — тем же /api/acquire, что и «Найти и скачать» (ищет по Яндексу/
    торрентам, проверяет качество — код не дублируем). Дизлайки Яндекса — молча в чёрный список.
@@ -1722,20 +1735,22 @@ async function loadTaste(){
    (2) каждую песню можно послушать — полная, из Яндекса, через /api/yandex/preview; (3) у каждой песни
    кнопка «Удалить» — убрать из списка (только скрытие, лайк в Яндексе/на телефоне не трогаем; «Вернуть»
    после удаления).
+   Alex TG 20122 (20.09.2026, ответ «2»): раздел «Твои лайки из Яндекс.Музыки» убран — вместо него Alex сам вставляет ссылку
+   на плейлист Яндекс.Музыки (/api/yandex/playlist); молчаливый перенос «не нравится» из Яндекса в чёрный список тоже убран.
    Alex TG 20111 (20.09.2026): раздел «Старые лайки с телефона» убран — нужные песни он уже вернул. Ручка
    /api/phone/missing-favorites и отчёт телефона /api/phone/favorites остались на сервере; сам раздел — в
    git-истории этой страницы. */
-let _discItems = [];        // лайки Яндекса
+let _plItems = [];          // плейлист по ссылке
+let _plTitle = "";
 let _waveItems = [];        // волна
-let _discDislikesDone = false;
 let _discPlayKey = "";      // какая песня из «Открытий» сейчас играет: вид|артист|название
 
-const _discOpen = {wave:false, likes:false};
-const _discLoaded = {wave:false, likes:false};
-const _discLoader = {wave: () => loadWave(), likes: () => loadDiscover()};
+const _discOpen = {wave:false, pl:false};
+const _discLoaded = {wave:false, pl:true};      // плейлист грузится кнопкой «Показать», а не при раскрытии
+const _discLoader = {wave: () => loadWave(), pl: () => {}};
 const _discKind = {
   wave:  {items: () => _waveItems,     body: "#waveBody",    one: "_waveOne",     pick: "wavePick"},
-  likes: {items: () => _discItems,     body: "#discBody",    one: "_discOne",     pick: "discPick"},
+  pl:    {items: () => _plItems,       body: "#plBody",      one: "_plOne",       pick: "plPick"},
 };
 
 function _discToggle(name){
@@ -1754,12 +1769,8 @@ document.querySelectorAll(".dsec-head").forEach(h => {
 });
 document.querySelectorAll(".dsec-btns").forEach(b => b.addEventListener("click", e => e.stopPropagation()));
 
-// вход на вкладку: дизлайки Яндекса → чёрный список (раз за запуск, тихо); раскрытые разделы обновляем
+// вход на вкладку: раскрытые разделы обновляем (плейлист по ссылке остаётся как есть)
 function _discOnEnter(){
-  if(!_discDislikesDone){
-    _discDislikesDone = true;
-    fetch("/api/yandex/dislikes/import",{method:"POST"}).catch(()=>{});
-  }
   for(const n of Object.keys(_discOpen)) if(_discOpen[n]) _discLoader[n]();
 }
 
@@ -1791,28 +1802,51 @@ function _discRender(kind){
       ? `Сегодня подобрано — <b>${nfmt(items.length)}</b> песен. Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`
       : "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.";
     $("#waveSum").textContent = items.length ? nfmt(items.length)+" песен" : "";
-  } else if(kind === "likes"){
+  } else if(kind === "pl"){
     const left = items.filter(t=>!t.already_have).length;
-    $("#discHint").innerHTML = `<b>${nfmt(items.length)}</b> лайкнутых песен в Яндексе, `+
-      `из них уже в каталоге — <b>${nfmt(items.length-left)}</b>, можно докачать — <b>${nfmt(left)}</b>. `+
-      `Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`;
-    $("#likesSum").textContent = nfmt(items.length)+" песен · докачать "+nfmt(left);
+    $("#plHint").innerHTML = items.length
+      ? `<b>${nfmt(items.length)}</b> песен в плейлисте, из них уже в каталоге — <b>${nfmt(items.length-left)}</b>, `+
+        `можно докачать — <b>${nfmt(left)}</b>. Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, `+
+        `или сразу «Скачать выбранные».`
+      : "В этом плейлисте нет песен, которые можно послушать у нас (или все они скрыты кнопкой «Удалить»).";
+    $("#plSum").textContent = items.length ? nfmt(items.length)+" песен · докачать "+nfmt(left) : "";
   }
   _discMarkPlaying();
   _discSelUpdate(kind);
 }
 
-async function loadDiscover(){
-  const hint = $("#discHint"), box = $("#discBody");
-  hint.textContent = "загрузка твоих лайков из Яндекса…";
-  box.innerHTML = "";
+function _plMsg(text, bad){
+  const m = $("#plMsg");
+  m.hidden = !text; m.textContent = text || ""; m.classList.toggle("bad", !!bad);
+}
+// Показать плейлист по ссылке: Alex вставил ссылку (Alex TG 20122). Ошибки — понятным текстом от качалки как есть.
+async function loadPlaylist(){
+  const link = $("#plUrl").value.trim(), btn = $("#plShow");
+  if(!link){ _plMsg("Вставь ссылку на плейлист из Яндекс.Музыки: у плейлиста нажми «Поделиться» и скопируй ссылку.", true); return; }
+  btn.disabled = true; _plMsg("Открываю плейлист…", false);
+  let d;
   try{
-    _discItems = await jget("/api/yandex/likes");
+    d = await jget("/api/yandex/playlist?url=" + encodeURIComponent(link));
   }catch(e){
-    hint.textContent = "Не вышло получить лайки: "+friendlyError(e);
+    btn.disabled = false; _plMsg(friendlyError(e), true);
     return;
   }
-  _discRender("likes");
+  btn.disabled = false; _plMsg("", false);
+  _plTitle = d.title || "Плейлист";
+  _plItems = d.items || [];
+  $("#plTitle").textContent = "Плейлист «" + _plTitle + "»";
+  const sec = $("#sec-pl");
+  sec.hidden = false; sec.classList.add("open"); _discOpen.pl = true;
+  sec.querySelector(".dsec-body").hidden = false;
+  sec.querySelector(".chev").textContent = "▾";
+  sec.querySelector(".dsec-head").setAttribute("aria-expanded", "true");
+  _discRender("pl");
+}
+function _plClose(){
+  _plItems = []; _plTitle = "";
+  const sec = $("#sec-pl");
+  sec.hidden = true; sec.classList.remove("open"); _discOpen.pl = false;
+  $("#plBody").innerHTML = "";
 }
 
 async function loadWave(){
@@ -1939,13 +1973,13 @@ async function _acquireOne(kind, i){
     await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
   }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
 }
-const _discOne = i => _acquireOne("likes", i);
+const _plOne = i => _acquireOne("pl", i);
 const _waveOne = i => _acquireOne("wave", i);
 
 /* --- выбрать все / скачать выбранные (Alex TG 20083: «нет кнопки выделить все песни») --- */
 const _discIds = {
   wave:  {sel: "#waveSelAll",     dl: "#waveDlAll"},
-  likes: {sel: "#discSelAll",     dl: "#discDlAll"},
+  pl:    {sel: "#plSelAll",       dl: "#plDlAll"},
 };
 const _discBoxes = kind => [...document.querySelectorAll(_discKind[kind].body + " input." + _discKind[kind].pick)];
 // подписи кнопок: «Выбрать все» ↔ «Снять выбор», «Скачать выбранные (N)»
@@ -1966,7 +2000,7 @@ async function _discDlPicked(kind, askAll){
   const k = _discKind[kind], items = k.items();
   const picked = _discBoxes(kind).filter(b => b.checked).map(b => Number(b.dataset.i));
   const list = picked.length ? picked : items.map((t,i)=>i).filter(i => !items[i].already_have);
-  if(!list.length){ alert(kind === "likes" ? "Нечего качать — все уже в каталоге." : "Список пуст."); return; }
+  if(!list.length){ alert(kind === "pl" ? "Нечего качать — все уже в каталоге." : "Список пуст."); return; }
   if(!picked.length && !confirm(askAll(list.length))) return;
   if(picked.length > 50 && !confirm(`Скачать ${nfmt(picked.length)} песен? Это займёт время и место на диске.`)) return;
   const btn = $(_discIds[kind].dl);
@@ -1975,11 +2009,13 @@ async function _discDlPicked(kind, askAll){
   btn.disabled = false;
   _discSelUpdate(kind);
 }
-$("#discRefresh").onclick = loadDiscover;
+$("#plShow").onclick = loadPlaylist;
+$("#plUrl").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); loadPlaylist(); } });
+$("#plClose").onclick = _plClose;
 $("#waveRefresh").onclick = loadWave;
-$("#discSelAll").onclick = () => _discSelAll("likes");
+$("#plSelAll").onclick = () => _discSelAll("pl");
 $("#waveSelAll").onclick = () => _discSelAll("wave");
-$("#discDlAll").onclick = () => _discDlPicked("likes", n => `Скачать все ${n} песен, которых ещё нет в каталоге?`);
+$("#plDlAll").onclick = () => _discDlPicked("pl", n => `Скачать все ${n} песен плейлиста, которых ещё нет в каталоге?`);
 $("#waveDlAll").onclick = () => _discDlPicked("wave", n => `Скачать все ${n} песен волны?`);
 
 async function loadSettings(){

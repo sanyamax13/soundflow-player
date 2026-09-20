@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -57,23 +58,35 @@ func TestDiscoverRoutesAreLocalOnly(t *testing.T) {
 	}
 }
 
-func fakeSidecar(t *testing.T, likesJSON string) {
+// fakeSidecar — «качалка», отвечающая на /yandex/playlist заданным JSON; возвращает адрес ссылок, что ей пришли.
+func fakeSidecar(t *testing.T, playlistJSON string) *[]string {
 	t.Helper()
+	var links []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/yandex/likes" {
+		if r.URL.Path == "/yandex/playlist" {
+			links = append(links, r.URL.Query().Get("url"))
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(likesJSON))
+			_, _ = w.Write([]byte(playlistJSON))
 			return
 		}
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("SOUNDFLOW_SIDECAR_URL", srv.URL)
+	return &links
 }
 
-func TestLikesHideDismissedButKeepOnesInCatalog(t *testing.T) {
+const testPlaylistLink = "https://music.yandex.ru/playlists/lk.9447495f-2bae-4887-b855-9d6e055770e3?utm_medium=copy_link"
+
+func getPlaylist(e *ctxEnv, link string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	e.s.hYandexPlaylist(rec, httptest.NewRequest("GET", "/api/yandex/playlist?url="+url.QueryEscape(link), nil))
+	return rec
+}
+
+func TestPlaylistHidesDismissedButKeepOnesInCatalog(t *testing.T) {
 	e := ctxFixture(t)
-	fakeSidecar(t, `{"items":[
+	links := fakeSidecar(t, `{"title":"Мне нравится","items":[
 		{"yandex_id":"1","artist":"Foo","title":"Bar"},
 		{"yandex_id":"2","artist":"Baz","title":"Qux"},
 		{"yandex_id":"3","artist":"Own","title":"Song"}]}`)
@@ -89,27 +102,58 @@ func TestLikesHideDismissedButKeepOnesInCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rec := httptest.NewRecorder()
-	e.s.hYandexLikes(rec, httptest.NewRequest("GET", "/api/yandex/likes", nil))
+	rec := getPlaylist(e, testPlaylistLink)
 	if rec.Code != 200 {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	var out []yandexLikeOut
+	var out yandexPlaylistOut
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
+	if out.Title != "Мне нравится" {
+		t.Errorf("название плейлиста: %q", out.Title)
+	}
+	if len(*links) != 1 || (*links)[0] != testPlaylistLink {
+		t.Errorf("качалке ушла не та ссылка: %v", *links)
+	}
 	names := map[string]bool{}
-	for _, it := range out {
+	for _, it := range out.Items {
 		names[it.Artist] = it.AlreadyHave
 	}
 	if _, ok := names["Foo"]; ok {
-		t.Error("скрытая «Foo — Bar» всё ещё в списке лайков")
+		t.Error("скрытая «Foo — Bar» всё ещё в списке")
 	}
 	if _, ok := names["Baz"]; !ok {
 		t.Error("нескрытая «Baz — Qux» пропала")
 	}
 	if have, ok := names["Own"]; !ok || !have {
-		t.Error("песня, что уже в каталоге, не должна пропадать из лайков из-за скрытия (она и так помечена «есть»)")
+		t.Error("песня, что уже в каталоге, не должна пропадать из списка из-за скрытия (она и так помечена «есть»)")
+	}
+}
+
+// Плохая ссылка/закрытый плейлист — понятный текст качалки доходит до Alex как есть (400), а не «ошибка сервера».
+func TestPlaylistErrorsAreReadable(t *testing.T) {
+	e := ctxFixture(t)
+	if rec := getPlaylist(e, "  "); rec.Code != 400 || !strings.Contains(rec.Body.String(), "Вставь ссылку") {
+		t.Errorf("пустая ссылка: %d %q", rec.Code, rec.Body)
+	}
+	if rec := getPlaylist(e, strings.Repeat("a", maxPlaylistLink+1)); rec.Code != 400 {
+		t.Errorf("слишком длинная ссылка: %d", rec.Code)
+	}
+	fakeSidecar(t, `{"title":"","items":[],"error":"Плейлист не открылся: ссылка устарела или плейлист закрыт"}`)
+	if rec := getPlaylist(e, testPlaylistLink); rec.Code != 400 || !strings.Contains(rec.Body.String(), "ссылка устарела") {
+		t.Errorf("отказ качалки должен дойти как есть: %d %q", rec.Code, rec.Body)
+	}
+}
+
+// Качалка не отвечает — 502 (а не 400): это не вина ссылки.
+func TestPlaylistSidecarDown(t *testing.T) {
+	e := ctxFixture(t)
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	t.Setenv("SOUNDFLOW_SIDECAR_URL", dead.URL)
+	if rec := getPlaylist(e, testPlaylistLink); rec.Code != 502 {
+		t.Errorf("качалка не отвечает: ждал 502, получил %d %q", rec.Code, rec.Body)
 	}
 }
 

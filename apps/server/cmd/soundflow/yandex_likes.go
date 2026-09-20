@@ -43,47 +43,8 @@ func (s *Service) sidecarURL() string {
 	return os.Getenv("SOUNDFLOW_SIDECAR_URL")
 }
 
-type yandexLikeOut struct {
-	YandexID    string `json:"yandex_id"`
-	Artist      string `json:"artist"`
-	Title       string `json:"title"`
-	Album       string `json:"album"`
-	CoverURL    string `json:"cover_url"`
-	DurationSec int    `json:"duration_sec"`
-	AlreadyHave bool   `json:"already_have"`
-}
-
-// hYandexLikes — GET /api/yandex/likes: лайки личного аккаунта, с пометкой
-// already_have (уже есть в каталоге по artist+title — не дублируем).
-func (s *Service) hYandexLikes(w http.ResponseWriter, r *http.Request) {
-	url := s.sidecarURL()
-	if url == "" {
-		http.Error(w, "качалка ещё запускается — попробуй через минуту", 503)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	items, err := sidecar.New(url).YandexLikes(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), 502)
-		return
-	}
-	out := make([]yandexLikeOut, 0, len(items))
-	dismissed, _ := s.db.DismissedDiscover()
-	for _, it := range items {
-		key := quality.NormalizedKey(it.Artist, it.Title)
-		have, _ := s.db.TrackExistsByKey(key)
-		if !have && dismissed[key] {
-			continue // Alex убрал её кнопкой «Удалить» во вкладке «Открытия»
-		}
-		out = append(out, yandexLikeOut{
-			YandexID: it.YandexID, Artist: it.Artist, Title: it.Title,
-			Album: it.Album, CoverURL: it.CoverURL, DurationSec: it.DurationSec,
-			AlreadyHave: have,
-		})
-	}
-	writeJSON(w, out)
-}
+// С 20.09.2026 (Alex TG 20122: «2») лайки сами по токену больше не подтягиваются: раздел «Твои лайки из
+// Яндекс.Музыки» и GET /api/yandex/likes убраны, вместо них — плейлист по ссылке, см. yandex_playlist.go.
 
 // hYandexDislikesImport — POST /api/yandex/dislikes/import: дизлайки личного
 // аккаунта → чёрный список (legacy_marks blocked), молча, без вопросов —

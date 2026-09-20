@@ -186,20 +186,27 @@ type YandexLikeItem struct {
 	DurationSec int    `json:"duration_sec"`
 }
 
-// YandexLikes — все треки «Мне нравится». Ошибка сети/сайдкара — err; "нет
-// токена" сайдкар возвращает как error-строку в теле, тоже приходит через err.
-func (c *Client) YandexLikes(ctx context.Context) ([]YandexLikeItem, error) {
+// PlaylistError — качалка ответила, но плейлист показать нельзя (не ссылка, закрыт, не найден). Текст уже
+// по-русски и готов для Alex — его показываем как есть, а не «ошибка сервера».
+type PlaylistError struct{ Msg string }
+
+func (e *PlaylistError) Error() string { return e.Msg }
+
+// YandexPlaylist — песни плейлиста Яндекс.Музыки по ссылке, которую вставил Alex (TG 20122, 20.09.2026).
+// Раньше здесь был YandexLikes (лайки сами по токену) — раздел убран по просьбе Alex.
+func (c *Client) YandexPlaylist(ctx context.Context, link string) (string, []YandexLikeItem, error) {
 	var out struct {
+		Title string           `json:"title"`
 		Items []YandexLikeItem `json:"items"`
 		Error string           `json:"error"`
 	}
-	if err := c.get(ctx, "/yandex/likes", &out); err != nil {
-		return nil, err
+	if err := c.get(ctx, "/yandex/playlist?"+url.Values{"url": {link}}.Encode(), &out); err != nil {
+		return "", nil, err
 	}
 	if out.Error != "" {
-		return nil, fmt.Errorf("sidecar yandex/likes: %s", out.Error)
+		return "", nil, &PlaylistError{Msg: out.Error}
 	}
-	return out.Items, nil
+	return out.Title, out.Items, nil
 }
 
 // YandexDislikeItem — трек «Не рекомендовать» (для чёрного списка).
