@@ -37,8 +37,7 @@ func ctxFixture(t *testing.T) *ctxEnv {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := &Service{db: d, store: litestore.New(d), dbPath: filepath.Join(dir, "soundflow.db"),
-		trashRootOverride: filepath.Join(dir, "trash")}
+	s := &Service{db: d, store: litestore.New(d), dbPath: filepath.Join(dir, "soundflow.db")}
 	return &ctxEnv{s: s, root: root, dir: dir}
 }
 
@@ -63,18 +62,6 @@ func (e *ctxEnv) addSong(t *testing.T, id, rel, content string) string {
 	return local
 }
 
-func (e *ctxEnv) trashFiles(t *testing.T) []string {
-	t.Helper()
-	var out []string
-	_ = filepath.Walk(filepath.Join(e.dir, "trash"), func(p string, fi os.FileInfo, err error) error {
-		if err == nil && !fi.IsDir() {
-			out = append(out, p)
-		}
-		return nil
-	})
-	return out
-}
-
 func inCatalog(t *testing.T, s *Service, id string) bool {
 	t.Helper()
 	_, ok, err := s.db.TrackFilePath(id)
@@ -84,9 +71,9 @@ func inCatalog(t *testing.T, s *Service, id string) bool {
 	return ok
 }
 
-// Папка удаляется: файлы уходят в <trash>\<время>\<путь> с вложенными папками, пустые папки
-// исчезают, соседняя папка цела, песни ушли из каталога, стоит blocked, телефон получил remove,
-// а прежний план не затёрт.
+// Папка удаляется: файлы стираются насовсем (Alex TG 20198: «удаляй всё, возвращать не надо»),
+// пустые папки исчезают, соседняя папка цела, песни ушли из каталога, стоит blocked, телефон
+// получил remove, а прежний план не затёрт.
 func TestDeleteForeverFolder(t *testing.T) {
 	e := ctxFixture(t)
 	s := e.s
@@ -104,7 +91,7 @@ func TestDeleteForeverFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Deleted != 2 || res.Failed != 0 || res.FilesMoved != 2 || res.Bytes != 7 || res.Backup != "" {
+	if res.Deleted != 2 || res.Failed != 0 || res.FilesErased != 2 || res.Bytes != 7 || res.Backup != "" {
 		t.Errorf("результат: %+v", res)
 	}
 	for _, f := range []string{f1, f2} {
@@ -114,18 +101,6 @@ func TestDeleteForeverFolder(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Errorf("чужой файл обязан уцелеть: %v", err)
-	}
-	moved := e.trashFiles(t)
-	if len(moved) != 2 {
-		t.Fatalf("в корзине ждали 2 файла, есть %v", moved)
-	}
-	for _, m := range moved {
-		if !strings.Contains(m, filepath.Join("HitZone", "Hitzone 1")) {
-			t.Errorf("вложенные папки должны сохраниться: %s", m)
-		}
-		if b, _ := os.ReadFile(m); len(b) == 0 {
-			t.Errorf("файл в корзине пуст: %s", m)
-		}
 	}
 	if _, err := os.Stat(filepath.Join(e.root, "HitZone")); !os.IsNotExist(err) {
 		t.Errorf("опустевшая папка HitZone должна исчезнуть (%v)", err)

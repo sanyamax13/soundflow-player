@@ -2,12 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -28,11 +23,11 @@ import (
 //     track_files);
 //  3. normalized_key помечается blocked в legacy_marks → «Найти трек»/догон
 //     больше его не скачают;
-//  4. файл переносится в <папка_базы>\_deleted (НЕ os.Remove — глобальное
-//     правило: деструктив только с возможностью отката; папку Alex чистит сам).
+//  4. файл (и копии песни в других папках) стираются с диска насовсем — Alex TG 20196/20198,
+//     20.09.2026: «стирать, папку _deleted тоже удаляй», «удаляй всё, возвращать не надо»
+//     (раньше файл уезжал в <папка_базы>\_deleted, и Alex чистил её сам).
 //
-// Фронт перед вызовом спрашивает подтверждение — отмена только вручную из
-// _deleted.
+// Фронт перед вызовом спрашивает подтверждение; вернуть стёртое нельзя.
 func (s *Service) hDevTrackDelete(w http.ResponseWriter, r *http.Request) {
 	dev := chi.URLParam(r, "id")
 	var body struct {
@@ -62,8 +57,8 @@ func (s *Service) hDevTrackDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	moved := ""
-	copiesMoved := 0
+	fileErased := false
+	copiesErased := 0
 	if ok {
 		// 2. из каталога ПК
 		if err := s.store.DeleteTrackByKey(ctx, normKey); err != nil {
@@ -74,30 +69,29 @@ func (s *Service) hDevTrackDelete(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpsertLegacyMark(ctx, db.LegacyMark{
 			Key: normKey, Kind: "blocked", Artist: artist, Title: title, At: time.Now(),
 		})
-		// 4. файл — в _deleted
-		if m, e := s.moveToDeleted(s.localPath(canonical)); e != nil {
-			_ = s.db.AddServerLog("error", artist, title, "не смог перенести файл в _deleted: "+e.Error(), 0)
+		// 4. файл — стереть насовсем
+		if _, erased, e := eraseFile(s.localPath(canonical)); e != nil {
+			_ = s.db.AddServerLog("error", artist, title, "не смог стереть файл: "+e.Error(), 0)
 		} else {
-			moved = m
+			fileErased = erased
 		}
-		// 5. копии песни в других папках — туда же (Alex TG 20177, вариант 2)
+		// 5. копии песни в других папках — так же (Alex TG 20177, вариант 2)
 		for _, cp := range s.findCopyFiles(ctx, map[string]string{normKey: s.localPath(canonical)})[normKey] {
-			if m, e := s.moveToDeleted(cp); e != nil {
-				_ = s.db.AddServerLog("error", artist, title, "не смог перенести копию в _deleted ("+cp+"): "+e.Error(), 0)
-			} else if m != "" {
-				copiesMoved++
+			if _, erased, e := eraseFile(cp); e != nil {
+				_ = s.db.AddServerLog("error", artist, title, "не смог стереть копию ("+cp+"): "+e.Error(), 0)
+			} else if erased {
+				copiesErased++
 			}
 		}
 	}
 
 	_ = s.db.AddServerLog("info", artist, title, "удалён полностью из окна ПК (телефон+каталог+диск, помечен «не качать»)", 0)
 	writeJSON(w, map[string]any{
-		"deleted":      true,
-		"in_catalog":   ok,
-		"file_moved":   moved != "",
-		"copies_moved": copiesMoved,
-		"trash":        moved,
-		"blocked_key":  normKey,
+		"deleted":       true,
+		"in_catalog":    ok,
+		"file_erased":   fileErased,
+		"copies_erased": copiesErased,
+		"blocked_key":   normKey,
 	})
 }
 
@@ -120,51 +114,4 @@ func (s *Service) planAddRemove(dev, trackID string) error {
 		}
 	}
 	return s.db.SavePlan(dev, newAdd, append(remove, trackID))
-}
-
-// moveToDeleted — перенести файл в <папка_базы>\_deleted с датой в имени.
-// Пустой путь / нет файла — не ошибка (вернёт ""). Другой том — копия + удаление.
-func (s *Service) moveToDeleted(local string) (string, error) {
-	if local == "" {
-		return "", nil
-	}
-	if _, err := os.Stat(local); err != nil {
-		return "", nil // файла уже нет
-	}
-	dir := filepath.Join(filepath.Dir(s.dbPath), "_deleted")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	dst := filepath.Join(dir, time.Now().Format("20060102-150405")+"__"+filepath.Base(local))
-	if _, err := os.Stat(dst); err == nil { // копии одной песни часто зовутся одинаково — ничего не затираем
-		dst = strings.TrimSuffix(dst, filepath.Ext(dst)) + "__" + fmt.Sprint(time.Now().UnixNano()) + filepath.Ext(dst)
-	}
-	if err := os.Rename(local, dst); err == nil {
-		return dst, nil
-	}
-	// другой том — копируем и удаляем исходник
-	if err := copyFile(local, dst); err != nil {
-		return "", err
-	}
-	if err := os.Remove(local); err != nil {
-		return dst, err
-	}
-	return dst, nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
 }

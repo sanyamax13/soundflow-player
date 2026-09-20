@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"soundflow/server/internal/db"
+	"soundflow/server/internal/pathmap"
 )
 
 // Контекстное меню окна (Alex TG 20039–20045, 19.09.2026): правая кнопка на
@@ -186,12 +187,11 @@ type deleteResult struct {
 	Deleted      int      `json:"deleted"`       // песен убрано (каталог + метка + телефон)
 	Failed       int      `json:"failed"`        // не вышло (файл занят и т.п.) — осталась как была
 	Skipped      int      `json:"skipped"`       // такой песни уже нет в каталоге
-	FilesMoved   int      `json:"files_moved"`   // файлов перенесено в _deleted
+	FilesErased  int      `json:"files_erased"`  // файлов стёрто с диска
 	FilesMissing int      `json:"files_missing"` // файла на диске уже не было
 	Bytes        int64    `json:"bytes"`
-	Copies       int      `json:"copies"`        // файлов-копий песен перенесено (другие папки, тот же исполнитель и название)
-	CopiesFailed int      `json:"copies_failed"` // копий перенести не удалось (файл занят) — остались на месте
-	TrashDir     string   `json:"trash_dir,omitempty"`
+	Copies       int      `json:"copies"`        // файлов-копий песен стёрто (другие папки, тот же исполнитель и название)
+	CopiesFailed int      `json:"copies_failed"` // копий стереть не удалось (файл занят) — остались на месте
 	Backup       string   `json:"backup,omitempty"`
 	Errors       []string `json:"errors,omitempty"`
 }
@@ -205,17 +205,16 @@ type deleteResult struct {
 //  1. песня уходит с телефона (в план на удаление, дополняем, не затираем);
 //  2. убирается из каталога ПК;
 //  3. её ключ получает метку blocked — «Найти трек»/докачка больше не скачают;
-//  4. файл переносится (НЕ стирается — глобальное правило: деструктив только с
-//     откатом) в <диск>\_deleted\<дата-время>\<путь без буквы диска>. Тот же
-//     диск — перенос мгновенный (переименование, без копирования гигабайтов), а
-//     вложенные папки сохраняются, чтобы вернуть можно было простым
-//     перетаскиванием. Пустые папки после переноса убираются;
-//  5. так же уходят КОПИИ песни — другие файлы с тем же исполнителем и названием в
+//  4. файл СТИРАЕТСЯ с диска насовсем (Alex TG 20196/20198, 20.09.2026: «стирать и папку
+//     _deleted тоже удаляй», «удаляй всё, возвращать не надо»). До этого файлы уезжали
+//     в <диск>\_deleted — Alex сам очищал её через минуту после каждого удаления. Пустые
+//     папки после стирания убираются;
+//  5. так же стираются КОПИИ песни — другие файлы с тем же исполнителем и названием в
 //     других папках (Alex TG 20177, вариант 2: «удалять песню целиком»), см. copies.go.
 //
 // Больше bigDeleteThreshold песен — перед удалением копия базы в
-// <папка_базы>\_backup (не вышла копия — не удаляем ничего).
-// Песня, у которой файл не переносится (занят), остаётся нетронутой целиком.
+// <папка_базы>\_backup (не вышла копия — не удаляем ничего): она спасает каталог (метки,
+// отпечатки), не файлы. Песня, у которой файл не стирается (занят), остаётся нетронутой целиком.
 func (s *Service) hDeleteForever(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		IDs []string `json:"ids"`
@@ -253,12 +252,11 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 		}
 		res.Backup = p
 	}
-	stamp := time.Now().Format("20060102-150405")
 	stopAt := s.libraryRoots()
 	copies := s.findCopyFiles(ctx, s.copiesWanted(ctx, ids)) // один проход по папке на всю пачку
 
 	var removed []string
-	var movedDirs []string
+	var erasedDirs []string
 	for _, id := range ids {
 		normKey, canonical, ok, err := s.store.TrackForDeletion(ctx, id)
 		if err != nil {
@@ -273,23 +271,19 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 		artist, title, _, _ := s.store.TrackArtistTitle(ctx, id)
 		local := s.localPath(canonical)
 
-		var size int64
-		if fi, e := os.Stat(local); e == nil && !fi.IsDir() {
-			size = fi.Size()
-		}
-		moved, mvErr := s.moveToDeletedTree(local, stamp)
-		if mvErr != nil {
+		size, erased, rmErr := eraseFile(local)
+		if rmErr != nil {
 			res.Failed++
-			res.Errors = append(res.Errors, artist+" — "+title+": "+mvErr.Error())
-			_ = s.db.AddServerLog("error", artist, title, "не смог перенести файл в _deleted, песня осталась: "+mvErr.Error(), 0)
+			res.Errors = append(res.Errors, artist+" — "+title+": "+rmErr.Error())
+			_ = s.db.AddServerLog("error", artist, title, "не смог стереть файл, песня осталась: "+rmErr.Error(), 0)
 			continue
 		}
 		if err := s.store.DeleteTrackByKey(ctx, normKey); err != nil {
-			if moved != "" { // каталог не тронули — файл возвращаем на место
-				_ = os.Rename(moved, local)
-			}
+			// Файл уже стёрт, вернуть его нельзя. Строка каталога осталась: при следующем
+			// удалении файла уже не будет («файла нет» — не ошибка), и она уйдёт.
 			res.Failed++
-			res.Errors = append(res.Errors, artist+" — "+title+": "+err.Error())
+			res.Errors = append(res.Errors, artist+" — "+title+": файл стёрт, а из каталога убрать не вышло: "+err.Error())
+			_ = s.db.AddServerLog("error", artist, title, "файл стёрт, а песню из каталога убрать не смог: "+err.Error(), 0)
 			continue
 		}
 		_ = s.store.UpsertLegacyMark(ctx, db.LegacyMark{
@@ -298,27 +292,22 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 		removed = append(removed, id)
 		res.Deleted++
 		for _, cp := range copies[normKey] { // копии той же песни в других папках
-			cm, cErr := s.moveToDeletedTree(cp, stamp)
+			csize, cErased, cErr := eraseFile(cp)
 			if cErr != nil {
 				res.CopiesFailed++
 				res.Errors = append(res.Errors, "копия «"+artist+" — "+title+"» ("+cp+"): "+cErr.Error())
 				continue
 			}
-			if cm != "" {
+			if cErased {
 				res.Copies++
-				if fi, e := os.Stat(cm); e == nil {
-					res.Bytes += fi.Size()
-				}
-				movedDirs = append(movedDirs, filepath.Dir(cp))
+				res.Bytes += csize
+				erasedDirs = append(erasedDirs, filepath.Dir(cp))
 			}
 		}
-		if moved != "" {
-			res.FilesMoved++
+		if erased {
+			res.FilesErased++
 			res.Bytes += size
-			movedDirs = append(movedDirs, filepath.Dir(local))
-			if res.TrashDir == "" {
-				res.TrashDir = trashStampDir(local, s.trashRoot(local), stamp)
-			}
+			erasedDirs = append(erasedDirs, filepath.Dir(local))
 		} else {
 			res.FilesMissing++
 		}
@@ -330,12 +319,31 @@ func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteRes
 				res.Errors = append(res.Errors, "план телефона: "+err.Error())
 			}
 		}
-		pruneEmptyDirs(movedDirs, stopAt)
+		pruneEmptyDirs(erasedDirs, stopAt)
 	}
 	_ = s.db.AddServerLog("info", "", "", fmt.Sprintf(
-		"удалено навсегда из окна: %d песен (файлов перенесено %d, копий перенесено %d, не удалось %d+%d), файлы в %s, копия базы: %s",
-		res.Deleted, res.FilesMoved, res.Copies, res.Failed, res.CopiesFailed, orDash(res.TrashDir), orDash(res.Backup)), res.Bytes)
+		"удалено навсегда из окна: %d песен (файлов стёрто %d, копий стёрто %d, не удалось %d+%d), копия базы: %s",
+		res.Deleted, res.FilesErased, res.Copies, res.Failed, res.CopiesFailed, orDash(res.Backup)), res.Bytes)
 	return res, nil
+}
+
+// eraseFile — стереть файл насовсем: без корзины, вернуть нельзя (Alex TG 20198). Файла уже нет —
+// не ошибка (erased=false); папку не трогаем. size — размер файла до стирания.
+func eraseFile(local string) (size int64, erased bool, err error) {
+	if local == "" {
+		return 0, false, nil
+	}
+	fi, statErr := os.Stat(local)
+	if statErr != nil {
+		return 0, false, nil // файла уже нет
+	}
+	if fi.IsDir() {
+		return 0, false, fmt.Errorf("это папка, а не файл: %s", local)
+	}
+	if err := pathmap.DeleteForever(local); err != nil {
+		return 0, false, err
+	}
+	return fi.Size(), true, nil
 }
 
 func orDash(s string) string {
@@ -343,48 +351,6 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
-}
-
-// trashRoot — куда складывать удалённое для файла local: <диск>\_deleted. Тот же
-// том, что и у файла, чтобы перенос был переименованием. trashRootOverride — для тестов.
-func (s *Service) trashRoot(local string) string {
-	if s.trashRootOverride != "" {
-		return s.trashRootOverride
-	}
-	vol := filepath.VolumeName(local)
-	if vol == "" {
-		return filepath.Join(filepath.Dir(s.dbPath), "_deleted")
-	}
-	return vol + `\_deleted`
-}
-
-func trashStampDir(local, root, stamp string) string { return filepath.Join(root, stamp) }
-
-// moveToDeletedTree — перенести файл в <trashRoot>\<stamp>\<путь без диска>.
-// Файла уже нет — не ошибка (вернёт "").
-func (s *Service) moveToDeletedTree(local, stamp string) (string, error) {
-	if local == "" {
-		return "", nil
-	}
-	fi, err := os.Stat(local)
-	if err != nil {
-		return "", nil
-	}
-	if fi.IsDir() {
-		return "", fmt.Errorf("это папка, а не файл: %s", local)
-	}
-	rel := strings.TrimLeft(strings.TrimPrefix(local, filepath.VolumeName(local)), `\/`)
-	dst := filepath.Join(s.trashRoot(local), stamp, rel)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(dst); err == nil { // такое имя уже есть в этой корзине — не затираем
-		dst = strings.TrimSuffix(dst, filepath.Ext(dst)) + "__" + fmt.Sprint(time.Now().UnixNano()) + filepath.Ext(dst)
-	}
-	if err := os.Rename(local, dst); err != nil {
-		return "", err
-	}
-	return dst, nil
 }
 
 // libraryRoots — папки, которые нельзя убирать даже пустыми: папка-источник из

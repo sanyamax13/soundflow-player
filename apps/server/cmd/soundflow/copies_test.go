@@ -68,7 +68,7 @@ func TestDeleteForeverTakesAllCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Deleted != 1 || res.Failed != 0 || res.FilesMoved != 1 || res.Copies != 2 || res.CopiesFailed != 0 {
+	if res.Deleted != 1 || res.Failed != 0 || res.FilesErased != 1 || res.Copies != 2 || res.CopiesFailed != 0 {
 		t.Fatalf("результат: %+v", res)
 	}
 	for _, p := range []string{main, cp1, cp2} {
@@ -81,20 +81,9 @@ func TestDeleteForeverTakesAllCopies(t *testing.T) {
 			t.Errorf("чужая песня и её копия обязаны уцелеть: %s", p)
 		}
 	}
-	// все три файла лежат в корзине и ни один не затёрт
-	moved := e.trashFiles(t)
-	if len(moved) != 3 {
-		t.Fatalf("в корзине ждали 3 файла, есть %v", moved)
-	}
-	contents := map[string]bool{}
-	for _, m := range moved {
-		b, _ := os.ReadFile(m)
-		contents[string(b)] = true
-	}
-	for _, c := range []string{"main-t1", "copy-one", "copy-two"} {
-		if !contents[c] {
-			t.Errorf("в корзине нет файла с содержимым %q: %v", c, moved)
-		}
+	// стёрты все три файла: "main-t1" (7 байт) + "copy-one" (8) + "copy-two" (8)
+	if res.Bytes != 23 {
+		t.Errorf("освобождено байт: %d, ждали 23", res.Bytes)
 	}
 	if inCatalog(t, e.s, "t1") || !inCatalog(t, e.s, "t2") {
 		t.Errorf("каталог: t1 должна уйти, t2 остаться")
@@ -121,8 +110,8 @@ func TestDeleteForeverWithoutCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Copies != 0 || res.FilesMoved != 1 || len(e.trashFiles(t)) != 1 {
-		t.Errorf("результат: %+v, корзина %v", res, e.trashFiles(t))
+	if res.Copies != 0 || res.FilesErased != 1 {
+		t.Errorf("результат: %+v", res)
 	}
 }
 
@@ -169,27 +158,29 @@ func TestTrackCopiesCountsAndChangesNothing(t *testing.T) {
 	}
 }
 
-// Копии песни с одинаковыми именами файлов не затирают друг друга в _deleted
-// (старый путь «Удалить полностью» из карточки телефона складывает в одну папку).
-func TestMoveToDeletedDoesNotOverwrite(t *testing.T) {
+// eraseFile: файла нет — не ошибка; папку не трогает и говорит об этом; настоящий файл стирает и
+// называет размер.
+func TestEraseFile(t *testing.T) {
 	e := ctxFixture(t)
-	a := e.addCopyFile(t, "Kino", "Gruppa Krovi", "A", ".mp3", "aaa")
-	b := e.addCopyFile(t, "Kino", "Gruppa Krovi", "B", ".mp3", "bbb")
+	f := e.addCopyFile(t, "Kino", "Gruppa Krovi", "A", ".mp3", "aaa")
 
-	m1, err := e.s.moveToDeleted(a)
-	if err != nil {
-		t.Fatal(err)
+	if size, erased, err := eraseFile(filepath.Join(e.root, "нет-такого.mp3")); size != 0 || erased || err != nil {
+		t.Errorf("нет файла: size=%d erased=%v err=%v", size, erased, err)
 	}
-	m2, err := e.s.moveToDeleted(b)
-	if err != nil {
-		t.Fatal(err)
+	if size, erased, err := eraseFile(""); size != 0 || erased || err != nil {
+		t.Errorf("пустой путь: size=%d erased=%v err=%v", size, erased, err)
 	}
-	if m1 == m2 || m1 == "" || m2 == "" {
-		t.Fatalf("оба файла должны лежать по разным путям: %q %q", m1, m2)
+	if _, erased, err := eraseFile(filepath.Dir(f)); erased || err == nil {
+		t.Errorf("папку стирать нельзя: erased=%v err=%v", erased, err)
 	}
-	b1, _ := os.ReadFile(m1)
-	b2, _ := os.ReadFile(m2)
-	if string(b1) != "aaa" || string(b2) != "bbb" {
-		t.Errorf("содержимое перепуталось: %q %q", b1, b2)
+	if !exists(f) {
+		t.Fatalf("папка с файлом обязана уцелеть")
+	}
+	size, erased, err := eraseFile(f)
+	if size != 3 || !erased || err != nil {
+		t.Errorf("файл: size=%d erased=%v err=%v", size, erased, err)
+	}
+	if exists(f) {
+		t.Errorf("файл должен быть стёрт")
 	}
 }
