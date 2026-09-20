@@ -74,12 +74,19 @@ func minimizeWindowsOfExe(exe string) int {
 	return n
 }
 
-// minimizeWhenShown — ждать до wait, пока у только что запущенной программы появится окно, и свернуть
-// его. Окно выходит не сразу (то же время, что и Web UI), поэтому опрашиваем каждые 100 мс.
+// minimizeWhenShown — до wait следить за окнами только что запущенной программы и сворачивать каждое
+// появившееся. Окно выходит не сразу (на занятой машине — через десяток секунд), а окон может быть
+// больше одного, поэтому опрашиваем каждые 100 мс и после первого свёрнутого окна ждём ещё
+// minimizeSettle: если новых нет — заканчиваем. (Первая версия бросала после первого окна, и живая
+// qBittorrent 21.09.2026 осталась на экране: главное окно вышло позже.)
 func minimizeWhenShown(exe string, wait time.Duration) {
+	const minimizeSettle = 5 * time.Second
 	deadline := time.Now().Add(wait)
+	var lastHit time.Time
 	for time.Now().Before(deadline) {
 		if minimizeWindowsOfExe(exe) > 0 {
+			lastHit = time.Now()
+		} else if !lastHit.IsZero() && time.Since(lastHit) > minimizeSettle {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)

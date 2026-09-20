@@ -73,6 +73,26 @@ func dropLiveWave(in []yandexWaveOut) []yandexWaveOut {
 	return out
 }
 
+// dropKnownWave — из подборки дня убрать песни, которые с момента её сборки уже попали в каталог (скачаны
+// из этой же «Волны», добавлены сканом или иначе) или помечены «больше не качать». Список собран утром и
+// лежит в кэше весь день, без этого он продолжал показывать «уже есть» песни как будто новые (Alex TG 20222:
+// «волна должна понимать, какие песни уже есть в каталоге и не скачивать повторно»). Сама скачка каталог
+// проверяет и так («уже было в каталоге»), это про то, что видно в списке и что уходит на «скачать все».
+func (s *Service) dropKnownWave(in []yandexWaveOut) []yandexWaveOut {
+	out := make([]yandexWaveOut, 0, len(in))
+	for _, it := range in {
+		key := quality.NormalizedKey(it.Artist, it.Title)
+		if have, _ := s.db.TrackExistsByKey(key); have {
+			continue
+		}
+		if blocked, _ := s.db.IsBlocked(key); blocked {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
 // dropDismissedWave — из подборки дня (она лежит в кэше целый день) убрать песни, которые Alex
 // с тех пор скрыл кнопкой «Удалить».
 func (s *Service) dropDismissedWave(in []yandexWaveOut) []yandexWaveOut {

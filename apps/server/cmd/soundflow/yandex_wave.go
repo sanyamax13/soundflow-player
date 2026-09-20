@@ -75,7 +75,7 @@ func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 			if raw, ok2, _ := s.db.GetSetting(settingWaveBatch); ok2 && raw != "" {
 				var cached []yandexWaveOut
 				if json.Unmarshal([]byte(raw), &cached) == nil {
-					writeJSON(w, dropLiveWave(s.dropDismissedWave(cached)))
+					writeJSON(w, dropLiveWave(s.dropKnownWave(s.dropDismissedWave(cached))))
 					return
 				}
 			}

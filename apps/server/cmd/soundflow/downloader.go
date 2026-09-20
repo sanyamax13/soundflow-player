@@ -379,7 +379,7 @@ func launchMinimized(exe string) error {
 		return err
 	}
 	go func() { _ = cmd.Wait() }() // забрать код завершения, когда её закроют
-	go minimizeWhenShown(exe, 10*time.Second)
+	go minimizeWhenShown(exe, 40*time.Second)
 	return nil
 }
 

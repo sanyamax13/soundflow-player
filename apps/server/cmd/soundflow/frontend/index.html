@@ -2014,8 +2014,12 @@ function _discSelAll(kind){
   _discSelUpdate(kind);
 }
 async function _discDlPicked(kind, askAll){
-  const k = _discKind[kind], items = k.items();
+  const k = _discKind[kind];
   const picked = _discBoxes(kind).filter(b => b.checked).map(b => Number(b.dataset.i));
+  // «Скачать все» по волне: сперва взять свежий список — с утра часть песен уже могла попасть в каталог
+  // (сервер такие из списка убирает), их заново в очередь не ставим (Alex TG 20222).
+  if(kind === "wave" && !picked.length) await loadWave();
+  const items = k.items();
   const list = picked.length ? picked : items.map((t,i)=>i).filter(i => !items[i].already_have);
   if(!list.length){ alert(kind === "pl" ? "Нечего качать — все уже в каталоге." : "Список пуст."); return; }
   if(!picked.length && !confirm(askAll(list.length))) return;
