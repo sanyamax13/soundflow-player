@@ -51,6 +51,9 @@ class _FakeApi extends Api {
     downloads++;
     await File(toPath).writeAsBytes([1, 2, 3]);
   }
+
+  @override
+  Future<void> downloadCover(String url, String toPath) async {}
 }
 
 class _FakePathProvider extends PathProviderPlatform with MockPlatformInterfaceMixin {

@@ -49,6 +49,14 @@ class _FakeApi extends Api {
     await File(toPath).writeAsBytes([1, 2, 3]);
     if (failIds.contains(id)) throw Exception('оборвалось');
   }
+
+  final List<String> coverUrls = [];
+
+  @override
+  Future<void> downloadCover(String url, String toPath) async {
+    coverUrls.add(url);
+    await File(toPath).writeAsBytes([1, 2, 3]);
+  }
 }
 
 class _FakePathProvider extends PathProviderPlatform with MockPlatformInterfaceMixin {
@@ -179,6 +187,29 @@ void main() {
     final r2 = await repo.applyPendingPlan(adds: false);
     expect(r2.removed, 1);
     expect(api.acks, 1);
+    await db.close();
+  });
+
+  // v67: в каталоге cover_url — ссылка или метка программы (found/folder/embedded/none@дата).
+  // Ссылку качаем как есть, метку — не ссылка: просим обложку у сервера (/v1/cover/<id>).
+  test('обложка при скачивании: ссылка как есть, метка и пустое — через сервер', () async {
+    final db = await freshDb();
+    final api = _FakeApi(add: [
+      {..._card('a'), 'cover_url': 'https://avatars.yandex.net/x/600x600'},
+      {..._card('b'), 'cover_url': 'found'},
+      {..._card('c'), 'cover_url': 'none@2026-09-20'},
+      {..._card('d'), 'cover_url': ''},
+    ]);
+    final repo = DownloadsRepo(api, db, SyncRepo(api, db));
+
+    await repo.applyPendingPlan();
+
+    expect(api.coverUrls, hasLength(4));
+    expect(api.coverUrls[0], 'https://avatars.yandex.net/x/600x600');
+    expect(api.coverUrls[1], endsWith('/v1/cover/b'));
+    expect(api.coverUrls[2], endsWith('/v1/cover/c'));
+    expect(api.coverUrls[3], endsWith('/v1/cover/d'));
+    expect((await db.downloadedById('b'))!.coverPath, isNotNull);
     await db.close();
   });
 }

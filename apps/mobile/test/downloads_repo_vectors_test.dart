@@ -27,6 +27,9 @@ class _FakeApi extends Api {
   }
 
   @override
+  Future<void> downloadCover(String url, String toPath) async {}
+
+  @override
   Future<Map<String, Uint8List>> trackVectors(List<String> ids) async {
     onTrackVectorsCall?.call(ids);
     if (vectorFor == null) throw Exception('network down');

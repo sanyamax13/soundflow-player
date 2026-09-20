@@ -109,15 +109,17 @@ class DownloadsRepo {
     // Обложка — необязательно: нет ссылки или сайт с картинкой не ответил —
     // просто играем без неё, трек это не должно останавливать.
     String? coverPath;
-    final coverUrl = '${track['cover_url'] ?? ''}';
-    if (coverUrl.isNotEmpty) {
-      try {
-        final cp = '${(await _coversDir()).path}/$id.jpg';
-        await _api.downloadCover(coverUrl, cp);
-        coverPath = cp;
-      } catch (_) {
-        coverPath = null;
-      }
+    // В каталоге cover_url — либо настоящая ссылка, либо метка программы на ПК
+    // (found/folder/embedded/none@дата), метка не ссылка: тогда просим обложку у самого
+    // сервера — он отдаёт её из файла, из папки альбома или из найденных (v67).
+    final rawCover = '${track['cover_url'] ?? ''}';
+    final coverUrl = rawCover.startsWith('http') ? rawCover : coverUrlFor(id);
+    try {
+      final cp = '${(await _coversDir()).path}/$id.jpg';
+      await _api.downloadCover(coverUrl, cp);
+      coverPath = cp;
+    } catch (_) {
+      coverPath = null;
     }
 
     await _db.upsertDownloaded(DownloadedTrack(
