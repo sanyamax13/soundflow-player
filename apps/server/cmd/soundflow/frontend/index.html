@@ -448,7 +448,7 @@
             <span class="dsec-sum" id="waveSum"></span>
             <span class="dsec-btns">
               <button class="btn" id="waveSelAll">Выбрать все</button>
-              <button class="btn" id="waveRefresh">Обновить</button>
+              <button class="btn" id="waveRefresh" title="Собрать волну заново: скачанное и убранное уйдёт, на его место встанут следующие песни">Пересобрать волну</button>
               <button class="btn primary" id="waveDlAll">Скачать выбранные</button>
             </span>
           </div>
@@ -1866,16 +1866,25 @@ function _plClose(){
   $("#plBody").innerHTML = "";
 }
 
-async function loadWave(){
-  const hint = $("#waveHint"), box = $("#waveBody");
-  hint.textContent = "подбираю песни по твоему вкусу — это может занять минуту…";
-  box.innerHTML = "";
+// force — «Пересобрать волну» (Alex TG 20208): собрать заново, минуя кэш дня; не вышло — остаётся прежний список
+async function loadWave(force){
+  const hint = $("#waveHint"), box = $("#waveBody"), btn = $("#waveRefresh");
+  hint.textContent = force ? "пересобираю волну — это занимает около минуты…" : "подбираю песни по твоему вкусу — это может занять минуту…";
+  if(!force) box.innerHTML = "";
+  btn.disabled = true;
   try{
-    _waveItems = await jget("/api/yandex/wave");
+    _waveItems = await jget("/api/yandex/wave" + (force ? "?refresh=1" : ""));
   }catch(e){
+    btn.disabled = false;
+    if(force && _waveItems.length){
+      _discRender("wave");
+      $("#waveHint").innerHTML += ` <b>Не вышло пересобрать: ${esc(friendlyError(e))}.</b> Показываю прежний список.`;
+      return;
+    }
     hint.textContent = "Не вышло собрать волну: "+friendlyError(e);
     return;
   }
+  btn.disabled = false;
   _discRender("wave");
 }
 
@@ -2020,7 +2029,7 @@ async function _discDlPicked(kind, askAll){
 $("#plShow").onclick = loadPlaylist;
 $("#plUrl").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); loadPlaylist(); } });
 $("#plClose").onclick = _plClose;
-$("#waveRefresh").onclick = loadWave;
+$("#waveRefresh").onclick = () => loadWave(true);
 $("#plSelAll").onclick = () => _discSelAll("pl");
 $("#waveSelAll").onclick = () => _discSelAll("wave");
 $("#plDlAll").onclick = () => _discDlPicked("pl", n => `Скачать все ${n} песен плейлиста, которых ещё нет в каталоге?`);

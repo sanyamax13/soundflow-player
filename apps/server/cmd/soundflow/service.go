@@ -45,6 +45,7 @@ type Service struct {
 	dl        *downloaderProc  // дочерний Python «качалка» (Найти трек / торренты)
 	store     *litestore.Store // та же БД для acquire из окна
 	covers    *coverKeeper     // сама ищет обложки песням, у которых их нет (coverkeeper.go)
+	waveMu    sync.Mutex       // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
 	pm        pathmap.Mapper   // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
 	acqT      *acqTracker // последние попытки «Найти трек»

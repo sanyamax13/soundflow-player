@@ -63,18 +63,29 @@ func topPositiveArtists(scores map[string]float64, n int) []string {
 	return out
 }
 
-// hYandexWave — GET /api/yandex/wave: до 100 кандидатов на сегодня.
+// hYandexWave — GET /api/yandex/wave: до 100 кандидатов на сегодня. С ?refresh=1 («Пересобрать волну»,
+// Alex TG 20208: «чтобы я сам мог каждый день её обновлять») список собирается заново, минуя кэш дня:
+// скачанное и убранное из списка уходит, на его место встают следующие песни. Не вышло собрать (качалка
+// молчит) — прежний список остаётся как был.
 func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 	today := time.Now().UTC().Format("2006-01-02")
-	if date, ok, _ := s.db.GetSetting(settingWaveDate); ok && date == today {
-		if raw, ok2, _ := s.db.GetSetting(settingWaveBatch); ok2 && raw != "" {
-			var cached []yandexWaveOut
-			if json.Unmarshal([]byte(raw), &cached) == nil {
-				writeJSON(w, dropLiveWave(s.dropDismissedWave(cached)))
-				return
+	force := r.URL.Query().Get("refresh") == "1"
+	if !force {
+		if date, ok, _ := s.db.GetSetting(settingWaveDate); ok && date == today {
+			if raw, ok2, _ := s.db.GetSetting(settingWaveBatch); ok2 && raw != "" {
+				var cached []yandexWaveOut
+				if json.Unmarshal([]byte(raw), &cached) == nil {
+					writeJSON(w, dropLiveWave(s.dropDismissedWave(cached)))
+					return
+				}
 			}
 		}
 	}
+	if !s.waveMu.TryLock() {
+		http.Error(w, "волна уже пересобирается — подожди минуту", http.StatusConflict)
+		return
+	}
+	defer s.waveMu.Unlock()
 
 	sidecarAddr := s.sidecarURL()
 	if sidecarAddr == "" {
