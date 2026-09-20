@@ -370,25 +370,22 @@ func ensureQBittorrent() error {
 	return fmt.Errorf("qBittorrent запущен, но Web UI на :8080 не ответил — включи Web UI в настройках qBittorrent")
 }
 
-// launchMinimized — запустить программу свёрнутой, чтобы окно qBittorrent не
-// выскакивало поверх того, чем Alex занят. На Windows — через `cmd /c start
-// /min` (у самой qBittorrent ключа «свёрнутым» нет), чёрное окно cmd скрыто.
+// launchMinimized — запустить qBittorrent так, чтобы её окно не выскакивало поверх того, чем Alex
+// занят: без заставки, а появившееся окно сразу сворачиваем. Ключа «запуск свёрнутым» у qBittorrent
+// нет, а `cmd /c start /min` она игнорирует (проверено 20.09.2026) — свёртывает qbtwindow_windows.go.
 func launchMinimized(exe string) error {
 	cmd := qbtLaunchCmd(exe)
-	if runtime.GOOS != "windows" {
-		return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
 	}
-	return cmd.Run() // cmd start возвращается сразу, сама qBittorrent остаётся жить
+	go func() { _ = cmd.Wait() }() // забрать код завершения, когда её закроют
+	go minimizeWhenShown(exe, 10*time.Second)
+	return nil
 }
 
 // qbtLaunchCmd — команда запуска (отдельно, чтобы проверить её состав тестом).
 func qbtLaunchCmd(exe string) *exec.Cmd {
-	if runtime.GOOS != "windows" {
-		return exec.Command(exe)
-	}
-	cmd := exec.Command("cmd", "/c", "start", "/min", "", exe)
-	hideChildWindow(cmd)
-	return cmd
+	return exec.Command(exe, "--no-splash")
 }
 
 // hideChildWindow — не показывать консольное окно дочернего python на Windows.

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -204,20 +203,12 @@ func TestWithSkippedDoesNotTouchInputOrDuplicate(t *testing.T) {
 	}
 }
 
-// Команда запуска qBittorrent на Windows — через cmd start /min (свёрнуто), с пустым заголовком окна.
-func TestLaunchMinimizedUsesStartMin(t *testing.T) {
+// qBittorrent запускается без заставки (окно потом сворачивает qbtwindow_windows.go).
+func TestQbtLaunchCmdNoSplash(t *testing.T) {
 	const exe = `C:\Program Files\qBittorrent\qbittorrent.exe`
 	cmd := qbtLaunchCmd(exe)
-	if len(cmd.Args) == 0 || cmd.Args[len(cmd.Args)-1] != exe {
-		t.Fatalf("последним аргументом должен быть exe: %v", cmd.Args)
-	}
-	if runtime.GOOS == "windows" {
-		want := []string{"cmd", "/c", "start", "/min", "", exe}
-		if strings.Join(cmd.Args, "|") != strings.Join(want, "|") {
-			t.Errorf("команда: %v", cmd.Args)
-		}
-		if cmd.SysProcAttr == nil || !cmd.SysProcAttr.HideWindow {
-			t.Errorf("окно cmd не скрыто")
-		}
+	want := []string{exe, "--no-splash"}
+	if strings.Join(cmd.Args, "|") != strings.Join(want, "|") {
+		t.Errorf("команда: %v", cmd.Args)
 	}
 }
