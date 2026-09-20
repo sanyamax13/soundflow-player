@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	_ "modernc.org/sqlite"
+
+	"soundflow/server/internal/tasteguard"
 )
 
 var negMode = "both"
@@ -81,7 +83,7 @@ func main() {
 	posScores := scores(pos, score)
 	keptScores := scores(kept, score)
 	report(fmt.Sprintf("сырой косинус, k=%d", *k), negScores, posScores, keptScores)
-	runRidge(neg, pos, kept)
+	runFits(neg, pos, kept)
 
 	// разбор по папкам: где отсев работает, где нет
 	type fold struct {
@@ -299,5 +301,32 @@ func report(title string, negScores, posScores, keptScores []float64) {
 		th := quantileAbove(ref, 1-fpr)
 		fmt.Printf("  ошибок среди нравящихся/библиотеки %4.1f%% → порог %+.3f: отсеет %5.1f%% из «не нравится» (нравится: %4.1f%%, библиотека: %4.1f%%)\n",
 			fpr*100, th, share(negScores, th), share(posScores, th), share(keptScores, th))
+	}
+}
+
+// runFits — линейный разделитель из tasteguard (тот же, что включает фильтр «Волны»): проверка по папкам для каждой λ
+// и итоговое решение сторожа.
+func runFits(neg, pos, kept []*item) {
+	var samples []tasteguard.Sample
+	add := func(xs []*item, n, p bool) {
+		for _, x := range xs {
+			samples = append(samples, tasteguard.Sample{Vec: x.vec, Group: x.group, Neg: n, Pos: p})
+		}
+	}
+	add(neg, true, false)
+	add(pos, false, true)
+	add(kept, false, false)
+	rep, fits, err := tasteguard.Evaluate(samples)
+	if err != nil {
+		fatal(err)
+	}
+	for _, f := range fits {
+		nn, np := len(neg), len(pos)
+		report(fmt.Sprintf("линейный разделитель по звуку (λ=%g, проверка по папкам)", f.Lambda), f.OOF[:nn], f.OOF[nn:nn+np], f.OOF[nn+np:])
+	}
+	fmt.Printf("\nРешение сторожа (tasteguard): включён=%v; лучшая λ=%g; точность против «нравится» %.2f, против библиотеки %.2f; порог %+.3f ловит %.0f%% «не нравится»\n",
+		rep.Enabled, rep.Lambda, rep.AUCPos, rep.AUCKept, rep.Threshold, 100*rep.Catch)
+	if rep.Reason != "" {
+		fmt.Println("Причина:", rep.Reason)
 	}
 }

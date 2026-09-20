@@ -82,6 +82,9 @@ func Open(path string) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS discover_dismissed (
 			normalized_key TEXT PRIMARY KEY, artist TEXT NOT NULL DEFAULT '',
 			title TEXT NOT NULL DEFAULT '', dismissed_at TEXT NOT NULL DEFAULT '')`,
+		// Отпечатки кандидатов «Волны» (21.09.2026, сторож по звуку): считаются один раз на песню, живут несколько дней.
+		`CREATE TABLE IF NOT EXISTS wave_vectors (
+			yandex_id TEXT PRIMARY KEY, vec BLOB NOT NULL, at TEXT NOT NULL DEFAULT '')`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

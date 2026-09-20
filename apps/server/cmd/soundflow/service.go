@@ -48,7 +48,10 @@ type Service struct {
 	recon     *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
 	waveMu    sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
 	waveStop  context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
-	pm        pathmap.Mapper     // канон→локальный путь для acquire/отпечатка
+	guardMu   sync.Mutex         // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
+	guardStop context.CancelFunc
+	waveEmbed func(ctx context.Context, it yandexWaveOut) ([]float32, error) // отпечаток кандидата «Волны»; nil — настоящий (в тестах подменяют)
+	pm        pathmap.Mapper                                                 // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
 	acqT      *acqTracker // последние попытки «Найти трек»
 	torOnce   sync.Once
@@ -147,6 +150,9 @@ func NewService() (*Service, error) {
 	waveCtx, waveStop := context.WithCancel(context.Background())
 	s.waveStop = waveStop
 	go s.waveDailyLoop(waveCtx)
+	guardCtx, guardStop := context.WithCancel(context.Background())
+	s.guardStop = guardStop
+	go s.dislikeGuardLoop(guardCtx)
 	return s, nil
 }
 
@@ -171,6 +177,9 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	s.recon.Stop()
 	if s.waveStop != nil {
 		s.waveStop()
+	}
+	if s.guardStop != nil {
+		s.guardStop()
 	}
 	s.jobs.CancelAll()
 	if s.eng != nil {
@@ -235,6 +244,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/log", s.hLog)
 	r.Get("/api/taste", s.hTaste)
 	r.Post("/api/taste/rebuild", s.hTasteRebuild)
+	r.Get("/api/taste/dislike-guard", s.hGuardStatus)
+	r.Post("/api/taste/dislike-guard/check", localOnly(s.hGuardCheck))
 	r.Post("/api/taste/cluster", s.hTasteCluster)
 	r.Get("/api/taste/centroids-hash", s.hCentroidsHash)
 	r.Get("/api/taste/centroids", s.hCentroids)

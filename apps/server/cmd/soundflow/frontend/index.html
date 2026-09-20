@@ -1742,10 +1742,40 @@ function tasteCol(title, rows, kind, withTitle){
     : '<div class="tr"><span class="nm" style="color:var(--faint)">пока пусто</span></div>';
   return `<div class="taste-col"><h3>${title}</h3>${body}</div>`;
 }
+// «Что не нравится — по звуку» (Alex TG 20256/20259): программа раз в неделю проверяет, отличает ли звук то, что не
+// нравится, и включает фильтр «Волны», только когда точность дошла до порога. Здесь — что она поняла и почему так.
+function guardHtml(g){
+  if(!g) return "";
+  const pct = x => Math.round(x*100)+"%";
+  const s = g.state;
+  let body;
+  if(!s){
+    body = "Проверка ещё не проводилась: первая — через несколько минут после запуска программы, дальше раз в неделю.";
+  }else{
+    const ok = [s.auc_pos, s.auc_kept].filter(a => a >= 0);
+    const acc = ok.length ? Math.min(...ok) : null;
+    const when = s.at ? new Date(s.at).toLocaleDateString("ru-RU") : "";
+    const sample = `Проверено на ${nfmt(s.neg)} «не нравится», ${nfmt(s.pos)} «нравится» и ${nfmt(s.kept)} обычных песнях.`;
+    if(s.enabled){
+      body = `<b>Фильтр по звуку в «Волне» включён.</b> Точность ${acc === null ? "—" : pct(acc)}: он отсеивает около ${pct(s.catch)} того, `+
+        `что тебе не нравится, и ошибается не чаще чем в ${pct(g.false_reject)} случаев. ${sample}`;
+    }else{
+      const why = s.reason ? s.reason.charAt(0).toUpperCase() + s.reason.slice(1) + ". " : "";
+      body = `<b>Фильтр по звуку в «Волне» выключен.</b> ${esc(why)}`+
+        `Пока он выключен, «Волна» не отсеивает ничего по звуку, а только то, что уже есть, убрано или помечено «не качать». `+
+        (s.neg >= g.min_neg ? sample : "");
+    }
+    body += ` Последняя проверка: ${esc(when)}. Программа сама повторяет её раз в неделю и включит фильтр, когда точность дойдёт до ${pct(g.min_auc)}. `+
+      `Чем чаще при удалении на телефоне выбирать причину «не моё», тем быстрее накопится нужное.`;
+  }
+  return `<div class="taste-h">Что не нравится — по звуку</div><div class="muted" style="line-height:1.5;max-width:760px">${body}</div>`;
+}
 async function loadTaste(){
   const box = $("#tasteBody");
   try{
     const d = await jget("/api/taste");
+    let guard = null;
+    try{ guard = await jget("/api/taste/dislike-guard"); }catch(e){}
     const t = d.totals || {};
     const sum = `<div class="taste-sum">`+
       `<span><b>${nfmt(t.events)}</b> сигналов</span>`+
@@ -1756,7 +1786,7 @@ async function loadTaste(){
       `<span><b>${nfmt(t.artists)}</b> исполнителей</span></div>`;
 
     if((t.events||0) === 0){
-      box.innerHTML = sum +
+      box.innerHTML = sum + guardHtml(guard) +
         '<div class="muted">Пока мало действий. Послушай музыку в приложении, ставь сердечки, убирай лишнее — '+
         'потом нажми «Пересобрать», и здесь появится картина вкуса: кого любишь, что не заходит, '+
         'на какие направления по звуку это раскладывается.</div>';
@@ -1771,7 +1801,7 @@ async function loadTaste(){
           `</div>`).join("")
       : '<div class="muted">Направления вкуса появятся, когда наберётся несколько любимых песен с посчитанным отпечатком.</div>';
 
-    box.innerHTML = sum +
+    box.innerHTML = sum + guardHtml(guard) +
       `<div class="taste-cols">${tasteCol("Любимые исполнители", d.top_artists, "pos", false)}`+
       `${tasteCol("Не заходят", d.bottom_artists, "neg", false)}</div>`+
       `<div class="taste-cols">${tasteCol("Любимые песни", d.top_tracks, "pos", true)}`+
@@ -2208,7 +2238,7 @@ $("#tDl").onclick = torDownload;
 $("#btnStop").onclick = () => jpost("/api/stop");
 $("#tasteRebuild").onclick = () => {
   const b = $("#tasteRebuild"); b.disabled = true; b.textContent = "Собираю…";
-  jpost("/api/taste/rebuild").then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+friendlyError(e)))
+  jpost("/api/taste/rebuild").then(() => jpost("/api/taste/dislike-guard/check").catch(()=>{})).then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+friendlyError(e)))
     .finally(()=>{ b.disabled = false; b.textContent = "Пересобрать"; });
 };
 

@@ -176,6 +176,7 @@ func (s *Service) buildWave(ctx context.Context) (out []yandexWaveOut, code int,
 	// это seed для РАСШИРЕНИЯ пула, а не для сужения.
 	extraArtists := topPositiveArtists(artScore, 10)
 
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	raw, err := sidecar.New(sidecarAddr).YandexWaveCandidates(ctx, extraArtists)
@@ -207,9 +208,16 @@ func (s *Service) buildWave(ctx context.Context) (out []yandexWaveOut, code int,
 	// (артист → жанр → похожие артисты, уже расставлено по важности).
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].score > kept[j].score })
 
-	out = make([]yandexWaveOut, 0, waveMaxShown)
+	// сторож по звуку (dislikeguard.go): включён, только когда точность на оценках Alex дошла до 80 %; тогда берём запас
+	// кандидатов, отсеиваем похожие по звуку на «не нравится» и оставляем первые waveMaxShown
+	guard, guardOn := s.guardModel()
+	limit := waveMaxShown
+	if guardOn {
+		limit = waveSoundPool
+	}
+	out = make([]yandexWaveOut, 0, limit)
 	for _, k := range kept {
-		if len(out) >= waveMaxShown {
+		if len(out) >= limit {
 			break
 		}
 		out = append(out, yandexWaveOut{
@@ -217,6 +225,12 @@ func (s *Service) buildWave(ctx context.Context) (out []yandexWaveOut, code int,
 			Album: k.item.Album, CoverURL: k.item.CoverURL, DurationSec: k.item.DurationSec,
 			Genre: k.item.Genre, Source: k.item.Source,
 		})
+	}
+	if guardOn {
+		out = s.dropBySound(parent, out, guard)
+		if len(out) > waveMaxShown {
+			out = out[:waveMaxShown]
+		}
 	}
 	return out, 0, nil
 }
