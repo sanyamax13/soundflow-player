@@ -48,6 +48,39 @@ func TestScreenRejectsLiveAndJunk(t *testing.T) {
 	}
 }
 
+func TestLooksLikeConcertAlbum(t *testing.T) {
+	for _, tc := range []struct {
+		album string
+		want  bool
+	}{
+		{"London 1993", true}, // Depeche Mode, Alex TG 20133
+		{"Rock In Rio 1985", true},
+		{"Woodstock 1969", true},
+		{"Москва 1993", true},
+		{"Berlin, 1988", true},
+		{"Best Of 2000", false}, // сборники
+		{"Bravo Hits 2015", false},
+		{"100 Hits Remix - 2014", false},
+		{"Summer 2019", false},
+		{"Хиты 2010", false},
+		{"Лучшее 2005", false},
+		{"Songs Of Faith And Devotion", false},
+		{"1984", false}, // одно число — не «место + год»
+		{"Ultra", false},
+		{"Now That's What I Call Music 1993", false}, // длиннее четырёх слов + «now»
+		{"Some Very Long Album Name Here 1999", false},
+		{"", false},
+	} {
+		if got := LooksLikeConcertAlbum(tc.album); got != tc.want {
+			t.Errorf("LooksLikeConcertAlbum(%q) = %v, ждали %v", tc.album, got, tc.want)
+		}
+	}
+	// слово «live» в альбоме ловит уже IsLiveOrConcert — правило «место+год» его не заменяет и не дублирует
+	if !IsLiveOrConcert("Personal Jesus", "Live In Frankfurt", "") {
+		t.Error("альбом «Live In Frankfurt» должен считаться концертным")
+	}
+}
+
 func TestScreenLiveInSourceURL(t *testing.T) {
 	if Screen("A", "Normal Title", "https://youtube.com/watch?v=live-at-wembley").OK {
 		t.Error("live в URL должен зарезать")

@@ -157,6 +157,36 @@ func TestPlaylistSidecarDown(t *testing.T) {
 	}
 }
 
+// Живые записи в «Волну» не пускаем (Alex TG 20133): ни свежую выборку, ни то, что уже лежит в кэше дня.
+func TestWaveCachedBatchDropsLiveRecordings(t *testing.T) {
+	e := ctxFixture(t)
+	batch, _ := json.Marshal([]yandexWaveOut{
+		{YandexID: "1", Artist: "Depeche Mode", Title: "Personal Jesus", Album: "Live In Frankfurt"},
+		{YandexID: "2", Artist: "Depeche Mode", Title: "Enjoy The Silence", Album: "London 1993"},
+		{YandexID: "3", Artist: "Depeche Mode", Title: "Enjoy The Silence (Live)", Album: "Violator"},
+		{YandexID: "4", Artist: "Depeche Mode", Title: "Enjoy The Silence", Album: "Violator"},
+		{YandexID: "5", Artist: "Various", Title: "Song", Album: "Best Of 2000"},
+	})
+	_ = e.s.db.SetSetting(settingWaveDate, time.Now().UTC().Format("2006-01-02"))
+	_ = e.s.db.SetSetting(settingWaveBatch, string(batch))
+	rec := httptest.NewRecorder()
+	e.s.hYandexWave(rec, httptest.NewRequest("GET", "/api/yandex/wave", nil))
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var out []yandexWaveOut
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, it := range out {
+		ids = append(ids, it.YandexID)
+	}
+	if strings.Join(ids, ",") != "4,5" {
+		t.Errorf("в волне остались %v, ждали только студийные 4 и 5 (концерты 1–3 должны уйти)", ids)
+	}
+}
+
 func TestWaveCachedBatchHidesDismissed(t *testing.T) {
 	e := ctxFixture(t)
 	batch, _ := json.Marshal([]yandexWaveOut{

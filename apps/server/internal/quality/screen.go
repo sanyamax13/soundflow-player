@@ -106,6 +106,33 @@ func IsLiveOrConcert(title, album, sourceURL string) bool {
 	return false
 }
 
+// Концертные записи часто выходят без слова «live»: альбом называют «Место Год» («London 1993», «Rock In Rio 1985»,
+// «Москва 1993»). Alex TG 20133 (20.09.2026): в «Волне» нашлась «Enjoy The Silence» Depeche Mode из альбома «London 1993»
+// (концерт 1993 года, выпущен в 2025), а «Live In Frankfurt» уже ловится словом. Правило узкое: название альбома —
+// до четырёх слов и год (1950–2029) в конце, без слов сборника («Best Of 2000», «Bravo Hits 2015», «Summer 2019» — не концерт).
+var (
+	concertAlbumRe   = regexp.MustCompile(`^\s*(\p{L}[\p{L}\s.'’-]{1,40}?)[\s,–-]+(?:19[5-9]\d|20[0-2]\d)\s*$`)
+	compilationWords = wordRe([]string{
+		"best", "hits", "hit", "top", "mix", "mixes", "now", "greatest", "collection", "essential", "gold", "party", "dance",
+		"remix", "remixes", "summer", "winter", "spring", "autumn", "fall", "chart", "charts", "anthems", "classics", "vol", "volume",
+		"лучшее", "лучшие", "хиты", "хит", "сборник", "года", "год", "чарт", "топ", "лето", "зима", "весна", "осень",
+	})
+)
+
+// LooksLikeConcertAlbum — название альбома похоже на концертную/архивную запись: «Место Год» (см. выше).
+// Только для показа предложений («Волна»); на классификацию каталога (ReleaseKind) и скачивание не влияет.
+func LooksLikeConcertAlbum(album string) bool {
+	m := concertAlbumRe.FindStringSubmatch(album)
+	if m == nil {
+		return false
+	}
+	place := m[1]
+	if len(strings.Fields(place)) > 3 {
+		return false
+	}
+	return !compilationWords.MatchString(place)
+}
+
 // IsJunkVersion — откровенный мусор (karaoke/nightcore/slowed/…).
 func IsJunkVersion(title string) bool {
 	if title == "" {

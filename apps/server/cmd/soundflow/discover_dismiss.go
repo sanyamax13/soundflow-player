@@ -55,6 +55,24 @@ func (s *Service) hDiscoverUndismiss(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// isLiveWaveItem — концертная запись: «живые записи не брать» (Alex, договорённость; TG 20133, 20.09.2026 нашёл в «Волне»
+// Depeche Mode «Personal Jesus» из «Live In Frankfurt» и «Enjoy The Silence» из «London 1993»). Запрет стоял только на
+// скачивании; в подборку предложений он не входил.
+func isLiveWaveItem(title, album string) bool {
+	return quality.IsLiveOrConcert(title, album, "") || quality.LooksLikeConcertAlbum(album)
+}
+
+// dropLiveWave — убрать концертные записи из подборки дня, что уже лежит в кэше (не ждать завтрашнего дня).
+func dropLiveWave(in []yandexWaveOut) []yandexWaveOut {
+	out := make([]yandexWaveOut, 0, len(in))
+	for _, it := range in {
+		if !isLiveWaveItem(it.Title, it.Album) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 // dropDismissedWave — из подборки дня (она лежит в кэше целый день) убрать песни, которые Alex
 // с тех пор скрыл кнопкой «Удалить».
 func (s *Service) dropDismissedWave(in []yandexWaveOut) []yandexWaveOut {
