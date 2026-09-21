@@ -61,6 +61,11 @@ TORRENT_DEAD_MIN_BYTES = 100 * 1024  # 100 KB — должно скачатьс�
 TORRENT_DEAD_MIN_SPEED_BPS = 1024  # 1 KB/s — иначе peer есть но не отдаёт
 MIN_ALBUM_SIZE = 30 * 1024 * 1024
 MAX_ALBUM_SIZE = 300 * 1024 * 1024
+# 21.09.2026 (Alex TG 20293, «2 — оставлять весь сборник как есть»): сборник разных артистов качаем ЦЕЛИКОМ и оставляем
+# как есть, но запасным путём — после альбомов одного артиста. Сборник больше альбома: до 1,2 ГБ, ждём его дольше
+# (пока байты прибывают, не дольше COMPILATION_MAX_SEC; мёртвый торрент по-прежнему отсекается за TORRENT_STALL_SEC).
+MAX_COMPILATION_SIZE = 1200 * 1024 * 1024
+COMPILATION_MAX_SEC = 1800
 MAX_CANDIDATES_TO_TRY = 5
 RUTRACKER_BASE = "https://rutracker.org"
 RUTRACKER_LOGIN_URL = f"{RUTRACKER_BASE}/forum/login.php"
@@ -361,34 +366,44 @@ def _strip_html(s: str) -> str:
 def _filter_candidates(
     results: list[dict[str, Any]], artist_key: str
 ) -> list[dict[str, Any]]:
-    """Фильтр результатов rutracker — только MP3 альбомы среднего размера, с
-    сидерами, и где артист действительно встречается в названии."""
+    """Фильтр результатов rutracker — MP3, с сидерами, где артист действительно встречается в названии.
+    Сначала альбомы одного артиста (30–300 МБ), после них — сборники разных артистов (до 1,2 ГБ): Alex 21.09.2026
+    (TG 20293, «оставлять весь сборник как есть») — сборник качаем целиком, но запасным путём."""
     out = []
+    comps = []
     for r in results:
-        name_upper = str(r.get("fileName", "")).upper()
+        title = str(r.get("fileName", ""))
         size = int(r.get("fileSize") or 0)
         seeders = int(r.get("nbSeeders") or 0)
-        if "MP3" not in name_upper:
+        comp = is_compilation_title(title)
+        if "MP3" not in title.upper():
             continue
-        if size < MIN_ALBUM_SIZE or size > MAX_ALBUM_SIZE:
+        if size < MIN_ALBUM_SIZE or size > (MAX_COMPILATION_SIZE if comp else MAX_ALBUM_SIZE):
             continue
         if seeders < 1:
             continue
         # Артист должен встречаться (в латинице или кириллице)
-        if not _file_matches(str(r.get("fileName", "")), artist_key, artist_key):
+        if not _file_matches(title, artist_key, artist_key):
             # _file_matches требует и artist и title; передаём artist дважды,
             # значит достаточно артиста в названии
             continue
-        # Сборник (топ лета / хиты / VA) — не качаем целиком как «альбом артиста».
-        if is_compilation_title(str(r.get("fileName", ""))):
-            log.info("rutracker_album: пропускаю сборник (не альбом артиста): %r", r.get("fileName"))
-            continue
-        out.append(r)
+        (comps if comp else out).append(r)
     out.sort(key=lambda r: int(r.get("nbSeeders") or 0), reverse=True)
-    return out
+    comps.sort(key=lambda r: int(r.get("nbSeeders") or 0), reverse=True)
+    if comps:
+        log.info("rutracker_album: сборников как запасной вариант: %d", len(comps))
+    return out + comps
 
 
-def _wait_torrent_complete(qbt: qbittorrentapi.Client, info_hash: str) -> dict[str, Any] | None:
+def _wait_limit(cand: dict[str, Any]) -> float | None:
+    """Сборник большой — ждём его дольше альбома (пока байты прибывают, до COMPILATION_MAX_SEC); альбому — обычный срок."""
+    title = str(cand.get("fileName") or cand.get("title") or "")
+    return float(COMPILATION_MAX_SEC) if is_compilation_title(title) else None
+
+
+def _wait_torrent_complete(
+    qbt: qbittorrentapi.Client, info_hash: str, max_sec: float | None = None
+) -> dict[str, Any] | None:
     """Polling до тех пор пока торрент не скачается. Возвращает torrent info.
 
     Early-abort: если за TORRENT_DEAD_GRACE_SEC секунд (30 сек) торрент не
@@ -397,13 +412,14 @@ def _wait_torrent_complete(qbt: qbittorrentapi.Client, info_hash: str) -> dict[s
     с rutor блокировали chain на полный DOWNLOAD_TIMEOUT_SEC.
     """
     start_time = time.time()
+    limit = max_sec or DOWNLOAD_MAX_SEC
     last_bytes = -1
     last_growth = start_time
     while True:
         now = time.time()
         waited = now - start_time
         if waited >= DOWNLOAD_TIMEOUT_SEC and (
-            waited >= DOWNLOAD_MAX_SEC or now - last_growth > TORRENT_STALL_SEC
+            waited >= limit or now - last_growth > TORRENT_STALL_SEC
         ):
             break
         torrents = qbt.torrents.info(torrent_hashes=info_hash)
@@ -741,7 +757,7 @@ def _do_find_and_download(
             log.warning("rutracker_album: не смог resume torrent %s: %s", new_hash, exc)
             continue
 
-        info = _wait_torrent_complete(qbt, new_hash)
+        info = _wait_torrent_complete(qbt, new_hash, max_sec=_wait_limit(cand))
         if info is None:
             # Удаляем неудачный торрент с файлами
             try:

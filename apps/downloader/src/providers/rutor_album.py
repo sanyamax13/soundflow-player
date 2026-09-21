@@ -50,6 +50,8 @@ from .rutracker_album import (
     _simplify_artist,
     _torrent_has_target,
     _wait_torrent_complete,
+    MAX_COMPILATION_SIZE,
+    _wait_limit,
     _wait_torrent_metadata,
 )
 from ._fsutil import _file_matches, normalize_key
@@ -225,32 +227,31 @@ def _do_search(artist: str) -> list[dict[str, Any]]:
     return []
 
 
-def _filter_candidates(
-    results: list[dict[str, Any]], artist_key: str
-) -> list[dict[str, Any]]:
-    """MP3 + размер 30-300 МБ + сидеры > 0 + артист в названии."""
+def _filter_candidates(results: list[dict[str, Any]], artist_key: str) -> list[dict[str, Any]]:
+    """MP3 + сидеры > 0 + артист в названии. Сначала альбомы одного артиста (30-300 МБ), после них — сборники разных
+    артистов (до 1,2 ГБ): Alex 21.09.2026 (TG 20293, «оставлять весь сборник как есть») — сборник качаем целиком,
+    но запасным путём."""
     out = []
+    comps = []
     for r in results:
         title = str(r.get("title", ""))
         size = int(r.get("size_bytes") or 0)
         seeders = int(r.get("seeders") or 0)
-        if "MP3" not in title.upper():
+        comp = is_compilation_title(title)
+        if "MP3" not in title.upper():  # FLAC/Lossless пока не сканируем
             continue
-        if size < MIN_ALBUM_SIZE or size > MAX_ALBUM_SIZE:
+        if size < MIN_ALBUM_SIZE or size > (MAX_COMPILATION_SIZE if comp else MAX_ALBUM_SIZE):
             continue
         if seeders < 1:
             continue
-        # артист встречается в названии (передаём artist дважды,
-        # _file_matches требует и artist и title — обходной приём)
         if not _file_matches(title, artist_key, artist_key):
             continue
-        # Сборник (топ лета / хиты / VA) — не качаем целиком как «альбом артиста».
-        if is_compilation_title(title):
-            log.info("rutor_album: пропускаю сборник (не альбом артиста): %r", title)
-            continue
-        out.append(r)
+        (comps if comp else out).append(r)
     out.sort(key=lambda r: int(r.get("seeders") or 0), reverse=True)
-    return out
+    comps.sort(key=lambda r: int(r.get("seeders") or 0), reverse=True)
+    if comps:
+        log.info("rutor_album: сборников как запасной вариант: %d", len(comps))
+    return out + comps
 
 
 def _add_torrent_paused(qbt: qbittorrentapi.Client, torrent_bytes: bytes) -> None:
@@ -366,7 +367,7 @@ def _do_find_and_download(
             log.warning("rutor_album: не смог resume torrent %s: %s", new_hash, exc)
             continue
 
-        info = _wait_torrent_complete(qbt, new_hash)
+        info = _wait_torrent_complete(qbt, new_hash, max_sec=_wait_limit(cand))
         if info is None:
             try:
                 qbt.torrents.delete(torrent_hashes=new_hash, delete_files=True)

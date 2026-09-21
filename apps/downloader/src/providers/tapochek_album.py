@@ -33,6 +33,7 @@ from .rutracker_album import (
     RutrackerDownloadResult as TapochekDownloadResult,  # одинаковая структура
     _qbt_client,
     _wait_torrent_complete,
+    _wait_limit,
     _wait_torrent_metadata,
     _torrent_has_target,
     _read_album_tracks,
@@ -317,7 +318,7 @@ def _do_find_and_download(
             log.warning("tapochek_album: resume не сработал: %s", exc)
             continue
 
-        info = _wait_torrent_complete(qbt, new_hash)
+        info = _wait_torrent_complete(qbt, new_hash, max_sec=_wait_limit(cand))
         if info is None:
             try:
                 qbt.torrents.delete(torrent_hashes=new_hash, delete_files=True)
