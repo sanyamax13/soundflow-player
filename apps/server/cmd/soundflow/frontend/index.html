@@ -381,7 +381,6 @@
       <a data-v="catalog" class="on">Каталог</a>
       <a data-v="find">Найти и скачать</a>
       <a data-v="devices">Устройства</a>
-      <a data-v="taste">Вкус</a>
       <a data-v="discover">Открытия</a>
       <a data-v="activity">Активность</a>
       <a data-v="settings">Настройки</a>
@@ -682,7 +681,10 @@ function friendlyError(raw){
 }
 
 /* ---------- навигация по разделам ---------- */
-const VIEWS = ["catalog","find","devices","taste","discover","activity","log","settings"];
+// Экран «Вкус» скрыт по просьбе Alex 21.09.2026 (TG 20322: «вкус скрой, чтобы только программа знала»): пункта меню нет, в VIEWS его нет
+// (адрес #taste открывает Каталог). Сам разбор вкуса программа ведёт и использует сама (Волна, сторож по звуку); код экрана
+// (#v-taste, loadTaste) оставлен — чтобы вернуть, достаточно вернуть пункт меню и "taste" в этот список.
+const VIEWS = ["catalog","find","devices","discover","activity","log","settings"];
 function showView(name){
   name = (name||"").split("?")[0];               // #find?tq=... → find
   if(!VIEWS.includes(name)) name = "catalog";
