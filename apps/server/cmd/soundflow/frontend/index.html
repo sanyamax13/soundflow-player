@@ -341,6 +341,22 @@
   .act-row .nt{color:var(--mut)}
   .act-more{display:inline-block; margin-top:14px; font-size:12px; color:var(--mut); cursor:pointer}
   .act-more:hover{color:var(--ink); text-decoration:underline}
+
+  /* План для телефона (шаг 5 ревизии 20.09.2026, вариант 1): что ждёт телефон + «Отменить план» */
+  .plancard{border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; background:#fbfbfb; flex-shrink:0}
+  .plancard .ph{display:flex; align-items:center; gap:10px}
+  .plancard .ph b{flex:1; font-size:13px}
+  .plancard .pt{font-size:13px; margin-top:6px}
+  .plancard .pn{font-size:12px; color:var(--mut); margin-top:4px}
+  .plancard .pmore{display:inline-block; margin-top:8px; font-size:12px; color:var(--mut); cursor:pointer}
+  .plancard .pmore:hover{color:var(--ink); text-decoration:underline}
+  .plancard .plist{margin-top:6px; border-top:1px solid var(--line)}
+  .plancard .pi{display:flex; gap:8px; align-items:baseline; font-size:12.5px; padding:4px 0; border-bottom:1px solid var(--line)}
+  .plancard .pi .pm{width:12px; flex-shrink:0; font-weight:800}
+  .plancard .pi .pm.add{color:var(--ok)}
+  .plancard .pi .pm.rem{color:var(--err)}
+  .plancard .pi .ps{margin-left:auto; color:var(--faint); flex-shrink:0; font-variant-numeric:tabular-nums}
+  .item .mm.plan{color:var(--warn); font-weight:600}
 </style>
 </head>
 <body>
@@ -444,7 +460,7 @@
           <div id="syncBody" class="modal-body"><div class="muted">считаю разницу…</div></div>
           <div class="modal-foot">
             <span id="syncSummary" class="muted"></span>
-            <button class="btn primary" id="syncNext" disabled>Далее</button>
+            <button class="btn primary" id="syncNext" disabled>Положить в план</button>
           </div>
         </div>
       </div>
@@ -1407,8 +1423,9 @@ function _devTag(tr){
 async function loadDevices(){
   $("#devDetail").hidden = true; $("#devList").hidden = false;
   try{
-    const devs = await jget("/api/devices");
+    const [devs, plan] = await Promise.all([jget("/api/devices"), jget("/api/phone/plan?limit=0").catch(() => null)]);
     $("#devicesList").innerHTML = devs.length ? devs.map(d => {
+      const pl = plan && plan.has_plan && plan.device_id === d.id ? `<div class="mm plan">ждёт телефона: ${esc(_planText(plan))}</div>` : "";
       const last = d.last_sync_at ? new Date(d.last_sync_at).toLocaleString("ru-RU") : "—";
       const gb = d.music_bytes ? " · "+ (d.music_bytes/1073741824).toFixed(1) +" ГБ" : "";
       let dl = "";
@@ -1420,7 +1437,7 @@ async function loadDevices(){
       }
       return `<div class="item" style="cursor:pointer" onclick="openDevice(${jsArg(d.id)})"><div class="ic">📱</div>`+
         `<div class="grow"><div class="tt">${esc(d.name||d.id)}</div>`+
-        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${dl}</div>`+
+        `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${pl}${dl}</div>`+
         `${_devTag(d.transport)}`+
         `<button class="dx" title="убрать эту запись из списка" onclick="event.stopPropagation();_devEntryDelete(${jsArg(d.id)},${jsArg(d.name||d.id)})">🗑</button>`+
         `<span style="color:var(--faint);margin-left:4px">›</span></div>`;
@@ -1517,6 +1534,7 @@ function _devRender(){
       `${_devTag(m.transport)}</div>`+
     `<div class="sum"><b>${nfmt(_devOnDev.length)}</b> песен на телефоне · ${m.gb} · `+
       `в каталоге ещё <b>${nfmt(m.add)}</b> · последняя связь ${m.last}</div>`+
+    `<div id="planCard"></div>`+
     `<div class="bar">`+
       `<input class="search" id="devSearch" placeholder="поиск по песням на телефоне…" value="${esc(_devQ||'')}">`+
       `<button class="btn primary" onclick="openSync(${jsArg(m.id)},${jsArg(m.name)})">Изменить состав</button>`+
@@ -1526,8 +1544,62 @@ function _devRender(){
   const inp = $("#devSearch");
   inp.addEventListener("input", e=>{ _devQ = e.target.value.trim(); _devBody(); });
   _devBody();
+  loadPlanCard();
   // курсор в конец, чтобы можно было продолжать печатать после перерисовки
   if (_devQ){ inp.focus({preventScroll:true}); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+/* --- План для телефона (шаг 5 ревизии 20.09.2026, вариант 1 — Alex TG 20310) ---
+   Показывает, что ждёт телефон: сколько песен добавить и убрать, сколько это в ГБ, и поимённо. Сам ничего не отправляет
+   и не стирает: после v66 телефон предлагает карточку «Скачать / Стереть», решает Alex на телефоне. «Отменить план»
+   снимает список целиком — песни на телефоне остаются как были. */
+let _planOpen = false;   // раскрыт ли список песен
+function _planText(p){
+  const parts = [];
+  if(p.add_count) parts.push("добавить "+nfmt(p.add_count)+" "+plural(p.add_count, "песню", "песни", "песен")+(p.add_bytes ? " ("+gb(p.add_bytes)+")" : ""));
+  if(p.remove_count) parts.push("убрать "+nfmt(p.remove_count)+" "+plural(p.remove_count, "песню", "песни", "песен")+(p.remove_bytes ? " ("+gb(p.remove_bytes)+")" : ""));
+  return parts.join(", ");
+}
+function _planRows(items, sign){
+  return items.map(x => `<div class="pi"><span class="pm ${sign === "+" ? "add" : "rem"}">${sign === "+" ? "+" : "−"}</span>`+
+    `<span>${x.missing ? '<i class="muted">(песни уже нет в каталоге)</i>' : esc((x.artist || "") + " — " + (x.title || ""))}</span>`+
+    `<span class="ps">${x.size_bytes ? gb(x.size_bytes) : ""}</span></div>`).join("");
+}
+function renderPlanCard(p){
+  const box = $("#planCard"); if(!box) return;
+  if(!p || p.device_id !== _devMeta.id){ box.innerHTML = ""; return; }   // план есть только у «живого» (последнего) телефона
+  if(!p.has_plan){
+    box.innerHTML = '<div class="plancard"><div class="ph"><b>План для телефона</b></div>'+
+      '<div class="pt muted">Пусто: телефону ничего не ждёт.</div></div>';
+    return;
+  }
+  const more = (n, shown) => n > shown ? `<div class="muted" style="padding:4px 0">…и ещё ${nfmt(n - shown)}</div>` : "";
+  const at = p.at ? new Date(p.at).toLocaleString("ru-RU", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"}) : "";
+  const gone = p.missing_add ? ` Песен, которых уже нет в каталоге: ${nfmt(p.missing_add)} — телефон их пропустит.` : "";
+  box.innerHTML = '<div class="plancard"><div class="ph"><b>План для телефона</b>'+
+      '<button class="btn" onclick="cancelPlan()">Отменить план</button></div>'+
+    `<div class="pt">Ждёт телефона: ${esc(_planText(p))}</div>`+
+    `<div class="pn">Сам ничего не отправляется и не стирается: телефон предложит это карточкой «Скачать / Стереть», `+
+      `когда зайдёт, а решаешь ты на телефоне.${at ? " План положен " + esc(at) + "." : ""}${gone}</div>`+
+    `<a class="pmore" onclick="togglePlanList()">${_planOpen ? "Скрыть песни ▴" : "Что это за песни ▾"}</a>`+
+    (_planOpen ? `<div class="plist">${_planRows(p.add, "+")}${more(p.add_count, p.add.length)}${_planRows(p.remove, "−")}${more(p.remove_count, p.remove.length)}</div>` : "")+
+    '</div>';
+}
+async function loadPlanCard(){
+  if(!$("#planCard")) return;
+  try{ renderPlanCard(await jget("/api/phone/plan?limit=" + (_planOpen ? 40 : 0))); }catch(e){}
+}
+function togglePlanList(){ _planOpen = !_planOpen; loadPlanCard(); }
+async function cancelPlan(){
+  if(!confirm("Отменить план для телефона?\n\nТелефон ничего не скачает и не сотрёт: песни на телефоне останутся как есть. "+
+              "Список потом можно собрать заново («Изменить состав» или «Выровнять по компьютеру»).")) return;
+  try{
+    const r = await fetch("/api/phone/plan", {method:"DELETE"});
+    if(!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    if(!j.cancelled) alert("Плана уже нет: телефон его забрал или он отменён раньше.");
+  }catch(e){ alert("Не получилось отменить: " + friendlyError(e)); }
+  loadPlanCard();
 }
 
 let _devQ = "";
@@ -1760,7 +1832,7 @@ $("#syncNext").onclick = async () => {
     const names = [...document.querySelectorAll("#syncBody input.a:checked")]
       .slice(0,10).map(x=>x.closest(".srow").querySelector(".st").textContent);
     $("#syncBody").innerHTML =
-      `<div style="padding:6px 0">План сохранён. Телефон выполнит при подключении.</div>`+
+      `<div style="padding:6px 0">План сохранён. Телефон предложит это карточкой «Скачать / Стереть», когда зайдёт, — решаешь ты на телефоне.</div>`+
       `<div class="sh" style="margin:8px 0 4px">Закачает — ${body.add.length}${body.remove.length?`, удалит — ${body.remove.length}`:""}</div>`+
       (names.length? `<div class="slist">`+names.map(n=>`<div class="srow"><span class="st">${esc(n)}</span></div>`).join("")+
         (body.add.length>names.length?`<div class="muted">…и ещё ${body.add.length-names.length}</div>`:"")+`</div>` : "");
@@ -2702,6 +2774,7 @@ function tick(){
   const on = id => $("#v-"+id).classList.contains("on");
   if(on("find")){ if($("#fm-torrent").hidden) loadAcqLog(); else loadTorLog(); }
   if(on("devices") && $("#devDetail").hidden) loadDevices();  // не дёргать открытый телефон
+  if(on("devices") && !$("#devDetail").hidden) loadPlanCard();  // а карточку плана — можно: она маленькая
   if(on("log")) loadLog();
   if(on("activity")) loadActivity();
   // каталог показывает «пусто», а скан мог уже что-то добавить — само подтянуть
