@@ -48,7 +48,10 @@ type Service struct {
 	recon     *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
 	waveMu    sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
 	waveStop  context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
-	guardMu   sync.Mutex         // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
+	pcMu      sync.Mutex         // кэш «песен компьютера с файлом на диске» для сверки с телефоном (phonecheck.go)
+	pcAt      time.Time
+	pcSet     map[string]int64
+	guardMu   sync.Mutex // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
 	guardStop context.CancelFunc
 	waveEmbed func(ctx context.Context, it yandexWaveOut) ([]float32, error) // отпечаток кандидата «Волны»; nil — настоящий (в тестах подменяют)
 	pm        pathmap.Mapper                                                 // канон→локальный путь для acquire/отпечатка
@@ -229,6 +232,11 @@ func (s *Service) mountAPI(r chi.Router) {
 	// контекстное меню окна (Alex TG 20039–20045). Команды, что меняют файлы/план или
 	// запускают проводник, — только с этого компьютера (см. localOnly).
 	r.Get("/api/phone/state", s.hPhoneState)
+	// сверка телефона с компьютером (phonecheck.go): телефон присылает точный список, окно показывает числа,
+	// «Выровнять» — только с этого компьютера
+	r.Post("/api/phone/inventory", s.hPhoneInventory)
+	r.Get("/api/phone/check", s.hPhoneCheck)
+	r.Post("/api/phone/align", localOnly(s.hPhoneAlign))
 	r.Post("/api/phone/plan", localOnly(s.hPhonePlan))
 	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
 	r.Get("/api/catalog/missing", s.hMissing)

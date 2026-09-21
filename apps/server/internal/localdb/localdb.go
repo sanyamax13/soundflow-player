@@ -92,6 +92,13 @@ func Open(path string) (*DB, error) {
 			track_id TEXT PRIMARY KEY, file_id TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '',
 			size_bytes INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'wanted',
 			detail TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`,
+		// Точный список песен на телефоне (Alex TG 20277–20279, 21.09.2026): телефон присылает его сам, см. inventory.go.
+		`CREATE TABLE IF NOT EXISTS phone_inventory (
+			device_id TEXT NOT NULL, track_id TEXT NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (device_id, track_id))`,
+		`CREATE TABLE IF NOT EXISTS phone_inventory_meta (
+			device_id TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '',
+			count INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0)`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

@@ -204,6 +204,23 @@
   #rmBody .rrow .rt, #msBody .rrow .rt, #bfBody .rrow .rt{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   #rmBody .rrow .rm, #msBody .rrow .rm, #bfBody .rrow .rm{color:var(--mut); white-space:nowrap; font-size:11px}
   #rmBody .rrow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--field); color:var(--mut); white-space:nowrap}
+  /* сверка телефона с компьютером (Alex TG 20277–20279) */
+  #pcPill{cursor:pointer}
+  #pcBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin:10px 0}
+  #pcBody .pcbox{display:flex; gap:12px; margin-bottom:6px}
+  #pcBody .pcbox>div{flex:1; border:1px solid var(--line); border-radius:11px; padding:12px 14px; text-align:center}
+  #pcBody .pcbox .pn{font-size:26px; font-weight:800; letter-spacing:-.5px}
+  #pcBody .pcbox .pl{font-size:12px; color:var(--mut); margin-top:2px}
+  #pcBody .pcbox .ps{font-size:11.5px; color:var(--faint); margin-top:1px}
+  #pcBody .pcrow{display:flex; align-items:baseline; gap:10px; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px}
+  #pcBody .pcrow:last-child{border-bottom:0}
+  #pcBody .pcrow .pt{flex:1}
+  #pcBody .pcrow .pt small{display:block; color:var(--mut); font-size:11.5px; margin-top:1px}
+  #pcBody .pcrow .pv{font-weight:700; white-space:nowrap}
+  #pcBody .pcrow.warn .pv{color:var(--warn)}
+  #pcBody .pcrow.ok .pv{color:var(--ok)}
+  #pcBody .pcwhy{background:#fbf6e8; border:1px solid #eadfc4; color:#7a5a12; border-radius:9px; padding:9px 12px; font-size:12.5px; margin-top:10px}
+  #pcBody .pcgood{background:var(--limebox); color:var(--ok); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:700; margin-top:10px}
   /* телефон в программе: плитки по исполнителям */
   .dtiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
   .dtile{border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; text-align:left; padding:0; cursor:pointer; font:inherit; color:inherit}
@@ -302,6 +319,7 @@
     <div class="pill busy" id="rmPill" hidden title="Показать список убранного на телефоне"><span class="dot"></span><span id="rmPillTxt"></span></div>
     <div class="pill busy" id="msPill" hidden title="Файлы этих песен пропали с диска — убрать записи из каталога?"><span class="dot"></span><span id="msPillTxt"></span></div>
     <div class="pill busy" id="bfPill" hidden title="У этих песен стоит «больше не качать», а файлы лежат на диске — стереть?"><span class="dot"></span><span id="bfPillTxt"></span></div>
+    <div class="pill" id="pcPill" hidden title="Сколько песен на телефоне и на компьютере — совпадают или нет"><span class="dot"></span><span id="pcPillTxt"></span></div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -434,6 +452,21 @@
           <div class="modal-foot">
             <span id="bfSummary" class="muted"></span>
             <button class="btn danger" id="bfConfirm">Стереть с компьютера навсегда</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Сверка телефона с компьютером -->
+      <div id="pcModal" class="modal" hidden>
+        <div class="modal-card">
+          <div class="modal-head">
+            <b>Телефон и компьютер</b>
+            <button class="x" id="pcClose" title="Закрыть">✕</button>
+          </div>
+          <div id="pcBody" class="modal-body"></div>
+          <div class="modal-foot">
+            <span id="pcSummary" class="muted"></span>
+            <button class="btn primary" id="pcAlign">Выровнять по компьютеру</button>
           </div>
         </div>
       </div>
@@ -2442,12 +2475,86 @@ $("#bfConfirm").onclick = async () => {
   checkBlocked();
 };
 
+/* ---------- сверка телефона с компьютером (Alex TG 20277–20279: «на телефоне столько, на компьютере столько, если не ровно —
+   нажимаешь и выравнивает, приоритет компьютер») ---------- */
+let _pc = null, _pcBusy = false, _pcLast = 0;
+function pcWhen(at){
+  if(!at) return "";
+  const d = new Date(at); if(isNaN(d)) return "";
+  const t = d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+  return d.toDateString() === new Date().toDateString() ? "сегодня в "+t : d.toLocaleDateString("ru-RU",{day:"numeric",month:"long"})+" в "+t;
+}
+function renderPhoneSync(){
+  const d = _pc; if(!d) return;
+  const row = (title, note, val, cls) => `<div class="pcrow ${cls||""}"><div class="pt">${title}${note ? `<small>${note}</small>` : ""}</div><div class="pv">${val}</div></div>`;
+  let h = `<div class="pcbox">`+
+    `<div><div class="pn">${nfmt(d.phone)}</div><div class="pl">песен на телефоне</div><div class="ps">${d.phone_bytes ? gb(d.phone_bytes) : "размер неизвестен"}</div></div>`+
+    `<div><div class="pn">${nfmt(d.pc)}</div><div class="pl">песен на компьютере</div><div class="ps">${gb(d.pc_bytes)}</div></div></div>`;
+  h += row("Есть и там и там", "", nfmt(d.both), "ok");
+  h += row("Только на телефоне", "у компьютера их нет — «Выровнять» предложит стереть с телефона",
+    nfmt(d.only_phone)+(d.only_phone_bytes ? " · "+gb(d.only_phone_bytes) : ""), d.only_phone ? "warn" : "");
+  h += row("Только на компьютере", "«Выровнять» предложит добавить на телефон",
+    nfmt(d.only_pc)+(d.only_pc_bytes ? " · "+gb(d.only_pc_bytes) : ""), d.only_pc ? "warn" : "");
+  if(d.arriving) h += row("Едут с телефона на компьютер", "возврат ещё идёт", nfmt(d.arriving));
+  if(d.removed) h += row("Убраны с телефона по твоему решению", "обратно не добавляю", nfmt(d.removed));
+  h += d.exact
+    ? `<div class="rnote">Список песен телефон прислал сам ${esc(pcWhen(d.at))}. Приоритет за компьютером: что у него есть — должно быть на телефоне, чего нет — уйти с телефона.</div>`
+    : `<div class="rnote">Телефон ещё не присылал точный список, цифры приблизительные (по журналу событий).</div>`;
+  if(d.even) h += `<div class="pcgood">Ровно: на телефоне и на компьютере одни и те же песни.</div>`;
+  else if(!d.can_align && d.why) h += `<div class="pcwhy">${esc(d.why)}</div>`;
+  else h += `<div class="rnote">«Выровнять» ничего не стирает сразу: план уходит на телефон, там появится карточка «Скачать / Стереть», и решишь ты сам. `+
+    `Песню, которой нет у компьютера, со стёртого телефона вернуть будет неоткуда.</div>`;
+  $("#pcBody").innerHTML = h;
+  $("#pcSummary").textContent = d.even ? "" : "не хватает: "+nfmt(d.only_pc)+" · лишних: "+nfmt(d.only_phone);
+  $("#pcAlign").disabled = _pcBusy || !d.can_align;
+}
+async function checkPhoneSync(force){
+  if(_pcBusy || (!force && Date.now() - _pcLast < 15000)) return;
+  _pcLast = Date.now();
+  let d;
+  try{ d = await jget("/api/phone/check"); }catch(e){ return; }
+  _pc = d;
+  const pill = $("#pcPill");
+  pill.hidden = !d.has_phone;
+  if(d.has_phone){
+    pill.className = "pill" + (d.even && d.exact ? "" : " off");
+    $("#pcPillTxt").textContent = !d.exact ? "телефон: сверка неточная"
+      : d.even ? "телефон и компьютер: ровно, "+nfmt(d.pc)
+      : "телефон "+nfmt(d.phone)+" · компьютер "+nfmt(d.pc)+" — не ровно";
+  }
+  if(!$("#pcModal").hidden) renderPhoneSync();
+}
+$("#pcClose").onclick = () => { $("#pcModal").hidden = true; };
+$("#pcPill").onclick = () => { if(_pc){ renderPhoneSync(); $("#pcModal").hidden = false; checkPhoneSync(true); } };
+$("#pcAlign").onclick = async () => {
+  if(_pcBusy || !_pc || !_pc.can_align) return;
+  const d = _pc;
+  if(!confirm("Выровнять телефон по компьютеру?\n\nНа телефон добавить: "+nfmt(d.only_pc)+" песен"+(d.only_pc_bytes ? " ("+gb(d.only_pc_bytes)+")" : "")+
+      ".\nС телефона стереть: "+nfmt(d.only_phone)+" песен"+(d.only_phone_bytes ? " ("+gb(d.only_phone_bytes)+")" : "")+
+      ". Вернуть их будет неоткуда.\n\nНичего не сотрётся, пока ты сам не нажмёшь на телефоне.")) return;
+  _pcBusy = true; renderPhoneSync();
+  $("#pcAlign").textContent = "кладу в план…";
+  let msg = "";
+  try{
+    const r = await fetch("/api/phone/align", {method:"POST"});
+    if(!r.ok) throw new Error(await r.text());
+    const a = await r.json();
+    msg = "План для телефона готов: добавить "+nfmt(a.add)+", стереть "+nfmt(a.remove)+". Открой приложение на телефоне: там появится карточка «Скачать / Стереть».";
+  }catch(e){ msg = "Не получилось выровнять: "+(e.message||e); }
+  _pcBusy = false;
+  $("#pcAlign").textContent = "Выровнять по компьютеру";
+  $("#pcModal").hidden = true; _pcLast = 0;
+  alert(msg);
+  checkPhoneSync(true);
+};
+
 /* ---------- обновление ---------- */
 function tick(){
   loadInfo();
   checkRemovals();
   checkMissing();
   checkBlocked();
+  checkPhoneSync();
   loadJobs(); // и для «Отменить пересчёт» в шапке каталога, не только вкладки «Задачи»
   const on = id => $("#v-"+id).classList.contains("on");
   if(on("find")){ if($("#fm-torrent").hidden) loadAcqLog(); else loadTorLog(); }

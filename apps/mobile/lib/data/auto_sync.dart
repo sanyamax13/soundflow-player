@@ -88,5 +88,7 @@ class AutoSync with WidgetsBindingObserver {
     await _offer?.refresh();
     // Разовый возврат песен на компьютер (21.09.2026): фоном, ждать не нужно, все ошибки глотает сам.
     unawaited(_downloads.returnFilesToPc());
+    // Точный список песен телефона для сверки с компьютером (21.09.2026): фоном, сам глотает ошибки.
+    unawaited(_downloads.reportInventory());
   }
 }

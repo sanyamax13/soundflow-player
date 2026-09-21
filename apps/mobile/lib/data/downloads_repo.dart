@@ -546,6 +546,52 @@ class DownloadsRepo {
     }
   }
 
+  /// Прислать компьютеру точный список песен, что лежат на телефоне (Alex TG
+  /// 20277–20279, 21.09.2026): в окне программы видно «на телефоне N, на
+  /// компьютере M», и кнопка «Выровнять» опирается на этот список, а не на
+  /// журнал событий. Вызывается фоном из [AutoSync]. Дёшево, когда ничего не
+  /// менялось: сначала сверяется число и общий размер по базе (без обхода
+  /// файлов), полный список уходит только при изменении или раз в
+  /// [_inventoryEvery]. В список попадают только песни, чей файл реально есть.
+  /// Нет связи / старая программа на ПК — тихо выходит, попробует в следующий
+  /// раз. Одновременно идёт один запрос.
+  Future<void> reportInventory() =>
+      _inventoryRun ??= _reportInventory().whenComplete(() => _inventoryRun = null);
+
+  Future<void>? _inventoryRun;
+  String? _inventorySig;
+  DateTime? _inventoryAt;
+  static const _inventoryEvery = Duration(minutes: 30);
+
+  Future<void> _reportInventory() async {
+    try {
+      final devId = await _sync?.deviceId();
+      if (devId == null) return;
+      final all = await _db.allDownloaded();
+      var bytes = 0;
+      for (final t in all) {
+        bytes += t.bytes;
+      }
+      final sig = '${all.length}/$bytes';
+      final now = DateTime.now();
+      if (sig == _inventorySig &&
+          _inventoryAt != null &&
+          now.difference(_inventoryAt!) < _inventoryEvery) {
+        return;
+      }
+      final items = [
+        for (final t in all)
+          if (File(t.path).existsSync()) (id: t.id, bytes: t.bytes),
+      ];
+      await _api.sendInventory(devId, items);
+      _inventorySig = sig;
+      _inventoryAt = now;
+      await AppLog.event('inventory_sent', {'songs': items.length});
+    } catch (_) {
+      // Не вышло — не страшно, в следующий заход повторим.
+    }
+  }
+
   /// Файл трека пропал с диска, а запись о нём в базе — цела (см.
   /// `PlayerController.onMissingFile` — плеер словил недостающий файл в
   /// очереди, Alex TG 15.09.2026: «давай чинить, а не пропускать»).
