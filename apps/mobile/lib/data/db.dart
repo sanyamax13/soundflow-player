@@ -143,6 +143,55 @@ class Db {
     return (r.first['s'] as int?) ?? 0;
   }
 
+  // Лёгкие выборки для фоновых сверок (оптимизация 21.09.2026, Alex TG 20331).
+  // Раньше каждая из них грузила ВСЮ «Мою музыку» целиком (на 6000 песен — шесть
+  // тысяч объектов через канал платформы) или даже все отпечатки (по 8 КБ на
+  // песню, ~50 МБ), чтобы узнать одно число или список id. Единственный поток
+  // базы на телефоне при этом стоял занятым, и всё остальное ждало.
+
+  /// Сколько песен и сколько байт — одним запросом, без чтения самих строк.
+  Future<({int count, int bytes})> downloadedStats() async {
+    final r = await _db.rawQuery(
+        'SELECT COUNT(*) AS c, COALESCE(SUM(bytes),0) AS s FROM downloaded_tracks');
+    return (count: (r.first['c'] as int?) ?? 0, bytes: (r.first['s'] as int?) ?? 0);
+  }
+
+  /// id, путь к файлу и размер — без тегов и обложек.
+  Future<List<({String id, String path, int bytes})>> fileRows() async {
+    final rows = await _db.rawQuery('SELECT id, path, bytes FROM downloaded_tracks');
+    return [
+      for (final r in rows)
+        (id: r['id'] as String, path: r['path'] as String, bytes: (r['bytes'] as int?) ?? 0),
+    ];
+  }
+
+  /// id и путь обложки у каждой песни (путь может быть пустым).
+  Future<List<({String id, String? coverPath})>> coverRows() async {
+    final rows = await _db.rawQuery('SELECT id, cover_path FROM downloaded_tracks');
+    return [
+      for (final r in rows) (id: r['id'] as String, coverPath: r['cover_path'] as String?),
+    ];
+  }
+
+  Future<List<String>> downloadedIds() async {
+    final rows = await _db.rawQuery('SELECT id FROM downloaded_tracks');
+    return [for (final r in rows) r['id'] as String];
+  }
+
+  /// id песен, у которых нет НИ формата, НИ битрейта, НИ длины (ждут докачки характеристик).
+  Future<List<String>> idsNeedingMeta() async {
+    final rows = await _db.rawQuery('SELECT id FROM downloaded_tracks '
+        "WHERE (format IS NULL OR format = '') "
+        'AND COALESCE(bitrate_kbps, 0) = 0 AND COALESCE(duration_sec, 0) = 0');
+    return [for (final r in rows) r['id'] as String];
+  }
+
+  /// У каких песен уже есть отпечаток — только id, сами отпечатки не читаются.
+  Future<Set<String>> vectorIds() async {
+    final rows = await _db.rawQuery('SELECT id FROM track_vectors');
+    return {for (final r in rows) r['id'] as String};
+  }
+
   Future<void> setFavorite(String id, bool value) => _db.update(
         'downloaded_tracks',
         {'favorite': value ? 1 : 0},
@@ -255,13 +304,23 @@ class Db {
     return rows.isEmpty ? null : rows.first['vec'] as Uint8List;
   }
 
+  /// Кусками по [_vectorChunk] id: у SQLite на части телефонов больше 999
+  /// подставляемых значений в одном запросе нельзя, а один огромный ответ
+  /// (десятки МБ) держит единственный поток базы занятым.
+  static const _vectorChunk = 400;
+
   Future<Map<String, Uint8List>> trackVectorsFor(List<String> ids) async {
     if (ids.isEmpty) return {};
-    final q = List.filled(ids.length, '?').join(',');
-    final rows = await _db.query('track_vectors', where: 'id IN ($q)', whereArgs: ids);
-    return {
-      for (final r in rows) r['id'] as String: r['vec'] as Uint8List,
-    };
+    final out = <String, Uint8List>{};
+    for (var i = 0; i < ids.length; i += _vectorChunk) {
+      final part = ids.sublist(i, i + _vectorChunk > ids.length ? ids.length : i + _vectorChunk);
+      final q = List.filled(part.length, '?').join(',');
+      final rows = await _db.query('track_vectors', where: 'id IN ($q)', whereArgs: part);
+      for (final r in rows) {
+        out[r['id'] as String] = r['vec'] as Uint8List;
+      }
+    }
+    return out;
   }
 
   // --- Скрытые исполнители (Поток) ---

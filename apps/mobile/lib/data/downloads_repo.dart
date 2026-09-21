@@ -204,15 +204,29 @@ class DownloadsRepo {
   /// приложения (main.dart) — не мешает пользоваться, пока идёт; не нашлась
   /// обложка сейчас — трек просто остаётся без нее до следующего запуска
   /// (сервер может позже сам найти через другой источник, см. этап 24).
+  ///
+  /// Оптимизация 21.09.2026 (Alex TG 20331): раньше грузила все 6000 песен
+  /// целиком и проверяла каждую обложку отдельным синхронным обращением к
+  /// диску — при КАЖДОМ запуске. Теперь берёт из базы только id и путь, а
+  /// наличие файлов смотрит одним чтением папки ([existingFiles]).
   Future<void> backfillCovers({int concurrency = 5}) async {
-    final rows = await _db.allDownloaded();
+    final rows = await _db.coverRows();
+    final have = await existingFiles([
+      for (final r in rows)
+        if (r.coverPath != null) r.coverPath!,
+    ]);
     final pending = [
-      for (final t in rows)
-        if (t.coverPath == null || !File(t.coverPath!).existsSync()) t,
+      for (final r in rows)
+        if (r.coverPath == null || !have.contains(r.coverPath)) r.id,
     ];
     for (var i = 0; i < pending.length; i += concurrency) {
-      await Future.wait(pending.skip(i).take(concurrency).map(_fetchCoverFor));
+      await Future.wait(pending.skip(i).take(concurrency).map(_fetchCoverForId));
     }
+  }
+
+  Future<void> _fetchCoverForId(String id) async {
+    final t = await _db.downloadedById(id);
+    if (t != null) await _fetchCoverFor(t);
   }
 
   Future<void> _fetchCoverFor(DownloadedTrack t) async {
@@ -266,11 +280,7 @@ class DownloadsRepo {
   /// (Alex TG 18704). Один запрос всего каталога, сверка по id. Фоном при
   /// старте, как backfillCovers.
   Future<void> backfillMeta() async {
-    final need = [
-      for (final t in await _db.allDownloaded())
-        if ((t.format ?? '').isEmpty && (t.bitrateKbps ?? 0) == 0 && (t.durationSec ?? 0) == 0)
-          t.id,
-    ];
+    final need = await _db.idsNeedingMeta();
     if (need.isEmpty) return;
     List<Map<String, dynamic>> catalog;
     try {
@@ -311,9 +321,11 @@ class DownloadsRepo {
 
   Future<void> _backfillVectors() async {
     try {
-      final all = await _db.allDownloaded();
-      final have = await _db.trackVectorsFor([for (final t in all) t.id]);
-      final need = [for (final t in all) if (!have.containsKey(t.id)) t.id];
+      // Только id: раньше читались сами отпечатки всех песен (по 8 КБ, на 6000
+      // песен ~50 МБ через единственный поток базы) ради вопроса «есть ли он».
+      final ids = await _db.downloadedIds();
+      final have = await _db.vectorIds();
+      final need = [for (final id in ids) if (!have.contains(id)) id];
       if (need.isEmpty) return;
       var got = 0;
       var offline = false;
@@ -351,10 +363,20 @@ class DownloadsRepo {
   /// Alex 05.09.2026: видеть счётчик обложек рядом со счётчиком песен, а не
   /// гадать по логам сервера).
   Future<({int count, int bytes, int covers})> summary() async {
-    final all = await _db.allDownloaded();
-    final covers = all.where((t) => t.coverPath != null && File(t.coverPath!).existsSync()).length;
-    return (count: all.length, bytes: await _db.totalBytes(), covers: covers);
+    final st = await _db.downloadedStats();
+    final rows = await _db.coverRows();
+    final covers = (await existingFiles([
+      for (final r in rows)
+        if (r.coverPath != null) r.coverPath!,
+    ]))
+        .length;
+    return (count: st.count, bytes: st.bytes, covers: covers);
   }
+
+  /// Сколько песен на телефоне и сколько они весят — одним запросом, без чтения
+  /// самих песен и без обхода файлов. Это дёргают каждые 3 минуты (автосинк) и при
+  /// каждом открытии «Моей музыки», поэтому [summary] для этого слишком тяжёл.
+  Future<({int count, int bytes})> stats() => _db.downloadedStats();
 
   /// Поиск по каталогу сервера (что уже скачано на домашний компьютер).
   Future<List<Map<String, dynamic>>> searchCatalog(String q) => _api.searchCatalog(q);
@@ -392,14 +414,22 @@ class DownloadsRepo {
     List<Map<String, dynamic>> add,
     List<String> remove,
   ) async {
+    // Один раз читаем «что у меня есть» (id и путь), а не по запросу к базе и обращению к
+    // диску на КАЖДУЮ песню плана: после «Выровнять по компьютеру» в плане тысячи
+    // песен, а эта сверка идёт каждые 3 минуты (21.09.2026, Alex TG 20331).
+    final pathById = {for (final r in await _db.fileRows()) r.id: r.path};
+    final onDisk = await existingFiles([
+      for (final t in add) ?pathById['${t['id']}'],
+    ]);
     final a = <Map<String, dynamic>>[];
     for (final t in add) {
-      if (!await isDownloaded('${t['id']}')) a.add(t);
+      final p = pathById['${t['id']}'];
+      if (p == null || !onDisk.contains(p)) a.add(t);
     }
-    final r = <String>[];
-    for (final id in remove) {
-      if (await _db.downloadedById(id) != null) r.add(id);
-    }
+    final r = <String>[
+      for (final id in remove)
+        if (pathById.containsKey(id)) id,
+    ];
     return (add: a, remove: r);
   }
 
@@ -567,21 +597,21 @@ class DownloadsRepo {
     try {
       final devId = await _sync?.deviceId();
       if (devId == null) return;
-      final all = await _db.allDownloaded();
-      var bytes = 0;
-      for (final t in all) {
-        bytes += t.bytes;
-      }
-      final sig = '${all.length}/$bytes';
+      // Число и вес — одним запросом: раньше на каждом заходе (каждые 3 минуты)
+      // читались все песни целиком, хотя список уходит редко.
+      final st = await _db.downloadedStats();
+      final sig = '${st.count}/${st.bytes}';
       final now = DateTime.now();
       if (sig == _inventorySig &&
           _inventoryAt != null &&
           now.difference(_inventoryAt!) < _inventoryEvery) {
         return;
       }
+      final rows = await _db.fileRows();
+      final have = await existingFiles([for (final r in rows) r.path]);
       final items = [
-        for (final t in all)
-          if (File(t.path).existsSync()) (id: t.id, bytes: t.bytes),
+        for (final r in rows)
+          if (have.contains(r.path)) (id: r.id, bytes: r.bytes),
       ];
       await _api.sendInventory(devId, items);
       _inventorySig = sig;
@@ -616,3 +646,48 @@ class DownloadsRepo {
   }) =>
       _api.acquireTrack(artist: artist, title: title, durationSec: durationSec);
 }
+
+int _lastSep(String p) {
+  final a = p.lastIndexOf('/');
+  final b = p.lastIndexOf(r'\');
+  return a > b ? a : b;
+}
+
+/// Какие из [paths] реально лежат на диске (21.09.2026, Alex TG 20331).
+///
+/// Раньше на каждый файл шёл отдельный синхронный `existsSync` на главном потоке —
+/// на 6000 песен и 6000 обложек это тысячи обращений подряд при каждом запуске и
+/// каждые 3 минуты. Теперь каждая папка читается ОДИН раз (список имён, асинхронно,
+/// интерфейс не замирает). Если в папке проверяется мало файлов ([_fewFiles]),
+/// читать её целиком дороже, чем проверить их по одному — тогда по одному, но тоже
+/// асинхронно. Папки нет или она не читается — файлов в ней «нет» (как было).
+Future<Set<String>> existingFiles(Iterable<String> paths) async {
+  final byDir = <String, Map<String, String>>{}; // папка -> имя файла -> исходный путь
+  for (final p in paths) {
+    final i = _lastSep(p);
+    if (i <= 0) continue;
+    (byDir[p.substring(0, i)] ??= <String, String>{})[p.substring(i + 1)] = p;
+  }
+  final found = <String>{};
+  for (final e in byDir.entries) {
+    try {
+      if (e.value.length < _fewFiles) {
+        for (final p in e.value.values) {
+          if (await File(p).exists()) found.add(p);
+        }
+        continue;
+      }
+      final dir = Directory(e.key);
+      if (!await dir.exists()) continue;
+      await for (final ent in dir.list(followLinks: false)) {
+        final p = e.value[ent.path.substring(_lastSep(ent.path) + 1)];
+        if (p != null) found.add(p);
+      }
+    } catch (_) {
+      // папка не читается — остальные всё равно проверяем
+    }
+  }
+  return found;
+}
+
+const _fewFiles = 64;

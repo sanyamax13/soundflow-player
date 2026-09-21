@@ -139,7 +139,8 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     }
     if (patched) items = await d.list(onlyFavorite: _onlyFav);
 
-    final s = await d.summary();
+    // Нужно только число песен — не полная сводка (она проверяла обложки на диске).
+    final s = await d.stats();
     final g = groupArtists(items);
     if (!mounted) return;
     setState(() {

@@ -102,15 +102,30 @@ Future<void> _boot() async {
       androidNotificationOngoing: true,
     ),
   );
-  // Докачать обложки уже скачанным трекам без неё — фоном, не ждём (может
-  // быть небыстро на большой библиотеке). См. downloads_repo.dart, 05.09.2026.
-  unawaited(downloads.backfillCovers());
-  // Дописать характеристики (битрейт/формат/длина) уже скачанным — фоном,
-  // один запрос каталога (Alex TG 18704).
-  unawaited(downloads.backfillMeta());
-  // Отпечатки для офлайн-радио уже скачанным трекам — фоном, как и два
-  // backfill выше (13.09.2026).
-  unawaited(downloads.backfillVectors());
+  // Три фоновые докачки — уже скачанным трекам:
+  //  - обложки без файла (05.09.2026);
+  //  - характеристики: битрейт/формат/длина, один запрос каталога (Alex TG 18704);
+  //  - отпечатки для офлайн-радио (13.09.2026).
+  // Оптимизация 21.09.2026 (Alex TG 20331): раньше все три стартовали сразу и
+  // ВТРОЁМ одновременно, пока рисовался первый экран, а единственный поток базы
+  // телефона нужен интерфейсу. Теперь — через несколько секунд после запуска и по
+  // очереди; сбой одной не мешает остальным.
+  Timer(const Duration(seconds: 8), () {
+    unawaited(() async {
+      final steps = <Future<void> Function()>[
+        downloads.backfillCovers,
+        downloads.backfillMeta,
+        downloads.backfillVectors,
+      ];
+      for (final step in steps) {
+        try {
+          await step();
+        } catch (error, stack) {
+          CrashLog.write(error, stack, where: 'backfill');
+        }
+      }
+    }());
+  });
   // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
   // (06.09.2026). Живёт всё время работы приложения.
   final offer = SyncOffer(downloads);

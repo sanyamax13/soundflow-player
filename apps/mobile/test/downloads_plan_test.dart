@@ -212,4 +212,44 @@ void main() {
     expect((await db.downloadedById('b'))!.coverPath, isNotNull);
     await db.close();
   });
+
+  test('previewPlan: запись в базе есть, а файл пропал — песню всё равно надо докачать', () async {
+    final db = await freshDb();
+    await db.upsertDownloaded(row('lost'));
+    File('${tmp.path}/music/lost').deleteSync();
+    final api = _FakeApi(add: [_card('lost', size: 40)]);
+    final repo = DownloadsRepo(api, db, SyncRepo(api, db));
+
+    final p = await repo.previewPlan();
+
+    expect((p.addCount, p.addBytes, p.removeCount), (1, 40, 0));
+    await db.close();
+  });
+
+  test('previewPlan: большой план (3000 скачать и 3000 стереть) считается верно и быстро', () async {
+    final db = await freshDb();
+    // на телефоне: c0..c2999 из «скачать» уже есть у каждой второй; «стереть» — s0..s2999, есть каждая третья
+    for (var i = 0; i < 3000; i += 2) {
+      await db.upsertDownloaded(row('c$i'));
+    }
+    for (var i = 0; i < 3000; i += 3) {
+      await db.upsertDownloaded(row('s$i'));
+    }
+    final api = _FakeApi(
+      add: [for (var i = 0; i < 3000; i++) _card('c$i', size: 10)],
+      remove: [for (var i = 0; i < 3000; i++) 's$i'],
+    );
+    final repo = DownloadsRepo(api, db, SyncRepo(api, db));
+
+    final sw = Stopwatch()..start();
+    final p = await repo.previewPlan();
+    final ms = sw.elapsedMilliseconds;
+
+    expect(p.addCount, 1500); // нечётные c1, c3, …
+    expect(p.addBytes, 15000);
+    expect(p.removeCount, 1000); // s0, s3, s6, …
+    // Раньше тут было 6000 отдельных запросов к базе и обращений к диску; порог с большим запасом.
+    expect(ms, lessThan(5000));
+    await db.close();
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

@@ -408,7 +408,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             key: ValueKey(now.id),
             fit: StackFit.expand,
             children: [
-              _LivingBackdrop(anim: _bg, colors: colors),
+              // Свой слой: фон перерисовывается каждый кадр (медленный перелив), и без
+              // границы вместе с ним каждый кадр заново рисовался весь экран плеера —
+              // обложка, тексты, кнопки (оптимизация 21.09.2026, Alex TG 20331).
+              RepaintBoundary(child: _LivingBackdrop(anim: _bg, colors: colors)),
               SafeArea(
                 child: Column(
                   children: [
@@ -433,9 +436,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                             color: Colors.white.withValues(alpha: 0.6),
                             fontSize: 13)),
                     const SizedBox(height: 18),
-                    DotMatrixSeek(
-                        controller: _p,
-                        tint: colors.isFallback ? Afisha.lime : colors.glow),
+                    // Полоса обновляется несколько раз в секунду (позиция) — свой слой,
+                    // чтобы не тянуть за собой перерисовку остального экрана.
+                    RepaintBoundary(
+                      child: DotMatrixSeek(
+                          controller: _p,
+                          tint: colors.isFallback ? Afisha.lime : colors.glow),
+                    ),
                     const SizedBox(height: 12),
                     _transport(),
                     const SizedBox(height: 16),

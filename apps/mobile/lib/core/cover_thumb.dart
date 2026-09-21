@@ -25,14 +25,22 @@ class CoverThumb extends StatelessWidget {
     Widget child;
     final p = path;
     final u = url;
+    // Раскодировать обложку сразу до размера плитки (в точках экрана), а не целиком:
+    // на диске они 600×600, а сгенерированные — 1024×1024 (мегабайты в памяти на
+    // каждую), плитка же 44–76 точек. Быстрее прокрутка, кэш картинок вмещает
+    // в разы больше (21.09.2026, Alex TG 20331).
+    final px = size.isFinite
+        ? (size * (MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0)).round()
+        : null;
     if (p != null && p.isNotEmpty && File(p).existsSync()) {
-      child = Image.file(File(p), width: size, height: size, fit: BoxFit.cover);
+      child = Image.file(File(p), width: size, height: size, fit: BoxFit.cover, cacheWidth: px);
     } else if (u != null && u.isNotEmpty) {
       child = Image.network(
         u,
         width: size,
         height: size,
         fit: BoxFit.cover,
+        cacheWidth: px,
         errorBuilder: (_, _, _) => _placeholder(),
         loadingBuilder: (context, child, progress) => progress == null ? child : _placeholder(),
       );
