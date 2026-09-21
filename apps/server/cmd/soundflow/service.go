@@ -269,6 +269,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/taste/centroids", s.hCentroids)
 	r.Post("/api/tracks/vectors", s.hTrackVectors)
 	r.Get("/api/jobs", s.hJobs)
+	r.Get("/api/activity", s.hActivity)
 	r.Delete("/api/jobs", s.hJobsDismiss)
 	r.Delete("/api/jobs/{id}", s.hJobsDismiss)
 	r.Post("/api/scan", s.hScan)

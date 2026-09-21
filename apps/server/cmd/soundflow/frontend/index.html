@@ -320,6 +320,27 @@
   .donestrip .dr .tx{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .donestrip .dr .nt{color:var(--mut)}
   .donestrip .more{font-size:12px; color:var(--mut); padding:2px 0 0 22px}
+
+  /* Активность: «Сейчас» и «Сегодня» (шаг 6 ревизии 20.09.2026) */
+  .act-h{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:14px 0 8px}
+  .act-h:first-of-type{margin-top:2px}
+  .act-now{border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:8px}
+  .act-now .an-t{display:flex; align-items:center; gap:12px; font-size:13px}
+  .act-now .an-l{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600}
+  .act-now .an-n{color:var(--mut); font-variant-numeric:tabular-nums; flex-shrink:0}
+  .act-now .an-s{font-size:12px; color:var(--mut); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .act-bar{height:6px; border-radius:3px; background:var(--field); margin-top:8px; overflow:hidden}
+  .act-bar i{display:block; height:100%; background:var(--lime); border-radius:3px; transition:width .4s}
+  .act-row{display:flex; gap:10px; align-items:baseline; font-size:13px; padding:5px 2px; border-bottom:1px solid var(--line)}
+  .act-row:last-child{border-bottom:none}
+  .act-row .tm{width:42px; flex-shrink:0; color:var(--faint); font-variant-numeric:tabular-nums}
+  .act-row .ic{width:14px; flex-shrink:0; font-weight:800; color:var(--faint)}
+  .act-row.ok .ic{color:var(--ok)}
+  .act-row.warn .ic{color:var(--warn)}
+  .act-row .tx{flex:1; min-width:0}
+  .act-row .nt{color:var(--mut)}
+  .act-more{display:inline-block; margin-top:14px; font-size:12px; color:var(--mut); cursor:pointer}
+  .act-more:hover{color:var(--ink); text-decoration:underline}
 </style>
 </head>
 <body>
@@ -346,6 +367,7 @@
       <a data-v="devices">Устройства</a>
       <a data-v="taste">Вкус</a>
       <a data-v="discover">Открытия</a>
+      <a data-v="activity">Активность</a>
       <a data-v="settings">Настройки</a>
       <div class="gap"></div>
       <div class="ver">SoundFlow.exe<br>v0.1 · sqlite</div>
@@ -553,6 +575,17 @@
         </div>
       </section>
 
+      <!-- Активность: что идёт сейчас и что было сегодня — понятными фразами (ревизия 20.09.2026, шаг 6).
+           Технический «Журнал» остаётся в «Настройках». -->
+      <section class="view" id="v-activity">
+        <h2>Активность</h2>
+        <div class="act-h">Сейчас</div>
+        <div id="actNow"><div class="muted">загрузка…</div></div>
+        <div class="act-h">Сегодня</div>
+        <div id="actToday"></div>
+        <a class="act-more" id="actMore">Показать всё подробно (для разбора) →</a>
+      </section>
+
       <!-- Журнал (Опус-ревью 14.09.2026, пункт 7: техническая вкладка, убрана
            из главной навигации в «Настройки» — Alex она нужна редко, для
            диагностики, а не для повседневной работы) -->
@@ -633,7 +666,7 @@ function friendlyError(raw){
 }
 
 /* ---------- навигация по разделам ---------- */
-const VIEWS = ["catalog","find","devices","taste","discover","log","settings"];
+const VIEWS = ["catalog","find","devices","taste","discover","activity","log","settings"];
 function showView(name){
   name = (name||"").split("?")[0];               // #find?tq=... → find
   if(!VIEWS.includes(name)) name = "catalog";
@@ -649,6 +682,7 @@ function showView(name){
   if(name==="devices") loadDevices();
   if(name==="taste") loadTaste();
   if(name==="log") loadLog();
+  if(name==="activity") loadActivity();
   if(name==="settings") loadSettings();
   if(name==="discover") _discOnEnter();
 }
@@ -1817,6 +1851,41 @@ async function loadLog(){
   }catch(e){}
 }
 
+/* ---------- Активность: что идёт сейчас и что было сегодня (ревизия 20.09.2026, шаг 6) ---------- */
+function actBar(done, total){
+  const p = total ? Math.min(100, Math.round(done * 100 / total)) : 0;
+  return `<div class="act-bar"><i style="width:${p}%"></i></div>`;
+}
+function actNowRow(label, count, sub, bar, stop){
+  return `<div class="act-now"><div class="an-t"><span class="an-l">${esc(label)}</span><span class="an-n">${count}</span>${stop||""}</div>`+
+    (sub ? `<div class="an-s">${esc(sub)}</div>` : "")+bar+`</div>`;
+}
+function actRow(it){
+  const t = new Date(it.at).toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+  const ic = it.icon === "ok" ? "✓" : it.icon === "warn" ? "!" : "•";
+  return `<div class="act-row ${esc(it.icon)}"><span class="tm">${esc(t)}</span><span class="ic">${ic}</span>`+
+    `<span class="tx">${esc(it.text)}${it.n > 1 ? ` <span class="nt">×${it.n}</span>` : ""}${it.note ? ` <span class="nt">— ${esc(it.note)}</span>` : ""}</span></div>`;
+}
+async function loadActivity(){
+  try{
+    const [jobs, devs, act] = await Promise.all([jget("/api/jobs"), jget("/api/devices").catch(() => []), jget("/api/activity")]);
+    const now = [];
+    for(const j of jobs.filter(j => j.running)){
+      const stop = (j.kind === "scan" || j.kind === "reindex") ? `<button class="btn" onclick="stopJobs()">Стоп</button>` : "";
+      now.push(j.total
+        ? actNowRow(j.label, nfmt(j.done)+" из "+nfmt(j.total), j.note, actBar(j.done, j.total), stop)
+        : actNowRow(j.label, "идёт…", j.note, "", stop));
+    }
+    const dl = devs.length && devs[0].download && devs[0].download.active ? devs[0].download : null;
+    if(dl) now.push(actNowRow("Телефон качает", nfmt(dl.done)+" из "+nfmt(dl.total), dl.current, actBar(dl.done, dl.total), ""));
+    $("#actNow").innerHTML = now.length ? now.join("") : '<div class="muted">Сейчас ничего не идёт.</div>';
+    const items = act.items || [];
+    $("#actToday").innerHTML = items.length ? items.map(actRow).join("") : '<div class="muted">Сегодня пока тихо.</div>';
+  }catch(e){}
+}
+async function stopJobs(){ try{ await fetch("/api/stop", {method:"POST"}); }catch(e){} loadActivity(); }
+$("#actMore").onclick = () => showView("log");
+
 /* ---------- Вкус ---------- */
 function plural(n, one, few, many){
   n = Math.abs(n) % 100; const n1 = n % 10;
@@ -2352,6 +2421,18 @@ function _fmtAgo(ms){
   if(ms < 86400000) return Math.round(ms/3600000)+" ч назад";
   return (ms/86400000).toFixed(1)+" дн назад";
 }
+// «6 ч назад» читалось как упрёк, хотя это лишь «когда телефон в последний раз здоровался»: закрыл приложение —
+// цифра растёт, а музыка в порядке (ревизия 20.09.2026, шаг 3). Теперь называем время: «заходил сегодня в 18:46».
+function _fmtVisit(last, now){
+  now = now || new Date();
+  if(now - last < 120000) return "на связи сейчас";
+  const hm = last.toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = Math.round((day(now) - day(last)) / 86400000);
+  if(diff <= 0) return "заходил сегодня в "+hm;
+  if(diff === 1) return "заходил вчера в "+hm;
+  return "заходил "+last.toLocaleDateString("ru-RU", {day:"2-digit", month:"2-digit"})+" в "+hm;
+}
 async function checkPhoneStatus(){
   try{
     const devs = await jget("/api/devices");
@@ -2361,7 +2442,8 @@ async function checkPhoneStatus(){
     const ageMs = Date.now() - last.getTime();
     const label = _transportLabel[devs[0].transport] || _transportLabel[""];
     w.classList.toggle("off", ageMs > STALE_PHONE_MS);
-    $("#phoneStatusTxt").textContent = "телефон: "+label+" · "+_fmtAgo(ageMs);
+    $("#phoneStatusTxt").textContent = ageMs < 120000 ? "телефон: "+label+", на связи сейчас"
+      : "телефон: "+label+", "+_fmtVisit(last);
     w.hidden = false;
   }catch(e){}
 }
@@ -2621,6 +2703,7 @@ function tick(){
   if(on("find")){ if($("#fm-torrent").hidden) loadAcqLog(); else loadTorLog(); }
   if(on("devices") && $("#devDetail").hidden) loadDevices();  // не дёргать открытый телефон
   if(on("log")) loadLog();
+  if(on("activity")) loadActivity();
   // каталог показывает «пусто», а скан мог уже что-то добавить — само подтянуть
   if(on("catalog") && $("#tree .empty")) loadCatalog();
 }
