@@ -89,6 +89,18 @@ func (d *DB) MergePlan(deviceID string, addIDs, removeIDs []string) (add, remove
 	return len(newAdd), len(newRemove), nil
 }
 
+// DiscardPlan — ОТМЕНИТЬ план устройства целиком (окно ПК: «Вернуть» после «Отправить на телефон»). В отличие от
+// ClearPlan («телефон выполнил») событий «убрано с телефона» не пишет: ничего не выполнялось, и песни из remove
+// остаются на телефоне. had=false — плана и не было (телефон уже забрал его или отмена нажата второй раз).
+func (d *DB) DiscardPlan(deviceID string) (had bool, err error) {
+	res, err := d.sql.Exec(`DELETE FROM sync_plans WHERE device_id=?`, deviceID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 func toSet(ids []string) map[string]bool {
 	m := make(map[string]bool, len(ids))
 	for _, id := range ids {

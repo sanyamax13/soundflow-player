@@ -238,6 +238,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/phone/check", s.hPhoneCheck)
 	r.Post("/api/phone/align", localOnly(s.hPhoneAlign))
 	r.Post("/api/phone/plan", localOnly(s.hPhonePlan))
+	r.Get("/api/phone/plan", s.hPhonePlanGet)
+	r.Delete("/api/phone/plan", localOnly(s.hPhonePlanCancel))
 	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
 	r.Get("/api/catalog/missing", s.hMissing)
 	r.Post("/api/catalog/missing/clean", localOnly(s.hMissingClean))
