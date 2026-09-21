@@ -417,11 +417,10 @@
 
         <div id="fm-track">
           <div class="findbox">
-            <input id="fArtist" placeholder="Исполнитель" autocomplete="off">
-            <input id="fTitle" placeholder="Название песни" autocomplete="off">
+            <input id="fQuery" placeholder="Исполнитель — Название, например: Кино — Пачка сигарет" autocomplete="off" style="min-width:320px">
             <button class="btn primary" id="fGo">Найти и скачать</button>
           </div>
-          <div class="hint" id="fHint">Ищем по Яндекс&nbsp;Музыке, затем musify и mp3party. Найденное сразу попадает в каталог и на телефон при синхронизации.</div>
+          <div class="hint" id="fHint">Пиши через тире: «Исполнитель — Название». Ищем по Яндекс&nbsp;Музыке, затем musify и mp3party. Найденное сразу попадает в каталог и на телефон при синхронизации.</div>
           <div class="list" id="fLog"></div>
         </div>
 
@@ -1333,14 +1332,28 @@ async function loadAcqLog(){
     }).join("") : '<div class="muted">пока ничего не искали</div>';
   }catch(e){ $("#fLog").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
 }
+// «Кино — Пачка сигарет» / «Кино - Пачка сигарет» / «Кино–Пачка сигарет» → ["Кино", "Пачка сигарет"]; null — тире нет.
+// Длинное и среднее тире делят и без пробелов; обычный дефис — только с пробелами вокруг («Jay-Z», «AC-DC» остаются целыми).
+// Делит по ПЕРВОМУ тире: «Кино — Группа — крови» → исполнитель «Кино», название «Группа — крови».
+function splitArtistTitle(q){
+  const s = (q || "").trim().replace(/\s+/g, " ");
+  const m = s.match(/^(.+?)\s*[—–]\s*(.+)$/) || s.match(/^(.+?)\s+-\s+(.+)$/);
+  return m ? [m[1].trim(), m[2].trim()] : null;
+}
 async function runAcquire(){
-  const a = $("#fArtist").value.trim(), t = $("#fTitle").value.trim();
-  if(!a || !t){ $("#fArtist").focus(); return; }
+  const q = $("#fQuery").value.trim();
+  if(!q){ $("#fQuery").focus(); return; }
+  const at = splitArtistTitle(q);
+  if(!at || !at[0] || !at[1]){
+    alert("Напиши через тире: Исполнитель — Название.\nНапример: Кино — Пачка сигарет");
+    $("#fQuery").focus(); return;
+  }
+  const a = at[0], t = at[1];
   $("#fGo").disabled = true;
   try{
     const r = await fetch("/api/acquire?artist="+encodeURIComponent(a)+"&title="+encodeURIComponent(t),{method:"POST"});
     if(!r.ok){ alert(friendlyError(await r.text())); return; }
-    $("#fTitle").value = "";
+    $("#fQuery").value = "";
     await loadAcqLog();
   }catch(e){ alert("Не запустить: "+friendlyError(e)); }
   finally{ $("#fGo").disabled = false; }
@@ -2465,7 +2478,7 @@ $("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText(
 $("#btnPick").onclick = pickAndScan;
 $("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("catalog")).catch(e => alert("Пересчёт похожести: "+friendlyError(e)));
 $("#fGo").onclick = runAcquire;
-$("#fTitle").addEventListener("keydown", e => { if(e.key==="Enter") runAcquire(); });
+$("#fQuery").addEventListener("keydown", e => { if(e.key==="Enter") runAcquire(); });
 document.querySelectorAll(".seg").forEach(b => b.onclick = () => setFindMode(b.dataset.fm));
 // deep-link: #find?tq=Артист — открыть режим торрентов и сразу искать
 (function(){ const m = (location.hash||"").match(/[?&]tq=([^&]+)/); if(m){ setFindMode("torrent"); const v=decodeURIComponent(m[1]); const el=$("#tArtist"); if(el){ el.value=v; setTimeout(torSearch, 300); } } })();
