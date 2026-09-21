@@ -151,8 +151,20 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _connectivityRow(),
         _section('Что уходит на компьютер'),
         _syncBlock(),
-        _section('Опасно'),
-        _resetBlock(),
+        // «Полный сброс» лежал рядом с обычной синхронизацией, в два тапа от «стереть всю музыку» (ревизия 20.09.2026,
+        // пункт «убрать вглубь»): теперь спрятан за «Показать опасное», случайно не нажмёшь.
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            key: const Key('danger-zone'),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+            iconColor: Afisha.inkDim,
+            collapsedIconColor: Afisha.inkDim,
+            title: const Text('Показать опасное',
+                style: TextStyle(color: Afisha.inkDim, fontSize: 14)),
+            children: [_resetBlock()],
+          ),
+        ),
         const SizedBox(height: 24),
       ],
     );
