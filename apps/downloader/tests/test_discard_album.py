@@ -29,7 +29,7 @@ class _FakeQbt:
 def _setup(monkeypatch, torrents):
     fake = _FakeQbt(torrents)
     monkeypatch.setattr(ra, "_qbt_client", lambda: fake)
-    monkeypatch.setattr(ra, "config", SimpleNamespace(albums_dir=ALBUMS))
+    monkeypatch.setattr(ra, "config", SimpleNamespace(albums_dir=ALBUMS, albums_artist_root=None))
     return fake
 
 

@@ -248,6 +248,121 @@ def _simplify_artist(artist: str) -> str:
     return s or artist
 
 
+# ---- раскладка торрент-альбомов по папкам исполнителей (Alex TG 20295, 21.09.2026, вариант «2») ----
+#
+# Альбом ОДНОГО исполнителя ложится прямо в `<корень музыки>\<Исполнитель>\<раздача>` (без «Торренты»), сборник разных
+# исполнителей — по-прежнему в `config.albums_dir`. Папка исполнителя — место, где уже может лежать музыка Alex, поэтому
+# в ней качалка ничего не трогает: раздачу с чужой (уже существующей) папкой или без своей папки не берёт вообще
+# (проверка ДО скачивания), а сканировать/чистить (`_read_album_tracks` стирает «плохие» mp3!) разрешено только
+# отдельную папку раздачи, никогда — саму папку исполнителя.
+
+_BAD_FS_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_WIN_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+ARTIST_DIR_WAIT_SEC = 4.0
+
+
+def _norm_path(p: Any) -> str:
+    return os.path.normcase(os.path.normpath(str(p)))
+
+
+def _strictly_inside(child: Any, parent: Any) -> bool:
+    c, p = _norm_path(child), _norm_path(parent)
+    return c != p and c.startswith(p.rstrip("\\/") + os.sep)
+
+
+def artist_folder_name(artist: str) -> str:
+    """Имя папки исполнителя: первый артист составного имени, запрещённые в Windows знаки — «_» (как в коллекции:
+    «Fancy Some More_»). Пусто, если нормального имени не вышло (тогда раздача идёт в папку альбомов)."""
+    name = _BAD_FS_CHARS.sub("_", _simplify_artist(artist or ""))
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    name = name[:100].rstrip(" .")
+    if not name.strip("_") or name.split(".")[0].strip().lower() in _WIN_RESERVED:
+        return ""
+    return name
+
+
+def album_save_dir(artist: str, cand_title: str) -> Path:
+    """Куда qBittorrent кладёт раздачу: альбом одного исполнителя — `<корень музыки>\\<Исполнитель>`, сборник разных
+    исполнителей и всё, если раскладка выключена (нет `config.albums_artist_root`), — `config.albums_dir`."""
+    root = config.albums_artist_root
+    if root is None or is_compilation_title(cand_title or ""):
+        return config.albums_dir
+    name = artist_folder_name(artist)
+    if not name:
+        return config.albums_dir
+    save = Path(root) / name
+    if _norm_path(save) == _norm_path(config.albums_dir):
+        return config.albums_dir
+    return save
+
+
+def torrent_layout_problem(save_dir: Path, files: list[dict[str, Any]]) -> str | None:
+    """Проверка раздачи по списку файлов из метаданных, ДО скачивания. Причина отказа или None.
+
+    Касается только папки исполнителя (в «Торренты» чужой музыки нет — там всё как раньше). Отказ, если у раздачи нет
+    единой своей папки (файлы легли бы прямо к музыке исполнителя) или такая папка у исполнителя уже есть (не льём
+    свои файлы поверх чужих одноимённых)."""
+    if _norm_path(save_dir) == _norm_path(config.albums_dir):
+        return None
+    names = [str(f.get("name") or "").replace("\\", "/").lstrip("/") for f in files]
+    names = [n for n in names if n]
+    if not names:
+        return "в раздаче нет файлов"
+    if any("/" not in n for n in names) or len({n.split("/", 1)[0] for n in names}) != 1:
+        return "у раздачи нет своей единой папки — файлы легли бы прямо в папку исполнителя"
+    root_name = names[0].split("/", 1)[0]
+    if (Path(save_dir) / root_name).exists():
+        return f"папка «{root_name}» у исполнителя уже есть — свои файлы поверх не кладём"
+    return None
+
+
+def torrent_album_dir(info: Any, save_dir: Path) -> Path | None:
+    """Папка альбома, созданная торрентом. None — если в папке исполнителя она получилась не отдельной папкой раздачи
+    (лежит в самой папке исполнителя): такую сканировать нельзя, там музыка Alex."""
+    content_path = info.get("content_path") or info.get("save_path")
+    album_dir = Path(content_path) if content_path else Path(save_dir)
+    if album_dir.is_file():
+        album_dir = album_dir.parent
+    if _norm_path(save_dir) != _norm_path(config.albums_dir) and not _strictly_inside(album_dir, save_dir):
+        return None
+    return album_dir
+
+
+def forget_torrent(qbt: qbittorrentapi.Client, info_hash: str) -> None:
+    """Убрать торрент из qBittorrent, файлы на диске НЕ трогать."""
+    try:
+        qbt.torrents.delete(torrent_hashes=info_hash, delete_files=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _rmdir_when_empty(path: Path, wait_sec: float = ARTIST_DIR_WAIT_SEC) -> None:
+    """Убрать ПУСТУЮ папку (`os.rmdir` непустую не тронет). qBittorrent стирает файлы не мгновенно — чуть ждём."""
+    deadline = time.time() + wait_sec
+    while True:
+        try:
+            if not path.is_dir():
+                return
+            os.rmdir(path)
+            log.info("убрана пустая папка %s", path)
+            return
+        except OSError:
+            if time.time() >= deadline:
+                return
+            time.sleep(0.5)
+
+
+def sweep_empty_artist_dir(artist: str) -> None:
+    """После неудачного поиска: если после несостоявшейся раздачи осталась пустая папка исполнителя — убрать."""
+    root = config.albums_artist_root
+    name = artist_folder_name(artist) if root is not None else ""
+    if not name:
+        return
+    path = Path(root) / name
+    if _norm_path(path) != _norm_path(config.albums_dir):
+        _rmdir_when_empty(path)
+
+
 def _cp1251_search_url(base: str, query: str) -> str:
     """tapochek и rutracker — сайты в windows-1251. Параметр nm надо слать в
     cp1251 url-encode; httpx по умолчанию кодирует utf-8 и кириллица не находится
@@ -477,21 +592,29 @@ def discard_album(album_dir: str) -> None:
 
     21.09.2026: торренты теперь пишутся в папку с музыкой, а её сканирует программа — не подошедший
     альбом остался бы на диске и его песни попали бы в каталог. Трогает только торренты НАШЕЙ категории
-    и только тот, чьё содержимое лежит ровно в этой папке; саму папку альбомов (albums_dir) — никогда."""
+    и только тот, чьё содержимое лежит ровно в этой папке; саму папку альбомов (albums_dir) и корень музыки
+    (albums_artist_root) — никогда. Если после этого папка исполнителя опустела — убирает и её."""
     if not album_dir:
         return
-    want = os.path.normcase(os.path.normpath(str(album_dir)))
-    if want == os.path.normcase(os.path.normpath(str(config.albums_dir))):
+    want = _norm_path(album_dir)
+    if want == _norm_path(config.albums_dir):
         return  # альбом «в корне» папки альбомов — по папке не отличить от чужих, не трогаем
+    root = config.albums_artist_root
+    if root is not None and want == _norm_path(root):
+        return  # корень музыки — никогда
     try:
         qbt = _qbt_client()
         for t in qbt.torrents.info(category=QBT_CATEGORY):
-            cp = os.path.normcase(os.path.normpath(str(t.get("content_path") or "")))
+            cp = _norm_path(t.get("content_path") or "") if t.get("content_path") else ""
             if cp and cp == want:
                 qbt.torrents.delete(torrent_hashes=t["hash"], delete_files=True)
                 log.info("torrent %s: альбом не подошёл, удалён вместе с файлами (%s)", t["hash"], album_dir)
     except Exception as exc:  # noqa: BLE001
         log.warning("не смог убрать не подошедший альбом %s: %s", album_dir, exc)
+    if root is not None:
+        parent = Path(album_dir).parent
+        if _strictly_inside(parent, root) and _norm_path(parent) != _norm_path(config.albums_dir):
+            _rmdir_when_empty(parent)
 
 
 def _wait_torrent_metadata(qbt: qbittorrentapi.Client, info_hash: str) -> list[dict[str, Any]] | None:
@@ -691,6 +814,8 @@ def _do_find_and_download(
         if not torrent_bytes:
             continue
 
+        # Куда ляжет раздача: альбом одного исполнителя — в его папку, сборник — в «Торренты» (Alex TG 20295)
+        save_dir = album_save_dir(artist, str(cand.get("fileName") or ""))
         # Узнать какие торренты УЖЕ есть в нашей категории — чтобы найти новый
         before = {t.hash for t in qbt.torrents.info(category=QBT_CATEGORY)}
         try:
@@ -705,9 +830,11 @@ def _do_find_and_download(
         try:
             qbt.torrents.add(
                 torrent_files=[torrent_bytes],
-                save_path=str(config.albums_dir),
+                save_path=str(save_dir),
                 category=QBT_CATEGORY,
                 is_paused=True,
+                use_auto_tmm=False,
+                content_layout="Original",
             )
         except qbittorrentapi.Conflict409Error:
             # Торрент уже добавлен в qBittorrent (прошлый прогон). Скипаем —
@@ -737,6 +864,11 @@ def _do_find_and_download(
                 qbt.torrents.delete(torrent_hashes=new_hash, delete_files=True)
             except Exception:
                 pass
+            continue
+        bad_layout = torrent_layout_problem(save_dir, files)
+        if bad_layout:
+            log.info("rutracker_album: раздача не для папки исполнителя (%s), пропускаю", bad_layout)
+            forget_torrent(qbt, new_hash)
             continue
         if not _torrent_has_target(files, title_key):
             log.info(
@@ -773,10 +905,10 @@ def _do_find_and_download(
             pass
 
         # content_path — папка/файл созданный торрентом
-        content_path = info.get("content_path") or info.get("save_path")
-        album_dir = Path(content_path) if content_path else config.albums_dir
-        if album_dir.is_file():
-            album_dir = album_dir.parent
+        album_dir = torrent_album_dir(info, save_dir)
+        if album_dir is None:
+            log.warning("rutracker_album: папка раздачи не отдельная (файлы лежат прямо в папке исполнителя) — не сканирую, пропускаю")
+            continue
 
         all_tracks = _read_album_tracks(album_dir)
         log.info("rutracker_album: в альбоме %d mp3 (папка %s)", len(all_tracks), album_dir)
@@ -810,4 +942,7 @@ async def find_and_download(
     rejected_source_urls: set[str] | None = None,
 ) -> RutrackerDownloadResult | None:
     async with _download_lock:
-        return await asyncio.to_thread(_do_find_and_download, artist, title, rejected_source_urls)
+        result = await asyncio.to_thread(_do_find_and_download, artist, title, rejected_source_urls)
+        if result is None:
+            await asyncio.to_thread(sweep_empty_artist_dir, artist)
+        return result

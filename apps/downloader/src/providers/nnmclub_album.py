@@ -44,6 +44,11 @@ from .rutracker_album import (
     MAX_COMPILATION_SIZE,
     _wait_limit,
     _wait_torrent_metadata,
+    album_save_dir,
+    forget_torrent,
+    sweep_empty_artist_dir,
+    torrent_album_dir,
+    torrent_layout_problem,
 )
 from ._fsutil import _file_matches, normalize_key
 from ._validators import is_compilation_title
@@ -238,17 +243,18 @@ def _filter_candidates(results: list[dict[str, Any]], artist_key: str) -> list[d
     return out + comps
 
 
-def _add_torrent_paused(qbt: qbittorrentapi.Client, torrent_bytes: bytes) -> None:
+def _add_torrent_paused(qbt: qbittorrentapi.Client, torrent_bytes: bytes, save_dir: Path) -> None:
     try:
         qbt.torrent_categories.create_category(name=QBT_CATEGORY, save_path=str(config.albums_dir))
     except Exception:
         pass
     qbt.torrents.add(
         torrent_files=[torrent_bytes],
-        save_path=str(config.albums_dir),
+        save_path=str(save_dir),
         category=QBT_CATEGORY,
         is_paused=True,
         use_auto_tmm=False,
+        content_layout="Original",
     )
 
 
@@ -292,9 +298,11 @@ def _do_find_and_download(
         torrent_bytes = _download_torrent_bytes(session, cand["download_id"])
         if not torrent_bytes:
             continue
+        # Куда ляжет раздача: альбом одного исполнителя — в его папку, сборник — в «Торренты» (Alex TG 20295)
+        save_dir = album_save_dir(artist, cand["title"])
         before = {t.hash for t in qbt.torrents.info(category=QBT_CATEGORY)}
         try:
-            _add_torrent_paused(qbt, torrent_bytes)
+            _add_torrent_paused(qbt, torrent_bytes, save_dir)
         except qbittorrentapi.Conflict409Error:
             log.info("nnmclub: torrent уже есть в qBittorrent, скип")
             continue
@@ -324,6 +332,11 @@ def _do_find_and_download(
             except Exception:
                 pass
             continue
+        bad_layout = torrent_layout_problem(save_dir, files)
+        if bad_layout:
+            log.info("nnmclub: раздача не для папки исполнителя (%s), пропускаю", bad_layout)
+            forget_torrent(qbt, new_hash)
+            continue
         if not _torrent_has_target(files, title_key):
             log.info("nnmclub: в torrent нет mp3 '%s' (%d файлов), удаляю", title, len(files))
             try:
@@ -352,10 +365,10 @@ def _do_find_and_download(
         except Exception:
             pass
 
-        content_path = info.get("content_path") or info.get("save_path")
-        album_dir = Path(content_path) if content_path else config.albums_dir
-        if album_dir.is_file():
-            album_dir = album_dir.parent
+        album_dir = torrent_album_dir(info, save_dir)
+        if album_dir is None:
+            log.warning("nnmclub: папка раздачи не отдельная (файлы лежат прямо в папке исполнителя) — не сканирую, пропускаю")
+            continue
 
         all_tracks = _read_album_tracks(album_dir)
         log.info("nnmclub: в альбоме %d mp3 (%s)", len(all_tracks), album_dir)
@@ -384,4 +397,7 @@ async def find_and_download(
     rejected_source_urls: set[str] | None = None,
 ) -> NnmDownloadResult | None:
     async with _download_lock:
-        return await asyncio.to_thread(_do_find_and_download, artist, title, rejected_source_urls)
+        result = await asyncio.to_thread(_do_find_and_download, artist, title, rejected_source_urls)
+        if result is None:
+            await asyncio.to_thread(sweep_empty_artist_dir, artist)
+        return result

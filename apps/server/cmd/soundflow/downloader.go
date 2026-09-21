@@ -63,6 +63,21 @@ func albumsDir() string {
 	return `G:\Музыка\Торренты`
 }
 
+// albumsArtistRoot — корень музыки, где торрент-альбомы ОДНОГО исполнителя ложатся прямо в папку исполнителя:
+// `G:\Музыка\<Исполнитель>\<раздача>`, без «Торренты» (Alex TG 20295, 21.09.2026, вариант «2»). Сборники разных
+// исполнителей остаются в albumsDir(). Корень — папка над albumsDir(). "" — раскладка выключена: если папку
+// альбомов переопределили (SOUNDFLOW_ALBUMS_DIR), где корень музыки — неизвестно, и качалка кладёт всё в
+// albumsDir() по-старому; SOUNDFLOW_ALBUMS_ARTIST_ROOT задаёт корень явно.
+func albumsArtistRoot() string {
+	if v := os.Getenv("SOUNDFLOW_ALBUMS_ARTIST_ROOT"); v != "" {
+		return v
+	}
+	if os.Getenv("SOUNDFLOW_ALBUMS_DIR") != "" {
+		return ""
+	}
+	return filepath.Dir(albumsDir())
+}
+
 // findDownloaderDir — где лежит качалка. env SOUNDFLOW_DOWNLOADER → рядом с exe
 // (downloader/) → apps/downloader от рабочей папки (dev). "" — не нашли.
 func findDownloaderDir() string {
@@ -234,6 +249,9 @@ func (d *downloaderProc) startOnce() error {
 		// .env главнее этой переменной. Поэтому в .env качалки ALBUMS_DIR тоже стоит на G:\Музыка\Торренты;
 		// меняя путь — править и там (проба 21.09: торрент лёг в E:\soundflow-data\music вопреки этой строке).
 		"ALBUMS_DIR=" + albumsDir(),
+		// раскладка альбомов одного исполнителя по папкам исполнителей (см. albumsArtistRoot); в .env качалки
+		// этой строки нет, поэтому её значение не перебивается. Пусто — раскладка выключена.
+		"ALBUMS_ARTIST_ROOT=" + albumsArtistRoot(),
 	)
 	// Лог качалки — рядом с ней, перезаписываем при старте. Нужен, когда
 	// что-то не качается: окно консоли скрыто, иначе диагностики нет.

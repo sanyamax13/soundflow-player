@@ -32,3 +32,29 @@ func TestAlbumsDirEnvOverride(t *testing.T) {
 		t.Fatalf("env override ignored: %q", got)
 	}
 }
+
+// Альбомы одного исполнителя — прямо в папку исполнителя корня музыки, без «Торренты» (Alex TG 20295, вариант «2»).
+func TestAlbumsArtistRootDefaultIsMusicRoot(t *testing.T) {
+	t.Setenv("SOUNDFLOW_ALBUMS_DIR", "")
+	t.Setenv("SOUNDFLOW_ALBUMS_ARTIST_ROOT", "")
+	if got, want := albumsArtistRoot(), `G:\Музыка`; got != want {
+		t.Fatalf("albumsArtistRoot() = %q, want %q", got, want)
+	}
+}
+
+// Папку альбомов переопределили, а корень не задан — корень музыки неизвестен: раскладка выключена, всё по-старому.
+func TestAlbumsArtistRootOffWhenAlbumsDirOverridden(t *testing.T) {
+	t.Setenv("SOUNDFLOW_ALBUMS_DIR", `D:\альбомы`)
+	t.Setenv("SOUNDFLOW_ALBUMS_ARTIST_ROOT", "")
+	if got := albumsArtistRoot(); got != "" {
+		t.Fatalf("раскладка должна быть выключена, а корень = %q", got)
+	}
+}
+
+func TestAlbumsArtistRootEnvOverride(t *testing.T) {
+	t.Setenv("SOUNDFLOW_ALBUMS_DIR", `D:\альбомы`)
+	t.Setenv("SOUNDFLOW_ALBUMS_ARTIST_ROOT", `D:\музыка`)
+	if got := albumsArtistRoot(); got != `D:\музыка` {
+		t.Fatalf("env override ignored: %q", got)
+	}
+}

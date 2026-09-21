@@ -72,6 +72,10 @@ class Config:
     # На brain == local (no-op). На fg: local=D:\SoundFlow\*, canonical=E:\soundflow-data\*.
     canonical_cache_dir: Path
     canonical_albums_dir: Path
+    # Корень музыки для раскладки альбомов ОДНОГО исполнителя по папкам исполнителей (Alex TG 20295, 21.09.2026,
+    # вариант «2»): <корень>\<Исполнитель>\<раздача>. Сборники остаются в albums_dir. None — раскладка выключена
+    # (качалка запущена не программой SoundFlow): всё кладётся в albums_dir, как раньше.
+    albums_artist_root: Path | None = None
 
     def to_canonical(self, path: str | None) -> str | None:
         """LOCAL physical path → CANONICAL path для ответа API (file_path в БД).
@@ -114,6 +118,7 @@ class Config:
         # задан → equals local → translation полностью no-op (режим brain).
         canonical_cache_env = os.environ.get("CANONICAL_CACHE_DIR")
         canonical_albums_env = os.environ.get("CANONICAL_ALBUMS_DIR")
+        artist_root_env = os.environ.get("ALBUMS_ARTIST_ROOT")
         return cls(
             sidecar_port=int(os.environ.get("SIDECAR_PORT", "8001")),
             sidecar_host=os.environ.get("SIDECAR_HOST", "127.0.0.1"),
@@ -147,6 +152,7 @@ class Config:
             canonical_albums_dir=(
                 Path(canonical_albums_env) if canonical_albums_env else albums
             ),
+            albums_artist_root=Path(artist_root_env) if artist_root_env else None,
         )
 
 
