@@ -4,359 +4,480 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SoundFlow</title>
+<script>try{var _t=localStorage.getItem("sfTheme"); if(_t==="dark"||_t==="light") document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 <style>
+  /* ───────── Оформление «как у Apple» (Alex TG 20345, 21.09.2026; система — docs/revision-2026-09-20/03-design.md §2) ─────────
+     Токены: цвета (светлая и тёмная темы), 7 размеров шрифта, 4 радиуса, шкала отступов, тени, движение.
+     Лайм — только заливка под чёрным текстом; лаймом никогда не пишут текст. Старые имена переменных (--head, --field, --mut …)
+     оставлены и указывают на новые значения: на них ссылается разметка, которую собирает скрипт. */
   :root{
-    --bg:#fff; --head:#fafafa; --field:#f4f4f5; --limebox:#f0fbd6;
-    --ink:#18181b; --mut:#71717a; --faint:#a1a1aa; --line:#e4e4e7;
-    --lime:#b2ff00; --lime-ink:#0a0a0a; --ok:#3f9e1e; --err:#d13a30; --warn:#b98900;
+    color-scheme:light;
+    --acc:#B2FF00; --acc-ink:#0A0A0A; --acc-tint:#F2FFD1; --acc-press:#A3EB00;
+    --bg:#FFFFFF; --bg-2:#F7F7F9; --fill:#F2F2F5; --fill-2:#E8E8ED; --card:#FFFFFF;
+    --line:#E3E3E8; --line-2:#D0D0D8;
+    --ink:#16161A; --ink-2:#55555F; --ink-3:#6B6B76;
+    --ok:#2E7D14; --ok-bg:#EEF8E7; --warn:#8A6300; --warn-bg:#FDF4E0; --err:#C0362C; --err-bg:#FDECEA; --info:#175E96; --info-bg:#E8F3FC;
+    --glass:rgba(255,255,255,.78); --scrim:rgba(20,16,26,.45);
+    --sh-1:0 1px 2px rgba(0,0,0,.05), 0 0 0 1px rgba(0,0,0,.04);
+    --sh-2:0 8px 24px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.07);
+    --sh-3:0 24px 64px rgba(0,0,0,.24);
+    /* старые имена → новые значения */
+    --head:var(--bg-2); --field:var(--fill); --limebox:var(--acc-tint); --mut:var(--ink-2); --faint:var(--ink-3);
+    --lime:var(--acc); --lime-ink:var(--acc-ink);
+    /* размеры шрифта (7 вместо 14) */
+    --fs-display:28px; --fs-title:22px; --fs-head:17px; --fs-body:15px; --fs-callout:13px; --fs-foot:12px; --fs-caps:11px;
+    /* отступы и радиусы */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+    --r-s:6px; --r-m:10px; --r-l:14px;
+    /* движение */
+    --dur-1:120ms; --dur-2:220ms; --dur-3:300ms; --ease:cubic-bezier(.32,.72,0,1);
   }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#000000; --bg-2:#121214; --fill:#1C1C1F; --fill-2:#2A2A2E; --card:#161618;
+    --line:#2A2A2E; --line-2:#3A3A40;
+    --ink:#F5F5F7; --ink-2:#A8A8B0; --ink-3:#8A8A93;
+    --acc-tint:rgba(178,255,0,.14);
+    --ok:#7ED957; --warn:#FFB84D; --err:#FF6B5E; --info:#5AB0FF;
+    --ok-bg:rgba(126,217,87,.14); --warn-bg:rgba(255,184,77,.14); --err-bg:rgba(255,107,94,.14); --info-bg:rgba(90,176,255,.14);
+    --glass:rgba(18,18,20,.78); --scrim:rgba(0,0,0,.6);
+    --sh-1:0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+    --sh-2:0 8px 24px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+    --sh-3:0 24px 64px rgba(0,0,0,.7);
+  }}
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#000000; --bg-2:#121214; --fill:#1C1C1F; --fill-2:#2A2A2E; --card:#161618;
+    --line:#2A2A2E; --line-2:#3A3A40;
+    --ink:#F5F5F7; --ink-2:#A8A8B0; --ink-3:#8A8A93;
+    --acc-tint:rgba(178,255,0,.14);
+    --ok:#7ED957; --warn:#FFB84D; --err:#FF6B5E; --info:#5AB0FF;
+    --ok-bg:rgba(126,217,87,.14); --warn-bg:rgba(255,184,77,.14); --err-bg:rgba(255,107,94,.14); --info-bg:rgba(90,176,255,.14);
+    --glass:rgba(18,18,20,.78); --scrim:rgba(0,0,0,.6);
+    --sh-1:0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+    --sh-2:0 8px 24px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+    --sh-3:0 24px 64px rgba(0,0,0,.7);
+  }
+
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{height:100%; overflow:hidden}
-  body{font-family:Inter,"Segoe UI",system-ui,sans-serif; color:var(--ink);
-    background:var(--bg); display:flex; flex-direction:column; overflow:hidden}
+  body{font-family:Inter,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; font-size:var(--fs-callout); color:var(--ink);
+    background:var(--bg); display:flex; flex-direction:column; overflow:hidden;
+    -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums}
+  ::selection{background:var(--acc); color:var(--acc-ink)}
+  ::-webkit-scrollbar{width:12px; height:12px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:999px; border:3px solid transparent; background-clip:content-box}
+  ::-webkit-scrollbar-thumb:hover{background:var(--ink-3); background-clip:content-box; border:3px solid transparent}
+  :focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+  svg.i{width:18px; height:18px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
 
-  .top{height:52px; background:var(--head); border-bottom:1px solid var(--line);
-    display:flex; align-items:center; gap:12px; padding:0 16px; flex-shrink:0}
-  .logo{width:28px; height:28px; border-radius:8px; background:var(--lime);
-    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; color:var(--lime-ink)}
-  .brand{font-weight:800; font-size:15px}
+  /* Шапка: название слева, справа ОДНА плашка состояния; остальные плашки появляются, только когда есть что сделать */
+  .top{height:56px; background:var(--glass); -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
+    border-bottom:1px solid var(--line); display:flex; align-items:center; gap:var(--s3); padding:0 var(--s5); flex-shrink:0; position:relative; z-index:5}
+  .logo{width:28px; height:28px; border-radius:var(--r-m); background:var(--acc);
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:var(--fs-foot); color:var(--acc-ink)}
+  .brand{font-weight:700; font-size:var(--fs-head); letter-spacing:-.01em}
   .top .sp{flex:1}
-  .pill{display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
-    color:var(--ok); background:#f1f9ec; border:1px solid #d5ead0; padding:5px 10px; border-radius:999px}
-  .pill[hidden]{display:none}   /* без этого display:flex перебивал hidden — две пустые синие плашки в шапке (ревизия 20.09.2026) */
-  .pill .dot{width:8px; height:8px; border-radius:50%; background:var(--ok)}
-  .pill.off{color:var(--warn); background:#fbf6e8; border-color:#eadfc4}
-  .pill.off .dot{background:var(--warn)}
-  .pill.busy{color:#1b6fb0; background:#eaf6ff; border-color:#cfe7f7; cursor:pointer}
-  .pill.busy .dot{background:#1b6fb0}
-  .addr{font-size:13px; font-weight:700; background:var(--limebox); border:1px solid var(--line);
-    padding:6px 11px; border-radius:8px; cursor:pointer}
-  .disk{font-size:12px; color:var(--mut)}
+  .pill{display:flex; align-items:center; gap:7px; height:26px; font-size:var(--fs-foot); font-weight:600; white-space:nowrap;
+    color:var(--ok); background:var(--ok-bg); padding:0 11px; border-radius:999px; transition:background var(--dur-1), transform var(--dur-1) var(--ease)}
+  .top .pill{flex-shrink:1; min-width:0}
+  .pill span[id$="Txt"]{overflow:hidden; text-overflow:ellipsis}
+  .pill[hidden]{display:none}   /* без этого display:flex перебивал hidden — пустые плашки в шапке (ревизия 20.09.2026) */
+  .pill .dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0}
+  .pill.off{color:var(--warn); background:var(--warn-bg)}
+  .pill.busy{color:var(--info); background:var(--info-bg); cursor:pointer}
+  .pill.busy:hover{filter:brightness(.97)}
+  .pill.busy:active{transform:scale(.97)}
+  /* «телефон на связи» и «по кабелю» — тихим текстом, плашкой они становятся только при беде (.off) */
+  #phoneStatus:not(.off), #usb:not(.off){background:transparent; color:var(--ink-2); padding:0 4px}
+  #phoneStatus:not(.off) .dot, #usb:not(.off) .dot{color:var(--ok)}
+  /* адрес и свободное место — в «Настройках» (там они и так есть) */
+  .addr, .disk{display:none}
 
   .body{flex:1; display:flex; min-height:0}
-  .nav{width:150px; border-right:1px solid var(--line); padding:12px 8px; display:flex; flex-direction:column; gap:2px; flex-shrink:0}
-  .nav a{font-size:13px; color:var(--mut); padding:9px 11px; border-radius:8px; font-weight:600; cursor:pointer; position:relative}
-  .nav a:hover{background:var(--field)}
-  .nav a.on{color:var(--ink); background:var(--field)}
-  .nav a.on::before{content:""; position:absolute; left:0; top:7px; bottom:7px; width:3px; border-radius:2px; background:var(--lime)}
+  .nav{width:208px; background:var(--bg-2); border-right:1px solid var(--line); padding:var(--s4) var(--s3); display:flex; flex-direction:column; gap:2px; flex-shrink:0}
+  .nav a{display:flex; align-items:center; gap:var(--s3); height:36px; font-size:var(--fs-callout); color:var(--ink-2); padding:0 var(--s3); border-radius:var(--r-m);
+    font-weight:600; cursor:pointer; position:relative; user-select:none; transition:background var(--dur-1), color var(--dur-1)}
+  .nav a:hover{background:var(--fill-2); color:var(--ink)}
+  .nav a.on{color:var(--ink); background:var(--acc-tint)}
+  .nav a.on svg.i{stroke:var(--ink)}
+  .nav a:active{transform:scale(.98)}
   .nav .gap{flex:1}
-  .nav .ver{font-size:10px; color:var(--faint); padding:0 11px}
+  .nav .ver{display:none}
 
   .main{flex:1; display:flex; flex-direction:column; min-width:0; min-height:0}
-  .view{flex:1; display:none; flex-direction:column; min-width:0; min-height:0; padding:14px 16px; overflow:auto}
-  .view.on{display:flex}
-  .view h2{font-size:15px; margin-bottom:12px}
+  .view{flex:1; display:none; flex-direction:column; min-width:0; min-height:0; padding:var(--s5) var(--s6) var(--s6); overflow:auto}
+  .view.on{display:flex; animation:viewIn var(--dur-2) var(--ease)}
+  .view h2{font-size:var(--fs-display); line-height:32px; font-weight:700; letter-spacing:-.02em; margin-bottom:var(--s3)}
+  .view .sub{font-size:var(--fs-callout); color:var(--ink-2); margin:-6px 0 var(--s4); flex-shrink:0}
+  @keyframes viewIn{from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none}}
 
-  .bar{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-shrink:0}
-  .search{flex:1; height:32px; border:1px solid var(--line); border-radius:8px; background:var(--field);
-    padding:0 11px; font-size:13px}
-  .btn{height:32px; padding:0 13px; border-radius:8px; font-size:12px; font-weight:700; border:1px solid var(--line);
-    background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap}
-  .btn:hover{background:var(--field)}
-  .btn.primary{background:var(--lime); border-color:var(--lime); color:var(--lime-ink)}
-  .btn.primary:hover{filter:brightness(.96)}
-  .btn.danger{color:var(--err); border-color:#eecccb}
-  .btn:disabled{opacity:.45; cursor:default}
-  .btn.dangerfill{background:var(--err); border-color:var(--err); color:#fff}
+  .bar{display:flex; align-items:center; gap:var(--s2); margin-bottom:var(--s3); flex-shrink:0}
+  .search{flex:1; height:36px; border:0; border-radius:var(--r-m); background:var(--fill); color:var(--ink);
+    padding:0 var(--s3); font:inherit; font-size:var(--fs-callout); transition:box-shadow var(--dur-1)}
+  .search::placeholder{color:var(--ink-3)}
+  .search:focus{outline:2px solid var(--ink); outline-offset:-1px; background:var(--bg)}
+  .btn{height:36px; padding:0 var(--s4); border-radius:var(--r-m); font-size:var(--fs-callout); font-weight:600; border:0;
+    background:var(--fill); color:var(--ink); cursor:pointer; white-space:nowrap; font-family:inherit;
+    transition:background var(--dur-1), transform var(--dur-1) var(--ease), filter var(--dur-1)}
+  .btn:hover{background:var(--fill-2)}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:var(--acc); color:var(--acc-ink)}
+  .btn.primary:hover{background:var(--acc-press)}
+  .btn.danger{color:var(--err); background:var(--err-bg)}
+  .btn.danger:hover{filter:brightness(.96)}
+  .btn:disabled{opacity:.4; cursor:default; transform:none}
+  .btn.dangerfill{background:var(--err); color:#fff}
   .btn.dangerfill:hover{filter:brightness(.95)}
   /* контекстное меню (правая кнопка), Alex TG 20039 */
-  .ctxm{position:fixed; z-index:1000; min-width:250px; max-width:350px; background:#fff; border:1px solid var(--line);
-    border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.18); padding:6px; font-size:13px}
-  .ctxm .ctxt{padding:6px 12px 7px; font-size:12px; font-weight:700; color:var(--mut); white-space:nowrap;
+  .ctxm{position:fixed; z-index:1000; min-width:250px; max-width:350px; background:var(--glass); -webkit-backdrop-filter:saturate(180%) blur(24px); backdrop-filter:saturate(180%) blur(24px);
+    border:1px solid var(--line); border-radius:var(--r-l); box-shadow:var(--sh-2); padding:6px; font-size:var(--fs-callout); animation:pop var(--dur-1) var(--ease)}
+  .ctxm .ctxt{padding:6px 12px 7px; font-size:var(--fs-foot); font-weight:700; color:var(--ink-2); white-space:nowrap;
     overflow:hidden; text-overflow:ellipsis; max-width:330px}
   .ctxm button{display:block; width:100%; text-align:left; border:0; background:none; padding:8px 12px;
-    border-radius:7px; font:inherit; color:var(--ink); cursor:pointer}
-  .ctxm button:hover:not(:disabled){background:var(--field)}
-  .ctxm button:disabled{color:var(--faint); cursor:default}
+    border-radius:var(--r-s); font:inherit; color:var(--ink); cursor:pointer}
+  .ctxm button:hover:not(:disabled){background:var(--fill-2)}
+  .ctxm button:disabled{color:var(--ink-3); cursor:default}
   .ctxm button.danger{color:var(--err)}
   .ctxm hr{border:0; border-top:1px solid var(--line); margin:5px 2px}
   .ctxtoast{position:fixed; left:50%; bottom:92px; transform:translateX(-50%); z-index:1100; max-width:min(720px,90vw);
-    background:#18181b; color:#fff; padding:10px 16px; border-radius:10px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.25)}
+    background:rgba(28,28,31,.92); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); color:#fff; padding:12px 18px; border-radius:var(--r-l);
+    font-size:var(--fs-callout); box-shadow:var(--sh-2); animation:toastIn var(--dur-3) var(--ease)}
   .ctxtoast.bad{background:var(--err)}
-  .ctxtoast .undo{margin-left:10px; border:1px solid rgba(255,255,255,.55); background:none; color:#fff; border-radius:6px;
-    padding:3px 11px; font:inherit; font-weight:700; cursor:pointer}
-  .ctxtoast .undo:hover{background:rgba(255,255,255,.15)}
+  .ctxtoast .undo{margin-left:12px; border:0; background:none; color:var(--acc); padding:2px 4px; font:inherit; font-weight:700; cursor:pointer}
+  .ctxtoast .undo:hover{text-decoration:underline}
+  @keyframes toastIn{from{opacity:0; transform:translate(-50%,12px)} to{opacity:1; transform:translate(-50%,0)}}
+  @keyframes pop{from{opacity:0; transform:scale(.96)} to{opacity:1; transform:none}}
   /* «Открытия»: разделы сворачиваются (Alex TG 20073) */
-  .dlink{display:flex; gap:10px; margin-bottom:10px; flex-shrink:0}
-  .dlink input{flex:1; min-width:0; height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--field); font:inherit; font-size:14px; color:var(--ink)}
-  .dlink input:focus{outline:2px solid var(--ink); outline-offset:-1px; background:#fff}
-  .dlink .btn{height:40px; padding:0 20px; font-size:13px}
+  .dlink{display:flex; gap:var(--s3); margin-bottom:var(--s3); flex-shrink:0}
+  .dlink input{flex:1; min-width:0; height:40px; padding:0 var(--s4); border:0; border-radius:var(--r-m); background:var(--fill); font:inherit; font-size:var(--fs-callout); color:var(--ink)}
+  .dlink input::placeholder{color:var(--ink-3)}
+  .dlink input:focus{outline:2px solid var(--ink); outline-offset:-1px; background:var(--bg)}
+  .dlink .btn{height:40px; padding:0 var(--s5)}
   #plMsg{margin:-2px 2px 10px; flex-shrink:0}
-  #plMsg.bad{color:#b3261e}
-  .dsec{border:1px solid var(--line); border-radius:10px; margin-bottom:10px; flex-shrink:0}
-  .dsec-head{display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; user-select:none; border-radius:10px}
-  .dsec-head:hover{background:var(--field)}
+  #plMsg.bad{color:var(--err)}
+  .dsec{border:1px solid var(--line); border-radius:var(--r-l); margin-bottom:var(--s3); flex-shrink:0; background:var(--card)}
+  .dsec-head{display:flex; align-items:center; gap:var(--s3); padding:var(--s3) var(--s4); cursor:pointer; user-select:none; border-radius:var(--r-l); transition:background var(--dur-1)}
+  .dsec-head:hover{background:var(--fill)}
   .dsec-head:focus-visible{outline:2px solid var(--ink); outline-offset:-2px}
-  .dsec-head .chev{width:14px; color:var(--mut); font-size:13px; flex-shrink:0}
-  .dsec-head h2{margin:0; flex:1; font-size:15px}
-  .dsec-head .dsec-sum{color:var(--mut); font-size:12px; white-space:nowrap}
-  .dsec-btns{display:none; gap:8px}
+  /* стрелка раздела рисуется границами; скрипт по-прежнему подставляет в неё текст ▸/▾ — он скрыт */
+  .dsec-head .chev{width:8px; height:8px; flex-shrink:0; font-size:0; color:transparent; border-right:2px solid var(--ink-3); border-bottom:2px solid var(--ink-3);
+    transform:rotate(-45deg); transition:transform var(--dur-2) var(--ease); margin:0 6px 0 2px}
+  .dsec.open .dsec-head .chev{transform:rotate(45deg)}
+  .dsec-head h2{margin:0; flex:1; font-size:var(--fs-head); line-height:24px; font-weight:600; letter-spacing:0}
+  .dsec-head .dsec-sum{color:var(--ink-2); font-size:var(--fs-foot); white-space:nowrap}
+  .dsec-btns{display:none; gap:var(--s2)}
   .dsec.open .dsec-btns{display:flex}
-  .dsec.open .dsec-head{border-bottom:1px solid var(--line); border-radius:10px 10px 0 0}
-  .dsec-body{padding:10px 12px 12px}
+  .dsec.open .dsec-head{border-bottom:1px solid var(--line); border-radius:var(--r-l) var(--r-l) 0 0}
+  .dsec-body{padding:var(--s3) var(--s3) var(--s3)}
   #v-discover .drow .dcv .pl{display:flex; background:rgba(0,0,0,.28)}     /* ▶ на обложке видна всегда */
   #v-discover .drow.playing .dcv .pl{background:rgba(0,0,0,.4)}
   #v-discover .drow .dcv > span:first-child{visibility:hidden}               /* буквы вместо обложки не мешают значку ▶ */
-  #v-discover .drow .dx{opacity:1; font-size:12px; font-weight:600; padding:4px 10px; border:1px solid var(--line);
-    background:#fff; color:var(--ink); white-space:nowrap}                    /* «Скачать» и «Удалить» — видны всегда, подписаны словами */
-  #v-discover .drow .dx:not(.del):hover{background:var(--limebox); color:var(--ink)}
-  #v-discover .drow .dx.del:hover{background:#fde8e6; color:var(--err); border-color:#eecccb}
+  #v-discover .drow .dx{opacity:1; font-size:var(--fs-foot); font-weight:600; padding:5px 12px; border:0; border-radius:999px;
+    background:var(--fill); color:var(--ink); white-space:nowrap}             /* «Скачать» и «Удалить» — видны всегда, подписаны словами */
+  #v-discover .drow .dx:not(.del):hover{background:var(--acc); color:var(--acc-ink)}
+  #v-discover .drow .dx.del:hover{background:var(--err-bg); color:var(--err)}
   .drow.have{opacity:.6}
 
-  .sum{font-size:12px; color:var(--mut); margin-bottom:9px; flex-shrink:0}
-  .sum b{color:var(--ink)}
+  .sum{font-size:var(--fs-callout); color:var(--ink-2); margin-bottom:var(--s3); flex-shrink:0}
+  .sum b{color:var(--ink); font-weight:600}
 
-  .tree{flex:1; border:1px solid var(--line); border-radius:10px; overflow:auto}
-  .row{display:flex; align-items:center; gap:7px; height:32px; padding:0 10px; font-size:12.5px;
+  .tree{flex:1; border:0; border-radius:var(--r-l); overflow:auto; padding:6px 6px var(--s5); margin:0 -6px}
+  .row{display:flex; align-items:center; gap:var(--s2); height:44px; padding:0 var(--s4); font-size:var(--fs-callout);
     border-bottom:1px solid var(--line); white-space:nowrap}
   .row:last-child{border-bottom:none}
-  .row .tw{width:12px; color:var(--faint); font-size:10px; cursor:pointer; text-align:center; flex-shrink:0}
+  .row .tw{width:12px; color:var(--ink-3); font-size:var(--fs-caps); cursor:pointer; text-align:center; flex-shrink:0}
   .row .ico{width:16px; text-align:center; flex-shrink:0}
   .row .nm{overflow:hidden; text-overflow:ellipsis}
   .row .sp{flex:1}
-  .row .meta{color:var(--mut); font-size:11px}
-  .row.root{background:var(--head); font-weight:700}
+  .row .meta{color:var(--ink-2); font-size:var(--fs-foot)}
+  .row.root{background:var(--bg-2); font-weight:700}
   .row.artist,.row.folder{font-weight:600}
-  .row.track{color:var(--mut); font-size:12px; height:29px; cursor:pointer}
-  .row.track:hover{background:var(--limebox)}
-  .row.track.playing{background:var(--limebox)}
+  .row.track{color:var(--ink-2); font-size:var(--fs-callout); height:44px; cursor:pointer; transition:background var(--dur-1)}
+  .row.track:hover{background:var(--acc-tint)}
+  .row.track.playing{background:var(--acc-tint)}
   .row.track.playing .ti{color:var(--ok)}
   .row.track .ti{color:var(--ink)}
-  .fp{font-size:10.5px; font-weight:800}
-  .fp.full{color:var(--ok)} .fp.part{color:var(--warn)} .fp.none{color:var(--faint)}
-  .yes{color:var(--ok); font-weight:800} .no{color:var(--faint); font-weight:800}
-  .muted{color:var(--faint); font-size:12px; padding:16px}
+  .fp{font-size:var(--fs-caps); font-weight:800}
+  .fp.full{color:var(--ok)} .fp.part{color:var(--warn)} .fp.none{color:var(--ink-3)}
+  .yes{color:var(--ok); font-weight:800} .no{color:var(--ink-3); font-weight:800}
+  .muted{color:var(--ink-3); font-size:var(--fs-foot); padding:var(--s4)}
 
   /* Устройства / Задачи / Журнал */
-  .list .item{display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--line)}
+  .list .item{display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 4px; border-bottom:1px solid var(--line)}
   .list .item:last-child{border-bottom:none}
-  .list .ic{width:34px; height:34px; border-radius:8px; background:var(--field); display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0}
-  .list .tt{font-size:13px; font-weight:600}
-  .list .mm{font-size:11.5px; color:var(--mut)}
+  .list .ic{width:40px; height:40px; border-radius:var(--r-m); background:var(--fill); color:var(--ink-2); display:flex; align-items:center; justify-content:center; flex-shrink:0}
+  .list .tt{font-size:var(--fs-callout); font-weight:600}
+  .list .mm{font-size:var(--fs-foot); color:var(--ink-2)}
   .list .sp{flex:1}
   .list .grow{min-width:0; flex:1}
   .dlrow{margin-top:7px; max-width:520px}
-  .dlline{font-size:11.5px; color:var(--ok); font-weight:600; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .tag{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; background:var(--field); color:var(--mut)}
-  .tag.wifi{background:#eaf6ff; color:#1b6fb0}
-  .tag.wire{background:#eef7e9; color:var(--ok)}
-  .job{padding:10px 4px; border-bottom:1px solid var(--line)}
+  .dlline{font-size:var(--fs-foot); color:var(--ok); font-weight:600; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .tag{font-size:var(--fs-caps); font-weight:700; padding:3px 9px; border-radius:999px; background:var(--fill); color:var(--ink-2)}
+  .tag.wifi{background:var(--info-bg); color:var(--info)}
+  .tag.wire{background:var(--ok-bg); color:var(--ok)}
+  .job{padding:var(--s3) 4px; border-bottom:1px solid var(--line)}
   .job:last-child{border-bottom:none}
-  .job .lbl{display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px}
-  .job .lbl span:last-child{color:var(--mut)}
-  .track2{height:7px; border-radius:4px; background:var(--field); overflow:hidden}
-  .track2>i{display:block; height:100%; background:var(--lime)}
-  .logrows{flex:1; overflow:auto; border:1px solid var(--line); border-radius:10px; background:#fcfcfc;
-    padding:10px 14px; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; line-height:1.8}
-  .logrows .t{color:var(--faint)}
+  .job .lbl{display:flex; justify-content:space-between; font-size:var(--fs-foot); margin-bottom:6px}
+  .job .lbl span:last-child{color:var(--ink-2)}
+  .track2{height:4px; border-radius:2px; background:var(--fill); overflow:hidden}
+  .track2>i{display:block; height:100%; background:var(--acc); border-radius:2px; transition:width var(--dur-3) var(--ease)}
+  .logrows{flex:1; overflow:auto; border:1px solid var(--line); border-radius:var(--r-l); background:var(--bg-2);
+    padding:var(--s3) var(--s4); font-family:ui-monospace,Consolas,monospace; font-size:var(--fs-foot); line-height:1.8}
+  .logrows .t{color:var(--ink-3)}
   .logrows .k{display:inline-block; min-width:64px; font-weight:700}
-  .k.info{color:#2563eb} .k.error{color:var(--err)} .k.added{color:var(--ok)} .k.removed{color:var(--warn)}
+  .k.info{color:var(--info)} .k.error{color:var(--err)} .k.added{color:var(--ok)} .k.removed{color:var(--warn)}
 
   .set{max-width:640px}
-  .set .f{display:flex; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px}
-  .set .f b{color:var(--mut); font-weight:600}
+  .set .f{display:flex; justify-content:space-between; gap:var(--s4); padding:var(--s3) 0; border-bottom:1px solid var(--line); font-size:var(--fs-callout)}
+  .set .f b{color:var(--ink-2); font-weight:600}
   .set .f span{text-align:right; word-break:break-all}
-  .findbox{display:flex; gap:10px; flex-wrap:wrap; max-width:640px}
-  .findbox input{flex:1; min-width:180px; height:38px; padding:0 12px; border:1px solid var(--line);
-    border-radius:9px; font-size:13px; background:#fff}
-  .findbox .btn{height:38px}
-  #v-find .hint{margin:10px 0 18px; max-width:680px}
-  .wsegbar{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; margin:0 0 10px}   /* дни «Волны» (21.09.2026) */
+  .findbox{display:flex; gap:var(--s3); flex-wrap:wrap; max-width:640px}
+  .findbox input{flex:1; min-width:180px; height:40px; padding:0 var(--s4); border:0;
+    border-radius:var(--r-m); font:inherit; font-size:var(--fs-callout); background:var(--fill); color:var(--ink)}
+  .findbox input::placeholder{color:var(--ink-3)}
+  .findbox input:focus{outline:2px solid var(--ink); outline-offset:-1px; background:var(--bg)}
+  .findbox .btn{height:40px}
+  #v-find .hint{margin:var(--s3) 0 var(--s5); max-width:680px}
+  .hint{font-size:var(--fs-foot); color:var(--ink-2); line-height:1.5}
+  /* переключатели «как в iPhone»: серая дорожка, выбранный — плашка */
+  .wsegbar,.segbar{align-self:flex-start; display:inline-flex; background:var(--fill); padding:2px; border-radius:var(--r-m); margin:0 0 var(--s3)}
   .wsegbar[hidden]{display:none}
-  .wseg{border:0; background:#fff; padding:7px 14px; font-size:12.5px; font-weight:700; color:var(--mut); cursor:pointer}
-  .wseg.on{background:var(--lime); color:var(--lime-ink)}
-  .wseg+.wseg{border-left:1px solid var(--line)}
-  .segbar{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; margin-bottom:18px}
-  .seg{border:0; background:#fff; padding:8px 16px; font-size:12.5px; font-weight:700; color:var(--mut); cursor:pointer}
-  .seg.on{background:var(--lime); color:var(--lime-ink)}
-  .seg+.seg{border-left:1px solid var(--line)}
-  .dtile.dseries{box-shadow:4px 4px 0 -1px #fff, 4px 4px 0 0 var(--line), 8px 8px 0 -1px #fff, 8px 8px 0 0 var(--line); margin:0 8px 8px 0}
-  .crow{display:flex; align-items:center; gap:12px; padding:9px 4px; border-bottom:1px solid var(--line); font-size:12.5px}
-  .crow input[type=checkbox]{width:16px; height:16px; flex-shrink:0}
+  .wseg,.seg{border:0; background:transparent; padding:6px 14px; font-size:var(--fs-callout); font-weight:600; color:var(--ink-2); cursor:pointer; border-radius:8px;
+    font-family:inherit; transition:background var(--dur-2) var(--ease), color var(--dur-1), box-shadow var(--dur-2)}
+  .seg{padding:7px 16px}
+  .segbar{margin-bottom:var(--s5)}
+  .wseg.on,.seg.on{background:var(--card); color:var(--ink); box-shadow:var(--sh-1)}
+  .dtile.dseries{box-shadow:4px 4px 0 -1px var(--card), 4px 4px 0 0 var(--line), 8px 8px 0 -1px var(--card), 8px 8px 0 0 var(--line); margin:0 8px 8px 0}
+  .crow{display:flex; align-items:center; gap:var(--s3); padding:10px 4px; border-bottom:1px solid var(--line); font-size:var(--fs-callout)}
+  .crow input[type=checkbox]{width:16px; height:16px; flex-shrink:0; accent-color:var(--ink)}
   .crow .ct{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .crow .cm{color:var(--mut); white-space:nowrap; font-size:11.5px}
+  .crow .cm{color:var(--ink-2); white-space:nowrap; font-size:var(--fs-foot)}
   .crow .cf{font-weight:700}
-  .cf.flac{color:#1b6fb0} .cf.mp3{color:var(--ok)}
-  /* окно ручной синхронизации */
-  .modal{position:fixed; inset:0; background:rgba(20,16,26,.45); display:flex; align-items:center; justify-content:center; z-index:50}
+  .cf.flac{color:var(--info)} .cf.mp3{color:var(--ok)}
+  /* окна: затемнённый размытый фон, карточка растёт из 0.96 */
+  .modal{position:fixed; inset:0; background:var(--scrim); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); display:flex; align-items:center; justify-content:center; z-index:50; animation:fadeIn var(--dur-2) var(--ease)}
   .modal[hidden]{display:none}
-  .modal-card{background:#fff; border-radius:14px; width:min(620px,92vw); max-height:86vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.25)}
-  .modal-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); font-size:15px}
-  .modal-head .x{border:0; background:none; font-size:16px; cursor:pointer; color:var(--mut)}
-  .modal-body{padding:14px 18px; overflow-y:auto}
-  .modal-foot{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-top:1px solid var(--line)}
-  .sgrp{margin-bottom:14px}
-  .sgrp .sh{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
-  .slist{max-height:34vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
-  #syncBody .srow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
+  .modal-card{background:var(--card); border-radius:var(--r-l); width:min(620px,92vw); max-height:86vh; display:flex; flex-direction:column; box-shadow:var(--sh-3); animation:pop var(--dur-3) var(--ease)}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; padding:var(--s4) var(--s5); border-bottom:1px solid var(--line); font-size:var(--fs-head)}
+  .modal-head b{font-weight:700; letter-spacing:-.01em}
+  .modal-head .x{border:0; background:var(--fill); width:28px; height:28px; border-radius:50%; cursor:pointer; color:var(--ink-2); display:flex; align-items:center; justify-content:center; padding:0; transition:background var(--dur-1)}
+  .modal-head .x:hover{background:var(--fill-2); color:var(--ink)}
+  .modal-body{padding:var(--s4) var(--s5); overflow-y:auto}
+  .modal-foot{display:flex; align-items:center; justify-content:space-between; gap:var(--s3); padding:var(--s4) var(--s5); border-top:1px solid var(--line)}
+  @keyframes fadeIn{from{opacity:0} to{opacity:1}}
+  .sgrp{margin-bottom:var(--s4)}
+  .sgrp .sh{font-size:var(--fs-caps); font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); margin-bottom:var(--s2)}
+  .slist{max-height:34vh; overflow-y:auto; border:1px solid var(--line); border-radius:var(--r-m)}
+  #syncBody .srow{display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--line); font-size:var(--fs-callout)}
   #syncBody .srow:last-child{border-bottom:0}
   #syncBody .srow .st{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  #syncBody .srow .sm{color:var(--mut); white-space:nowrap; font-size:11px}
+  #syncBody .srow .sm{color:var(--ink-2); white-space:nowrap; font-size:var(--fs-foot)}
   #syncBody .srow.dim{opacity:.5}
-  #syncBody .srow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--limebox); color:var(--ok); white-space:nowrap}
-  #syncBody details.sgrp>summary{cursor:pointer; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:6px}
-  #syncBody .sfilter{width:100%; height:30px; margin-bottom:6px; border:1px solid var(--line); border-radius:7px; padding:0 9px; font:inherit; font-size:12px; background:var(--field)}
+  #syncBody .srow .rtag{font-size:var(--fs-caps); font-weight:700; padding:2px 8px; border-radius:999px; background:var(--acc-tint); color:var(--ok); white-space:nowrap}
+  #syncBody details.sgrp>summary{cursor:pointer; font-size:var(--fs-caps); font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); margin-bottom:var(--s2)}
+  #syncBody .sfilter{width:100%; height:32px; margin-bottom:var(--s2); border:0; border-radius:var(--r-s); padding:0 10px; font:inherit; font-size:var(--fs-foot); background:var(--fill); color:var(--ink)}
   /* окно «убрано на телефоне» (Alex TG 19943/19948) */
-  #rmBody .rnote, #msBody .rnote, #bfBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin-bottom:10px}
-  #rmBody .rlist, #msBody .rlist, #bfBody .rlist{max-height:44vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px}
-  #rmBody .rrow, #msBody .rrow, #bfBody .rrow{display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid var(--line); font-size:12.5px}
+  #rmBody .rnote, #msBody .rnote, #bfBody .rnote{color:var(--ink-2); font-size:var(--fs-callout); line-height:1.5; margin-bottom:var(--s3)}
+  #rmBody .rlist, #msBody .rlist, #bfBody .rlist{max-height:44vh; overflow-y:auto; border:1px solid var(--line); border-radius:var(--r-m)}
+  #rmBody .rrow, #msBody .rrow, #bfBody .rrow{display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--line); font-size:var(--fs-callout)}
   #rmBody .rrow:last-child, #msBody .rrow:last-child, #bfBody .rrow:last-child{border-bottom:0}
   #rmBody .rrow .rt, #msBody .rrow .rt, #bfBody .rrow .rt{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  #rmBody .rrow .rm, #msBody .rrow .rm, #bfBody .rrow .rm{color:var(--mut); white-space:nowrap; font-size:11px}
-  #rmBody .rrow .rtag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--field); color:var(--mut); white-space:nowrap}
+  #rmBody .rrow .rm, #msBody .rrow .rm, #bfBody .rrow .rm{color:var(--ink-2); white-space:nowrap; font-size:var(--fs-foot)}
+  #rmBody .rrow .rtag{font-size:var(--fs-caps); font-weight:700; padding:2px 8px; border-radius:999px; background:var(--fill); color:var(--ink-2); white-space:nowrap}
   /* сверка телефона с компьютером (Alex TG 20277–20279) */
   #pcPill{cursor:pointer}
-  #pcBody .rnote{color:var(--mut); font-size:12.5px; line-height:1.45; margin:10px 0}
-  #pcBody .pcbox{display:flex; gap:12px; margin-bottom:6px}
-  #pcBody .pcbox>div{flex:1; border:1px solid var(--line); border-radius:11px; padding:12px 14px; text-align:center}
-  #pcBody .pcbox .pn{font-size:26px; font-weight:800; letter-spacing:-.5px}
-  #pcBody .pcbox .pl{font-size:12px; color:var(--mut); margin-top:2px}
-  #pcBody .pcbox .ps{font-size:11.5px; color:var(--faint); margin-top:1px}
-  #pcBody .pcrow{display:flex; align-items:baseline; gap:10px; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px}
+  #pcBody .rnote{color:var(--ink-2); font-size:var(--fs-callout); line-height:1.5; margin:var(--s3) 0}
+  #pcBody .pcbox{display:flex; gap:var(--s3); margin-bottom:6px}
+  #pcBody .pcbox>div{flex:1; border:1px solid var(--line); border-radius:var(--r-l); padding:var(--s4); text-align:center}
+  #pcBody .pcbox .pn{font-size:var(--fs-display); line-height:32px; font-weight:700; letter-spacing:-.02em}
+  #pcBody .pcbox .pl{font-size:var(--fs-foot); color:var(--ink-2); margin-top:4px}
+  #pcBody .pcbox .ps{font-size:var(--fs-foot); color:var(--ink-3); margin-top:1px}
+  #pcBody .pcrow{display:flex; align-items:baseline; gap:10px; padding:10px 2px; border-bottom:1px solid var(--line); font-size:var(--fs-callout)}
   #pcBody .pcrow:last-child{border-bottom:0}
   #pcBody .pcrow .pt{flex:1}
-  #pcBody .pcrow .pt small{display:block; color:var(--mut); font-size:11.5px; margin-top:1px}
+  #pcBody .pcrow .pt small{display:block; color:var(--ink-2); font-size:var(--fs-foot); margin-top:1px}
   #pcBody .pcrow .pv{font-weight:700; white-space:nowrap}
   #pcBody .pcrow.warn .pv{color:var(--warn)}
   #pcBody .pcrow.ok .pv{color:var(--ok)}
-  #pcBody .pcwhy{background:#fbf6e8; border:1px solid #eadfc4; color:#7a5a12; border-radius:9px; padding:9px 12px; font-size:12.5px; margin-top:10px}
-  #pcBody .pcgood{background:var(--limebox); color:var(--ok); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:700; margin-top:10px}
+  #pcBody .pcwhy{background:var(--warn-bg); color:var(--warn); border-radius:var(--r-m); padding:10px 14px; font-size:var(--fs-callout); margin-top:var(--s3)}
+  #pcBody .pcgood{background:var(--ok-bg); color:var(--ok); border-radius:var(--r-m); padding:10px 14px; font-size:var(--fs-callout); font-weight:700; margin-top:var(--s3)}
   /* телефон в программе: плитки по исполнителям */
-  .dtiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
-  .dtile{border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; text-align:left; padding:0; cursor:pointer; font:inherit; color:inherit}
-  .dtile:hover{border-color:var(--faint)}
+  .dtiles{display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:var(--s5)}
+  .dtile{border:0; border-radius:var(--r-l); overflow:hidden; background:var(--card); box-shadow:var(--sh-1); text-align:left; padding:0; cursor:pointer; font:inherit; color:inherit;
+    transition:transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease)}
+  .dtile:hover{transform:scale(1.02); box-shadow:var(--sh-2)}
+  .dtile:active{transform:scale(.99)}
   .dtile .dart{position:relative; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#fff}
-  .dtile .dini{font-weight:800; font-size:30px; opacity:.9}
+  .dtile .dini{font-weight:700; font-size:var(--fs-display); opacity:.9}
   .dtile .dart img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
-  .dtile .dcap{display:block; padding:8px 10px}
-  .dtile .dnm{display:block; font-weight:700; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .dtile .dsub{display:block; color:var(--mut); font-size:11px; margin-top:1px}
-  .dtile .dnew{position:absolute; top:6px; right:6px; width:11px; height:11px; border-radius:50%; background:var(--lime); border:2px solid rgba(0,0,0,.55); box-shadow:0 0 0 1px rgba(255,255,255,.6)}
-  .dsongs{border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .dtile .dcap{display:block; padding:10px 12px 12px}
+  .dtile .dnm{display:block; font-weight:600; font-size:var(--fs-callout); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dtile .dsub{display:block; color:var(--ink-2); font-size:var(--fs-foot); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dtile .dnew{position:absolute; top:8px; right:8px; width:12px; height:12px; border-radius:50%; background:var(--acc); border:2px solid rgba(0,0,0,.55); box-shadow:0 0 0 1px rgba(255,255,255,.6)}
+  .dsongs{border:1px solid var(--line); border-radius:var(--r-l); overflow:hidden}
   .view > .dsongs{flex-shrink:0}
-  .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); cursor:pointer}
+  .drow{display:flex; align-items:center; gap:var(--s3); padding:10px var(--s4); border-bottom:1px solid var(--line); cursor:pointer; transition:background var(--dur-1)}
   .dsongs .drow:last-child{border-bottom:0}
-  .drow:hover{background:var(--limebox)}
-  .drow.playing{background:var(--limebox)}
-  .drow .dcv{position:relative; width:40px; height:40px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:13px; overflow:hidden}
+  .drow:hover{background:var(--acc-tint)}
+  .drow.playing{background:var(--acc-tint)}
+  .drow .dcv{position:relative; width:40px; height:40px; border-radius:var(--r-s); flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:var(--fs-callout); overflow:hidden}
   .drow .dcv img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
-  .drow .dcv .pl{position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.45); color:#fff; font-size:15px}
+  .drow .dcv .pl{position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.45); color:#fff}
+  .drow .dcv .pl svg{width:16px; height:16px; fill:#fff}
   .drow:hover .dcv .pl{display:flex}
   .drow.playing .dcv .pl{display:flex; background:rgba(0,0,0,.3)}
   .drow .dm{flex:1; min-width:0}
-  .drow .dn{display:block; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .drow .dn{display:block; font-weight:600; font-size:var(--fs-callout); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .drow.playing .dn{color:var(--ok)}
-  .drow .da{display:block; color:var(--mut); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .drow .ds{color:var(--faint); font-size:11.5px; white-space:nowrap}
-  .drow .dx{border:0; background:none; color:var(--faint); font-size:15px; cursor:pointer; padding:4px 6px; border-radius:7px; opacity:0; flex-shrink:0}
+  .drow .da{display:block; color:var(--ink-2); font-size:var(--fs-foot); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .drow .ds{color:var(--ink-3); font-size:var(--fs-foot); white-space:nowrap}
+  .drow .dx{border:0; background:none; color:var(--ink-3); cursor:pointer; padding:6px; border-radius:var(--r-s); opacity:0; flex-shrink:0; display:flex; transition:background var(--dur-1), color var(--dur-1)}
+  .drow .dx svg{width:16px; height:16px}
   .drow:hover .dx{opacity:1}
-  .drow .dx:hover{background:#fde8e6; color:var(--err)}
+  .drow .dx:hover{background:var(--err-bg); color:var(--err)}
   .drow.busy{opacity:.5; pointer-events:none}
-  .empty{max-width:440px; margin:64px auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px}
-  .empty .big{font-size:20px; font-weight:800; color:var(--ink)}
-  .empty .sub{font-size:13px; color:var(--mut); line-height:1.5}
+  /* пусто / нет данных: значок, заголовок, фраза, одна кнопка (плеер тоже носит класс empty — его это правило не касается) */
+  .empty:not(.player){max-width:340px; margin:14vh auto 0; text-align:center; display:flex; flex-direction:column; align-items:center; gap:var(--s3)}
+  .empty .big{font-size:var(--fs-title); line-height:28px; font-weight:700; letter-spacing:-.01em; color:var(--ink)}
+  .empty .sub{font-size:var(--fs-callout); color:var(--ink-2); line-height:1.5}
   .empty .btn{margin-top:6px}
-  .set h3{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:26px 0 10px}
+  .set h3{font-size:var(--fs-caps); text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); font-weight:700; margin:var(--s6) 0 var(--s3)}
   .set h3:first-child{margin-top:4px}
-  .set .addrbig{font-family:ui-monospace,Consolas,monospace; font-size:19px; font-weight:700; color:var(--ink);
-    background:var(--field); border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:12px}
+  .set .addrbig{font-family:ui-monospace,Consolas,monospace; font-size:var(--fs-title); font-weight:600; color:var(--ink);
+    background:var(--fill); border-radius:var(--r-m); padding:var(--s3) var(--s4); display:flex; align-items:center; gap:var(--s3)}
   .set .addrbig .sp{flex:1}
-  .set .hint{font-size:11.5px; color:var(--mut); margin-top:6px}
-  .set .rootrow{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line)}
-  .set .rootrow .p{flex:1; min-width:0; word-break:break-all; font-size:12.5px; font-weight:600}
-  .set .rootrow .c{font-size:11.5px; color:var(--mut); white-space:nowrap}
-  .set .srow{display:flex; align-items:center; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13px}
+  .set .hint{font-size:var(--fs-foot); color:var(--ink-2); margin-top:var(--s2)}
+  .set .rootrow{display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line)}
+  .set .rootrow .p{flex:1; min-width:0; word-break:break-all; font-size:var(--fs-callout); font-weight:600}
+  .set .rootrow .c{font-size:var(--fs-foot); color:var(--ink-2); white-space:nowrap}
+  .set .srow{display:flex; align-items:center; gap:var(--s4); padding:var(--s3) 0; border-bottom:1px solid var(--line); font-size:var(--fs-callout)}
   .set .srow .sp{flex:1}
-  .set .srow b{color:var(--mut); font-weight:600}
+  .set .srow b{color:var(--ink-2); font-weight:600}
+  /* переключатель оформления в «Настройках» */
+  .themeseg{display:inline-flex; background:var(--fill); padding:2px; border-radius:var(--r-m)}
+  .themeseg button{border:0; background:transparent; padding:7px 16px; font:inherit; font-size:var(--fs-callout); font-weight:600; color:var(--ink-2); border-radius:8px; cursor:pointer;
+    transition:background var(--dur-2) var(--ease), color var(--dur-1)}
+  .themeseg button.on{background:var(--card); color:var(--ink); box-shadow:var(--sh-1)}
 
-  /* Плеер */
-  .player{height:66px; border-top:1px solid var(--line); background:var(--head);
-    display:flex; align-items:center; gap:14px; padding:0 16px; flex-shrink:0}
-  .player .cov{width:46px; height:46px; border-radius:8px; background:var(--field); object-fit:cover; flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--faint)}
-  .player .now{min-width:150px; max-width:230px; overflow:hidden}
-  .player .now .t1{font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .player .now .t2{font-size:11.5px; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .player .ctrls{display:flex; align-items:center; gap:6px; flex-shrink:0}
-  .pbtn{width:34px; height:34px; border-radius:50%; border:1px solid var(--line); background:#fff; cursor:pointer;
-    font-size:14px; display:flex; align-items:center; justify-content:center}
-  .pbtn:hover{background:var(--field)}
-  .pbtn.play{width:40px; height:40px; background:var(--lime); border-color:var(--lime); color:var(--lime-ink); font-size:16px}
-  .player .seek{flex:1; display:flex; align-items:center; gap:9px; min-width:120px}
-  .player .seek .rng{flex:1; accent-color:var(--ok)}
-  .player .seek .tm{font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap}
-  .player.empty .cov,.player.empty .now,.player.empty .seek{opacity:.4}
+  /* Плеер: только когда что-то играет; полупрозрачная полоса с размытием */
+  .player{height:72px; border-top:1px solid var(--line); background:var(--glass); -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
+    display:flex; align-items:center; gap:var(--s4); padding:0 var(--s5); flex-shrink:0; animation:playerIn var(--dur-3) var(--ease)}
+  .player.empty{display:none}
+  @keyframes playerIn{from{transform:translateY(100%); opacity:0} to{transform:none; opacity:1}}
+  .player .cov{width:48px; height:48px; border-radius:var(--r-s); background:var(--fill); background-size:cover; background-position:center; object-fit:cover; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:var(--fs-title); color:var(--ink-3); box-shadow:var(--sh-1)}
+  .player .now{min-width:150px; max-width:260px; overflow:hidden}
+  .player .now .t1{font-size:var(--fs-callout); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .player .now .t2{font-size:var(--fs-foot); color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .player .ctrls{display:flex; align-items:center; gap:var(--s2); flex-shrink:0}
+  .pbtn{width:36px; height:36px; border-radius:50%; border:0; background:transparent; color:var(--ink); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; transition:background var(--dur-1), transform var(--dur-1) var(--ease)}
+  .pbtn svg{width:18px; height:18px; fill:currentColor}
+  .pbtn:hover{background:var(--fill)}
+  .pbtn:active{transform:scale(.94)}
+  .pbtn.play{width:44px; height:44px; background:var(--acc); color:var(--acc-ink)}
+  .pbtn.play:hover{background:var(--acc-press)}
+  .pbtn.play svg{width:20px; height:20px}
+  .player .seek{flex:1; display:flex; align-items:center; gap:var(--s3); min-width:120px}
+  .player .seek .tm{font-size:var(--fs-foot); color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; min-width:34px}
+  .player .seek .tm:last-child{text-align:right}
+  /* своя полоса перемотки: тонкая, заливка лаймом (доля — переменная --p, её ведёт скрипт) */
+  .rng{-webkit-appearance:none; appearance:none; flex:1; height:16px; background:transparent; cursor:pointer; --p:0%}
+  .rng::-webkit-slider-runnable-track{height:4px; border-radius:2px; background:linear-gradient(to right, var(--ink) 0, var(--ink) var(--p), var(--fill-2) var(--p), var(--fill-2) 100%)}
+  .rng::-webkit-slider-thumb{-webkit-appearance:none; width:12px; height:12px; margin-top:-4px; border-radius:50%; background:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.3); opacity:0; transition:opacity var(--dur-1)}
+  .rng:hover::-webkit-slider-thumb, .rng:active::-webkit-slider-thumb{opacity:1}
 
-  /* Вкус */
-  .taste-sum{display:flex; gap:20px; flex-wrap:wrap; font-size:12px; color:var(--mut); margin-bottom:14px}
-  .taste-sum b{color:var(--ink); font-size:14px}
-  .taste-cols{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px}
-  .taste-col{flex:1; min-width:230px; border:1px solid var(--line); border-radius:10px; overflow:hidden}
-  .taste-col h3{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut);
-    font-weight:800; padding:10px 12px; background:var(--head); border-bottom:1px solid var(--line); margin:0}
-  .taste-col .tr{display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12.5px; border-bottom:1px solid var(--line)}
+  /* Вкус (экран скрыт из меню, код оставлен) */
+  .taste-sum{display:flex; gap:var(--s5); flex-wrap:wrap; font-size:var(--fs-foot); color:var(--ink-2); margin-bottom:var(--s4)}
+  .taste-sum b{color:var(--ink); font-size:var(--fs-body)}
+  .taste-cols{display:flex; gap:var(--s4); flex-wrap:wrap; margin-bottom:var(--s4)}
+  .taste-col{flex:1; min-width:230px; border:1px solid var(--line); border-radius:var(--r-l); overflow:hidden}
+  .taste-col h3{font-size:var(--fs-caps); text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2);
+    font-weight:700; padding:var(--s3); background:var(--bg-2); border-bottom:1px solid var(--line); margin:0}
+  .taste-col .tr{display:flex; align-items:center; gap:var(--s2); padding:8px var(--s3); font-size:var(--fs-callout); border-bottom:1px solid var(--line)}
   .taste-col .tr:last-child{border-bottom:none}
   .taste-col .tr .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .taste-col .tr .sp{flex:1}
   .taste-col .tr .sc{font-variant-numeric:tabular-nums; font-weight:700}
   .taste-col .tr .sc.pos{color:var(--ok)}
   .taste-col .tr .sc.neg{color:var(--err)}
-  .clu{border:1px solid var(--line); border-radius:10px; padding:11px 14px; margin-bottom:10px}
-  .clu .ch{font-size:12px; font-weight:700; margin-bottom:6px}
-  .clu .ex{font-size:12px; color:var(--mut); padding:2px 0}
-  .taste-h{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:6px 0 10px}
+  .clu{border:1px solid var(--line); border-radius:var(--r-l); padding:var(--s3) var(--s4); margin-bottom:var(--s3)}
+  .clu .ch{font-size:var(--fs-foot); font-weight:700; margin-bottom:6px}
+  .clu .ex{font-size:var(--fs-foot); color:var(--ink-2); padding:2px 0}
+  .taste-h{font-size:var(--fs-caps); text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); font-weight:700; margin:6px 0 var(--s3)}
 
   /* Итог задачи не исчезает (ревизия 20.09.2026, шаг 2): карточка «Готово / Не вышло» до кнопки «Понятно» */
-  .donestrip{margin:12px 16px 0; padding:10px 14px; border:1px solid var(--line); border-left:4px solid var(--ok);
-    border-radius:10px; background:#fbfdf8; display:flex; align-items:flex-start; gap:14px; flex-shrink:0}
+  .donestrip{margin:var(--s4) var(--s6) 0; padding:var(--s3) var(--s4); background:var(--ok-bg);
+    border-radius:var(--r-l); display:flex; align-items:flex-start; gap:var(--s4); flex-shrink:0; animation:viewIn var(--dur-3) var(--ease)}
   .donestrip[hidden]{display:none}
-  .donestrip.bad{border-left-color:var(--warn); background:#fffcf3}
+  .donestrip.bad{background:var(--warn-bg)}
   .donestrip .dl{flex:1; min-width:0}
-  .donestrip .dh{font-size:12px; font-weight:800; margin-bottom:4px}
-  .donestrip .dr{display:flex; gap:8px; align-items:baseline; font-size:12.5px; padding:2px 0}
+  .donestrip .dh{font-size:var(--fs-callout); font-weight:700; margin-bottom:4px}
+  .donestrip .dr{display:flex; gap:var(--s2); align-items:baseline; font-size:var(--fs-callout); padding:2px 0}
   .donestrip .dr .ic{width:14px; flex-shrink:0; font-weight:800; color:var(--ok)}
   .donestrip .dr.fail .ic{color:var(--warn)}
-  .donestrip .dr .tm{color:var(--faint); font-variant-numeric:tabular-nums; flex-shrink:0}
+  .donestrip .dr .tm{color:var(--ink-3); font-variant-numeric:tabular-nums; flex-shrink:0}
   .donestrip .dr .tx{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .donestrip .dr .nt{color:var(--mut)}
-  .donestrip .more{font-size:12px; color:var(--mut); padding:2px 0 0 22px}
+  .donestrip .dr .nt{color:var(--ink-2)}
+  .donestrip .more{font-size:var(--fs-foot); color:var(--ink-2); padding:2px 0 0 22px}
 
   /* Активность: «Сейчас» и «Сегодня» (шаг 6 ревизии 20.09.2026) */
-  .act-h{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:14px 0 8px}
-  .act-h:first-of-type{margin-top:2px}
-  .act-now{border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:8px}
-  .act-now .an-t{display:flex; align-items:center; gap:12px; font-size:13px}
+  .act-h{font-size:var(--fs-caps); text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); font-weight:700; margin:var(--s5) 0 var(--s2)}
+  .act-h:first-of-type{margin-top:var(--s2)}
+  .act-now{border:1px solid var(--line); border-radius:var(--r-l); padding:var(--s3) var(--s4); margin-bottom:var(--s2); background:var(--card)}
+  .act-now .an-t{display:flex; align-items:center; gap:var(--s3); font-size:var(--fs-callout)}
   .act-now .an-l{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600}
-  .act-now .an-n{color:var(--mut); font-variant-numeric:tabular-nums; flex-shrink:0}
-  .act-now .an-s{font-size:12px; color:var(--mut); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .act-bar{height:6px; border-radius:3px; background:var(--field); margin-top:8px; overflow:hidden}
-  .act-bar i{display:block; height:100%; background:var(--lime); border-radius:3px; transition:width .4s}
-  .act-row{display:flex; gap:10px; align-items:baseline; font-size:13px; padding:5px 2px; border-bottom:1px solid var(--line)}
+  .act-now .an-n{color:var(--ink-2); font-variant-numeric:tabular-nums; flex-shrink:0}
+  .act-now .an-s{font-size:var(--fs-foot); color:var(--ink-2); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .act-bar{height:4px; border-radius:2px; background:var(--fill); margin-top:10px; overflow:hidden}
+  .act-bar i{display:block; height:100%; background:var(--acc); border-radius:2px; transition:width .4s var(--ease)}
+  .act-row{display:flex; gap:10px; align-items:baseline; font-size:var(--fs-callout); padding:8px 2px; border-bottom:1px solid var(--line)}
   .act-row:last-child{border-bottom:none}
-  .act-row .tm{width:42px; flex-shrink:0; color:var(--faint); font-variant-numeric:tabular-nums}
-  .act-row .ic{width:14px; flex-shrink:0; font-weight:800; color:var(--faint)}
+  .act-row .tm{width:44px; flex-shrink:0; color:var(--ink-3); font-variant-numeric:tabular-nums}
+  .act-row .ic{width:14px; flex-shrink:0; font-weight:800; color:var(--ink-3)}
   .act-row.ok .ic{color:var(--ok)}
   .act-row.warn .ic{color:var(--warn)}
   .act-row .tx{flex:1; min-width:0}
-  .act-row .nt{color:var(--mut)}
-  .act-more{display:inline-block; margin-top:14px; font-size:12px; color:var(--mut); cursor:pointer}
+  .act-row .nt{color:var(--ink-2)}
+  .act-more{display:inline-block; margin-top:var(--s4); font-size:var(--fs-foot); color:var(--ink-2); cursor:pointer}
   .act-more:hover{color:var(--ink); text-decoration:underline}
 
   /* План для телефона (шаг 5 ревизии 20.09.2026, вариант 1): что ждёт телефон + «Отменить план» */
-  .plancard{border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; background:#fbfbfb; flex-shrink:0}
+  .plancard{border:1px solid var(--line); border-radius:var(--r-l); padding:var(--s3) var(--s4); margin-bottom:var(--s3); background:var(--bg-2); flex-shrink:0}
   .plancard .ph{display:flex; align-items:center; gap:10px}
-  .plancard .ph b{flex:1; font-size:13px}
-  .plancard .pt{font-size:13px; margin-top:6px}
-  .plancard .pn{font-size:12px; color:var(--mut); margin-top:4px}
-  .plancard .pmore{display:inline-block; margin-top:8px; font-size:12px; color:var(--mut); cursor:pointer}
+  .plancard .ph b{flex:1; font-size:var(--fs-callout)}
+  .plancard .pt{font-size:var(--fs-callout); margin-top:6px}
+  .plancard .pn{font-size:var(--fs-foot); color:var(--ink-2); margin-top:4px}
+  .plancard .pmore{display:inline-block; margin-top:var(--s2); font-size:var(--fs-foot); color:var(--ink-2); cursor:pointer}
   .plancard .pmore:hover{color:var(--ink); text-decoration:underline}
   .plancard .plist{margin-top:6px; border-top:1px solid var(--line)}
-  .plancard .pi{display:flex; gap:8px; align-items:baseline; font-size:12.5px; padding:4px 0; border-bottom:1px solid var(--line)}
+  .plancard .pi{display:flex; gap:var(--s2); align-items:baseline; font-size:var(--fs-callout); padding:5px 0; border-bottom:1px solid var(--line)}
   .plancard .pi .pm{width:12px; flex-shrink:0; font-weight:800}
   .plancard .pi .pm.add{color:var(--ok)}
   .plancard .pi .pm.rem{color:var(--err)}
-  .plancard .pi .ps{margin-left:auto; color:var(--faint); flex-shrink:0; font-variant-numeric:tabular-nums}
+  .plancard .pi .ps{margin-left:auto; color:var(--ink-3); flex-shrink:0; font-variant-numeric:tabular-nums}
   .item .mm.plan{color:var(--warn); font-weight:600}
+
+  /* Узкое окно: меню сворачивается в полосу значков */
+  @media (max-width:1100px){
+    .nav{width:64px; padding:var(--s4) var(--s2); align-items:center}
+    .nav a{width:44px; padding:0; justify-content:center}
+    .nav a span{display:none}
+    .view{padding:var(--s4) var(--s5) var(--s5)}
+    .donestrip{margin:var(--s3) var(--s5) 0}
+  }
+  /* «меньше движения» в Windows — только проявление */
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.01ms !important; transition-duration:.01ms !important}
+    .view.on{animation:fadeIn 150ms linear}
+  }
+  .modal-head .x svg.i{width:14px; height:14px}
+  .list .ic svg.i{width:20px; height:20px}
+  .list .item .dx svg.i{width:16px; height:16px}
+  .list .item .dx{border:0; background:transparent; color:var(--ink-3); width:32px; height:32px; border-radius:var(--r-s); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; flex-shrink:0; transition:background var(--dur-1), color var(--dur-1)}
+  .list .item .dx:hover{background:var(--err-bg); color:var(--err)}
 </style>
 </head>
 <body>
@@ -364,7 +485,7 @@
     <div class="logo">SF</div>
     <div class="brand">SoundFlow</div>
     <div class="sp"></div>
-    <div class="pill" id="status"><span class="dot"></span>Сервер работает</div>
+    <div class="pill" id="status"><span class="dot"></span>Всё в порядке</div>
     <div class="pill" id="phoneStatus" hidden title="Когда и как в последний раз выходил на связь телефон"><span class="dot"></span><span id="phoneStatusTxt"></span></div>
     <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
     <div class="pill busy" id="jobPill" hidden title="Открыть Каталог"><span class="dot"></span><span id="jobPillTxt"></span></div>
@@ -378,14 +499,13 @@
 
   <div class="body">
     <nav class="nav">
-      <a data-v="catalog" class="on">Каталог</a>
-      <a data-v="find">Найти и скачать</a>
-      <a data-v="devices">Устройства</a>
-      <a data-v="discover">Открытия</a>
-      <a data-v="activity">Активность</a>
-      <a data-v="settings">Настройки</a>
+      <a data-v="catalog" class="on" title="Каталог"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h3.2l1.6 1.8h6.2A1.5 1.5 0 0 1 17 8.3v6.2a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/></svg><span>Каталог</span></a>
+      <a data-v="find" title="Найти и скачать"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M6.5 9.5l3.5 3.5 3.5-3.5M4 16h12"/></svg><span>Найти и скачать</span></a>
+      <a data-v="devices" title="Устройства"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="2.5" width="8" height="15" rx="2"/><path d="M9 14.8h2"/></svg><span>Устройства</span></a>
+      <a data-v="discover" title="Открытия"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8l1.7 4.6 4.6 1.7-4.6 1.7L10 15.4l-1.7-4.6-4.6-1.7 4.6-1.7z"/></svg><span>Открытия</span></a>
+      <a data-v="activity" title="Активность"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10h3.2l2-5.5 3.6 11 2-5.5h4.2"/></svg><span>Активность</span></a>
+      <a data-v="settings" title="Настройки"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6h6M13.5 6h3M3.5 14h3M10.5 14h6"/><circle cx="11.5" cy="6" r="1.8"/><circle cx="8.5" cy="14" r="1.8"/></svg><span>Настройки</span></a>
       <div class="gap"></div>
-      <div class="ver">SoundFlow.exe<br>v0.1 · sqlite</div>
     </nav>
 
     <div class="main">
@@ -397,13 +517,14 @@
 
       <!-- Каталог -->
       <section class="view on" id="v-catalog">
+        <h2>Каталог</h2>
+        <div class="sum" id="sum">загрузка…</div>
         <div class="bar">
           <input class="search" id="q" placeholder="Поиск по трекам, артистам, альбомам…" autocomplete="off">
           <button class="btn primary" id="btnPick">Выбрать папку</button>
           <button class="btn" id="btnReindex" title="Пересчитать звуковое сходство треков — нужно для умного радио и похожих песен">Пересчитать похожесть по звуку</button>
           <button class="btn danger" id="btnStop" hidden title="Остановить только этот пересчёт — сама программа продолжит работать">Отменить пересчёт</button>
         </div>
-        <div class="sum" id="sum">загрузка…</div>
         <div class="tree" id="tree"><div class="muted">загрузка каталога…</div></div>
       </section>
 
@@ -453,7 +574,7 @@
         <div class="modal-card">
           <div class="modal-head">
             <b>Синхронизация телефона</b>
-            <button class="x" id="syncClose">✕</button>
+            <button class="x" id="syncClose"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
           </div>
           <div id="syncBody" class="modal-body"><div class="muted">считаю разницу…</div></div>
           <div class="modal-foot">
@@ -471,7 +592,7 @@
         <div class="modal-card">
           <div class="modal-head">
             <b>Убрано на телефоне</b>
-            <button class="x" id="rmClose" title="Позже">✕</button>
+            <button class="x" id="rmClose" title="Позже"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
           </div>
           <div id="rmBody" class="modal-body"></div>
           <div class="modal-foot">
@@ -487,7 +608,7 @@
         <div class="modal-card">
           <div class="modal-head">
             <b>Пропали файлы</b>
-            <button class="x" id="msClose" title="Позже">✕</button>
+            <button class="x" id="msClose" title="Позже"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
           </div>
           <div id="msBody" class="modal-body"></div>
           <div class="modal-foot">
@@ -503,7 +624,7 @@
         <div class="modal-card">
           <div class="modal-head">
             <b>Песни из «не качать» на диске</b>
-            <button class="x" id="bfClose" title="Позже">✕</button>
+            <button class="x" id="bfClose" title="Позже"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
           </div>
           <div id="bfBody" class="modal-body"></div>
           <div class="modal-foot">
@@ -518,7 +639,7 @@
         <div class="modal-card">
           <div class="modal-head">
             <b>Телефон и компьютер</b>
-            <button class="x" id="pcClose" title="Закрыть">✕</button>
+            <button class="x" id="pcClose" title="Закрыть"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
           </div>
           <div id="pcBody" class="modal-body"></div>
           <div class="modal-foot">
@@ -541,6 +662,7 @@
            каждый раздел СВЁРНУТ, по нажатию на заголовок раскрывается; каждую песню можно послушать
            (полная, из Яндекса, через качалку); у каждой песни — «Удалить» (убрать из списка, не из Яндекса). -->
       <section class="view" id="v-discover">
+        <h2>Открытия</h2>
         <!-- Плейлист по ссылке (Alex TG 20117–20122, 20.09.2026): Alex сам вставляет ссылку на плейлист Яндекс.Музыки
              (например, «Мне нравится» → «Поделиться»), а раздел «Твои лайки из Яндекс.Музыки», который подтягивался сам по
              токену, убран (его ответ «2»). Один плейлист за раз: новая ссылка заменяет прежний. Песни — тем же списком. -->
@@ -626,9 +748,9 @@
       <div class="t2" id="pt2">выбери песню в каталоге</div>
     </div>
     <div class="ctrls">
-      <button class="pbtn" id="pPrev" title="предыдущая">⏮</button>
-      <button class="pbtn play" id="pPlay" title="играть/пауза">▶</button>
-      <button class="pbtn" id="pNext" title="следующая">⏭</button>
+      <button class="pbtn" id="pPrev" title="предыдущая" aria-label="предыдущая"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 4.2v11.6a.7.7 0 0 1-1.1.6L6.8 10.6a.7.7 0 0 1 0-1.2l7.6-5.8a.7.7 0 0 1 1.1.6z"/><rect x="3.5" y="4" width="2" height="12" rx="1"/></svg></button>
+      <button class="pbtn play" id="pPlay" title="играть/пауза" aria-label="играть/пауза"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4l-10-6.2A.8.8 0 0 0 6 3.8z"/></svg></button>
+      <button class="pbtn" id="pNext" title="следующая" aria-label="следующая"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 4.2v11.6a.7.7 0 0 0 1.1.6l7.6-5.8a.7.7 0 0 0 0-1.2L5.6 3.6a.7.7 0 0 0-1.1.6z"/><rect x="14.5" y="4" width="2" height="12" rx="1"/></svg></button>
     </div>
     <div class="seek">
       <span class="tm" id="pCur">0:00</span>
@@ -640,6 +762,11 @@
 
 <script>
 const $ = s => document.querySelector(s);
+/* значки (SVG вместо эмодзи и знаков ▶ ⏸ 📱 🗑, оформление «как у Apple», 21.09.2026) */
+const ICON_PLAY  = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4l-10-6.2A.8.8 0 0 0 6 3.8z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="3.5" width="3.6" height="13" rx="1"/><rect x="11.4" y="3.5" width="3.6" height="13" rx="1"/></svg>';
+const ICON_PHONE = '<svg class="i" viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="2.5" width="8" height="15" rx="2"/><path d="M9 14.8h2"/></svg>';
+const ICON_TRASH = '<svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11M8 6V4.5h4V6M6 6l.7 9.3a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6"/></svg>';
 const esc = s => (s||"").replace(/[<>&"']/g, x => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&#39;"}[x]));
 // jsArg — строка как аргумент в inline-обработчике (onclick="f(${jsArg(x)})"). esc одной кавычки мало:
 // браузер раскодирует &#39; обратно ещё ДО запуска JS, и название с ' ломало бы (или подменяло) вызов.
@@ -713,7 +840,7 @@ async function loadInfo(){
     $("#addr").textContent = d.addr;
     $("#disk").textContent = "свободно " + fmtGB(d.disk_free) + (d.data_drive ? " на "+d.data_drive : "");
     const st = $("#status");
-    if(d.has_model){ st.className="pill"; st.innerHTML='<span class="dot"></span>Сервер работает'; }
+    if(d.has_model){ st.className="pill"; st.innerHTML='<span class="dot"></span>Всё в порядке'; }
     else { st.className="pill off"; st.innerHTML='<span class="dot"></span>без модели отпечатков'; }
     if(_catTracks.length) _catSummary();   // шапку каталога ведёт каталог (иначе перезапись «415 папок» спорила с плитками)
     else $("#sum").innerHTML = `<b>${nfmt(d.tracks)}</b> треков · <b>${nfmt(d.albums)}</b> папок · `+
@@ -722,13 +849,13 @@ async function loadInfo(){
     // USB-туннель: показываем чип, только если adb рядом с программой есть
     const u = d.usb || {};
     const usb = $("#usb");
-    if(u.enabled){
+    if(u.enabled && u.up){          // «по кабелю» — только когда кабель есть; «USB не подключён» при работе по Wi-Fi — не беда, не показываем
       usb.hidden = false;
-      usb.className = u.up ? "pill" : "pill off";
+      usb.className = "pill";
       $("#usbTxt").textContent = u.up ? "телефон по кабелю" : ("USB: " + (u.text || "нет телефона"));
     } else { usb.hidden = true; }
     window._info = d;
-  }catch(e){ $("#status").className="pill off"; }
+  }catch(e){ $("#status").className="pill off"; $("#status").innerHTML='<span class="dot"></span>Нет связи с программой'; }
 }
 
 /* ---------- каталог: папки (Alex TG 20018, 20030) ----------
@@ -1010,7 +1137,7 @@ function _catSongRow(t,i){
     `<span class="dcv" style="background:${_devColor(t.artist||'')}">`+
       `<span>${esc(_devInitials(t.artist||''))}</span>`+
       `<img src="/api/cover/${encodeURIComponent(t.id)}" alt="" loading="lazy" onerror="this.remove()">`+
-      `<span class="pl">${on && !au.paused ? "⏸" : "▶"}</span>`+
+      `<span class="pl">${on && !au.paused ? ICON_PAUSE : ICON_PLAY}</span>`+
     `</span><span class="dm"><span class="dn">${esc(t.title||t.id)}</span>`+
     `<span class="da">${esc(t.artist||"")}</span></span>`+
     `<span class="ds">${fmtDur(t.duration_sec)}${t.bitrate_kbps?" · "+t.bitrate_kbps:""}</span>`+
@@ -1292,21 +1419,23 @@ function markPlaying(){
     const on = !!pid && !!t && t.id === pid;      // строка на экране играет, если это та же песня, что в очереди
     r.classList.toggle("playing", on);
     const pl = r.querySelector(".pl");
-    if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";
+    if(pl) pl.innerHTML = (on && !au.paused) ? ICON_PAUSE : ICON_PLAY;
   });
 }
 $("#pPlay").onclick = () => { if(au.src){ au.paused ? au.play() : au.pause(); } else playNext(); };
 $("#pNext").onclick = playNext;
 $("#pPrev").onclick = playPrev;
-au.addEventListener("play",  () => { $("#pPlay").textContent = "⏸"; markPlaying(); });
-au.addEventListener("pause", () => { $("#pPlay").textContent = "▶"; markPlaying(); });
+au.addEventListener("play",  () => { $("#pPlay").innerHTML = ICON_PAUSE; markPlaying(); });
+au.addEventListener("pause", () => { $("#pPlay").innerHTML = ICON_PLAY; markPlaying(); });
 au.addEventListener("ended", playNext);
 au.addEventListener("loadedmetadata", () => $("#pDur").textContent = fmtDur(au.duration));
 au.addEventListener("timeupdate", () => {
   $("#pCur").textContent = fmtDur(au.currentTime);
   if(au.duration) $("#pRng").value = Math.round(au.currentTime/au.duration*1000);
+  _rngFill();
 });
-$("#pRng").addEventListener("input", () => { if(au.duration) au.currentTime = $("#pRng").value/1000*au.duration; });
+function _rngFill(){ const r = $("#pRng"); r.style.setProperty("--p", (r.value/10) + "%"); }
+$("#pRng").addEventListener("input", () => { if(au.duration) au.currentTime = $("#pRng").value/1000*au.duration; _rngFill(); });
 
 /* ---------- Найти и скачать ---------- */
 async function loadAcqLog(){
@@ -1450,11 +1579,11 @@ async function loadDevices(){
         dl = `<div class="dlrow"><div class="dlline">качает: ${esc(p.current||"…")} — ${nfmt(p.done)} из ${nfmt(p.total)}</div>`+
              `<div class="track2"><i style="width:${pct}%"></i></div></div>`;
       }
-      return `<div class="item" style="cursor:pointer" onclick="openDevice(${jsArg(d.id)})"><div class="ic">📱</div>`+
+      return `<div class="item" style="cursor:pointer" onclick="openDevice(${jsArg(d.id)})"><div class="ic">${ICON_PHONE}</div>`+
         `<div class="grow"><div class="tt">${esc(d.name||d.id)}</div>`+
         `<div class="mm">${nfmt(d.events)} событий · последняя связь ${last}${gb}</div>${pl}${dl}</div>`+
         `${_devTag(d.transport)}`+
-        `<button class="dx" title="убрать эту запись из списка" onclick="event.stopPropagation();_devEntryDelete(${jsArg(d.id)},${jsArg(d.name||d.id)})">🗑</button>`+
+        `<button class="dx" title="убрать эту запись из списка" onclick="event.stopPropagation();_devEntryDelete(${jsArg(d.id)},${jsArg(d.name||d.id)})">${ICON_TRASH}</button>`+
         `<span style="color:var(--faint);margin-left:4px">›</span></div>`;
     }).join("") : '<div class="muted">нет подключённых. Открой SoundFlow на телефоне и впиши адрес этого компа.</div>';
   }catch(e){ $("#devicesList").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
@@ -1669,12 +1798,12 @@ function _devSongRow(t){
     `<span class="dcv" style="background:${_devColor(t.artist||'')}">`+
     `<span>${esc(_devInitials(t.artist||''))}</span>`+
     (t.id ? `<img src="/api/cover/${encodeURIComponent(t.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
-    `<span class="pl">${on?"⏸":"▶"}</span>`+
+    `<span class="pl">${on?ICON_PAUSE:ICON_PLAY}</span>`+
     `</span><span class="dm"><span class="dn">${esc(t.title||t.id)}</span>`+
     `<span class="da">${esc(t.artist||"")}</span></span>`+
     `<span class="ds">${t.size_bytes?gb(t.size_bytes):""}</span>`+
     `<button class="dx" title="удалить полностью — с телефона, из каталога и с диска" `+
-      `onclick="event.stopPropagation();_devDelete('${id}')">🗑</button></div>`;
+      `onclick="event.stopPropagation();_devDelete('${id}')">${ICON_TRASH}</button></div>`;
 }
 
 // «Удалить полностью» (Alex TG 19160): одно действие стирает трек с телефона,
@@ -1735,7 +1864,7 @@ function _devMarkPlaying(){
     const on = !!_devPlayId && r.dataset.id === _devPlayId;
     r.classList.toggle("playing", on);
     const pl = r.querySelector(".dcv .pl");
-    if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";
+    if(pl) pl.innerHTML = (on && !au.paused) ? ICON_PAUSE : ICON_PLAY;
   });
 }
 au.addEventListener("play",  _devMarkPlaying);
@@ -2122,7 +2251,7 @@ function _discRow(kind, t, i){
   return `<div class="drow${have?" have":""}${on?" playing":""}" data-i="${i}" onclick="_discPlay('${kind}',${i})" title="нажми — заиграет здесь, в окне">`+
     `<span class="dcv" style="background:${_devColor(t.artist)}"><span>${esc(_devInitials(t.artist))}</span>`+
       (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
-      `<span class="pl">${on && !au.paused ? "⏸" : "▶"}</span></span>`+
+      `<span class="pl">${on && !au.paused ? ICON_PAUSE : ICON_PLAY}</span></span>`+
     `<span class="dm"><span class="dn">${esc(t.title)||"—"}</span><span class="da">${esc(t.artist)}${t.album?" · "+esc(t.album):""}</span></span>`+
     (t.duration_sec ? `<span class="ds">${fmtDur(t.duration_sec)}</span>` : "")+
     (have
@@ -2271,7 +2400,7 @@ function _discMarkPlaying(){
       const on = !!_discPlayKey && !!t && _discKey(kind, t) === _discPlayKey;
       r.classList.toggle("playing", on);
       const pl = r.querySelector(".dcv .pl");
-      if(pl) pl.textContent = (on && !au.paused) ? "⏸" : "▶";
+      if(pl) pl.innerHTML = (on && !au.paused) ? ICON_PAUSE : ICON_PLAY;
     });
   }
 }
@@ -2400,6 +2529,8 @@ async function loadSettings(){
     : '<div class="hint">Пока ни одной папки. Нажми «Добавить папку».</div>';
 
   $("#set").innerHTML =
+    `<h3>Оформление</h3>`+
+    `<div class="themeseg" id="themeSeg"><button data-t="auto">Как в Windows</button><button data-t="light">Светлое</button><button data-t="dark">Тёмное</button></div>`+
     `<h3>Адрес для телефона</h3>`+
     `<div class="addrbig"><span id="setAddr">${esc(d.addr)}</span><span class="sp"></span>`+
     `<button class="btn" id="setCopy">Скопировать</button></div>`+
@@ -2428,6 +2559,16 @@ async function loadSettings(){
     `<div class="f"><b>Работает</b><span>${Math.round((d.uptime_sec||0)/60)} мин</span></div>`+
     `<div style="margin-top:12px"><button class="btn" onclick="showView('log')">Журнал сервера (для диагностики)</button></div>`;
 
+  const _curTheme = _lsGet("sfTheme") || "auto";
+  document.querySelectorAll("#themeSeg button").forEach(b => {
+    b.classList.toggle("on", b.dataset.t === _curTheme);
+    b.onclick = () => {
+      const t = b.dataset.t;
+      if(t === "auto"){ document.documentElement.removeAttribute("data-theme"); _lsSet("sfTheme", ""); }
+      else { document.documentElement.setAttribute("data-theme", t); _lsSet("sfTheme", t); }
+      document.querySelectorAll("#themeSeg button").forEach(x => x.classList.toggle("on", x === b));
+    };
+  });
   const addr = $("#setAddr")?.textContent || "";
   $("#setCopy") && ($("#setCopy").onclick = () => {
     navigator.clipboard && navigator.clipboard.writeText(addr);
