@@ -157,7 +157,7 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		if err := ensureQBittorrent(); err != nil {
 			s.tor().set(idx, "fail", err.Error())
-			s.jobs.finishAmbient(tj, err.Error())
+			s.jobs.failAmbient(tj, err.Error())
 			_ = s.db.AddServerLog("error", c.Tracker, label, err.Error(), 0)
 			return
 		}
@@ -166,7 +166,7 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		}, 40*time.Minute)
 		if err != nil {
 			s.tor().set(idx, "fail", err.Error())
-			s.jobs.finishAmbient(tj, err.Error())
+			s.jobs.failAmbient(tj, err.Error())
 			_ = s.db.AddServerLog("error", c.Tracker, label, "торрент: "+err.Error(), 0)
 			return
 		}
@@ -190,7 +190,7 @@ func (s *Service) hTorrentDownload(w http.ResponseWriter, r *http.Request) {
 				note = "альбом не скачался"
 			}
 			s.tor().set(idx, "fail", note)
-			s.jobs.finishAmbient(tj, note)
+			s.jobs.failAmbient(tj, note)
 			_ = s.db.AddServerLog("error", c.Tracker, label, note, 0)
 			return
 		}

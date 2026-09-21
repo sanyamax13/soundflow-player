@@ -140,7 +140,7 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 			_ = s.db.AddServerLog("info", artist, title, "уже в каталоге", 0)
 		case errors.Is(err, acquire.ErrNotFound):
 			s.acq().set(idx, "fail", "не нашёл ни на одном источнике")
-			s.jobs.finishAmbient(aj, "не нашёл ни на одном источнике")
+			s.jobs.failAmbient(aj, "не нашёл ни на одном источнике")
 			_ = s.db.AddServerLog("error", artist, title, "не найдено", 0)
 		default:
 			note := "ошибка"
@@ -150,7 +150,7 @@ func (s *Service) hAcquire(w http.ResponseWriter, r *http.Request) {
 				note = err.Error()
 			}
 			s.acq().set(idx, "fail", note)
-			s.jobs.finishAmbient(aj, note)
+			s.jobs.failAmbient(aj, note)
 			_ = s.db.AddServerLog("error", artist, title, note, 0)
 		}
 	}()

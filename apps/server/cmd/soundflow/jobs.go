@@ -36,11 +36,19 @@ type JobRunner struct {
 	mu    sync.Mutex
 	cur   *Job
 	extra map[string]*Job
+	seq   int // счётчик для ID: часы Windows тикают крупно, две задачи подряд получали одинаковое время
+}
+
+// newIDLocked — уникальный ID задачи (под jr.mu). Раньше был «вид_время в наносекундах»: две задачи, начатые в один
+// тик часов, получали один ID и затирали друг друга в списке.
+func (jr *JobRunner) newIDLocked(kind string) string {
+	jr.seq++
+	return fmt.Sprintf("%s_%d_%d", kind, time.Now().UnixNano(), jr.seq)
 }
 
 type Job struct {
 	ID        string    `json:"id"`
-	Kind      string    `json:"kind"` // scan | reindex | acquire | torrent
+	Kind      string    `json:"kind"` // scan | reindex | acquire | torrent | covers
 	Label     string    `json:"label"`
 	Total     int       `json:"total"`
 	Done      int       `json:"done"`
@@ -48,14 +56,26 @@ type Job struct {
 	Running   bool      `json:"running"`
 	StartedAt time.Time `json:"started_at"`
 	Note      string    `json:"note"`
-	cancel    context.CancelFunc
+	// Итог не исчезает (ревизия 20.09.2026, шаг 2, С4): задачу, которую запустил сам Alex (скачать песню/альбом, скан
+	// папки, пересчёт), после конца не убираем, а держим карточкой «Готово / Не вышло» до кнопки «Понятно». Фоновые
+	// задачи по таймеру (обложки, сверка) карточек не оставляют — иначе окно завалит итогами того, о чём Alex не просил.
+	Keep       bool       `json:"keep"`
+	Outcome    string     `json:"outcome,omitempty"` // ok | fail — чем кончилась; пока идёт — пусто
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	cancel     context.CancelFunc
 }
+
+const (
+	jobKeepFor = 24 * time.Hour // карточку без «Понятно» держим не дольше суток
+	jobKeepMax = 30             // и не больше стольких (самые старые уходят): «Скачать все» на сотню песен не завалит окно
+)
 
 func NewJobRunner(s *Service) *JobRunner { return &JobRunner{svc: s} }
 
 func (jr *JobRunner) Status() []Job {
 	jr.mu.Lock()
 	defer jr.mu.Unlock()
+	jr.pruneLocked()
 	out := make([]Job, 0, len(jr.extra)+1)
 	if jr.cur != nil {
 		j := *jr.cur
@@ -82,27 +102,99 @@ func (jr *JobRunner) beginAmbient(kind, label string) *Job {
 		jr.extra = map[string]*Job{}
 	}
 	j := &Job{
-		ID:        kind + "_" + fmt.Sprint(time.Now().UnixNano()),
-		Kind:      kind, Label: label, Running: true,
+		ID:   jr.newIDLocked(kind),
+		Kind: kind, Label: label, Running: true,
 		StartedAt: time.Now(),
+		Keep:      kind == "acquire" || kind == "torrent", // запускает сам Alex; «covers» — по таймеру, без карточки
 	}
 	jr.extra[j.ID] = j
 	return j
 }
 
-// finishAmbient — пометить готовой и убрать через паузу: успевает мигнуть
-// «готово»/«не вышло» в шапке и на вкладке «Задачи», не захламляет их надолго.
-func (jr *JobRunner) finishAmbient(j *Job, note string) {
+// finishAmbient — пометить готовой. Задача, запущенная самим Alex (Keep), остаётся карточкой итога до «Понятно»
+// (Dismiss); фоновая — убирается через паузу, как раньше: успевает мигнуть в шапке и не захламляет.
+func (jr *JobRunner) finishAmbient(j *Job, note string) { jr.finishAmbientAs(j, note, "ok") }
+
+// failAmbient — то же, но итог «не вышло»: карточка с предупреждением.
+func (jr *JobRunner) failAmbient(j *Job, note string) { jr.finishAmbientAs(j, note, "fail") }
+
+func (jr *JobRunner) finishAmbientAs(j *Job, note, outcome string) {
 	jr.mu.Lock()
 	j.Running = false
 	j.Note = note
-	id := j.ID
+	j.Outcome = outcome
+	now := time.Now()
+	j.FinishedAt = &now
+	id, keep := j.ID, j.Keep
 	jr.mu.Unlock()
+	if keep {
+		return
+	}
 	time.AfterFunc(8*time.Second, func() {
 		jr.mu.Lock()
 		delete(jr.extra, id)
 		jr.mu.Unlock()
 	})
+}
+
+// keep — пометить задачу «показать итог карточкой до «Понятно»» (её запустил сам Alex: кнопка скана/пересчёта в окне).
+func (jr *JobRunner) keep(id string) {
+	jr.mu.Lock()
+	defer jr.mu.Unlock()
+	if jr.cur != nil && jr.cur.ID == id {
+		jr.cur.Keep = true
+	}
+	if j := jr.extra[id]; j != nil {
+		j.Keep = true
+	}
+}
+
+// Dismiss — «Понятно»: убрать карточки законченных задач. id пустой — все разом. Идущие задачи не трогает.
+// Возвращает, сколько карточек убрано.
+func (jr *JobRunner) Dismiss(id string) int {
+	jr.mu.Lock()
+	defer jr.mu.Unlock()
+	n := 0
+	for k, j := range jr.extra {
+		if j.Running || !j.Keep || (id != "" && k != id) {
+			continue
+		}
+		delete(jr.extra, k)
+		n++
+	}
+	if c := jr.cur; c != nil && !c.Running && c.Keep && (id == "" || c.ID == id) {
+		c.Keep = false // сама запись остаётся (её читает окно по старой схеме), карточка гаснет
+		n++
+	}
+	return n
+}
+
+// pruneLocked — старые карточки итога (дольше суток) и сверх лимита уходят сами. Под jr.mu.
+func (jr *JobRunner) pruneLocked() {
+	var done []*Job
+	for k, j := range jr.extra {
+		if j.Running || !j.Keep {
+			continue
+		}
+		if j.FinishedAt != nil && time.Since(*j.FinishedAt) > jobKeepFor {
+			delete(jr.extra, k)
+			continue
+		}
+		done = append(done, j)
+	}
+	if len(done) > jobKeepMax {
+		sort.Slice(done, func(i, k int) bool { return finishedTime(done[i]).Before(finishedTime(done[k])) })
+		for _, j := range done[:len(done)-jobKeepMax] {
+			delete(jr.extra, j.ID)
+		}
+	}
+}
+
+func finishedTime(j *Job) time.Time {
+	if j.FinishedAt != nil {
+		return *j.FinishedAt
+	}
+	return j.StartedAt
 }
 
 func (jr *JobRunner) CancelAll() {
@@ -121,20 +213,35 @@ func (jr *JobRunner) begin(kind, label string) (*Job, context.Context, bool) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	j := &Job{
-		ID:   kind + "_" + fmt.Sprint(time.Now().UnixNano()),
+		ID:   jr.newIDLocked(kind),
 		Kind: kind, Label: label, Running: true,
 		StartedAt: time.Now(), cancel: cancel,
+	}
+	if old := jr.cur; old != nil && !old.Running && old.Keep {
+		// итог прежнего скана/пересчёта, который Alex ещё не закрыл, не теряем — уходит в общий список карточек
+		if jr.extra == nil {
+			jr.extra = map[string]*Job{}
+		}
+		jr.extra[old.ID] = old
 	}
 	jr.cur = j
 	return j, ctx, true
 }
 
-func (jr *JobRunner) finish(note string) {
+func (jr *JobRunner) finish(note string) { jr.finishAs(note, "ok") }
+
+// finishFail — то же, но итог «не вышло».
+func (jr *JobRunner) finishFail(note string) { jr.finishAs(note, "fail") }
+
+func (jr *JobRunner) finishAs(note, outcome string) {
 	jr.mu.Lock()
 	defer jr.mu.Unlock()
 	if jr.cur != nil {
 		jr.cur.Running = false
 		jr.cur.Note = note
+		jr.cur.Outcome = outcome
+		now := time.Now()
+		jr.cur.FinishedAt = &now
 	}
 }
 
@@ -368,7 +475,7 @@ func (jr *JobRunner) StartReindex() string {
 		s := jr.svc
 		ids, err := s.db.TrackIDsNeedingAnalysis(0)
 		if err != nil {
-			jr.finish("ошибка выборки: " + err.Error())
+			jr.finishFail("ошибка выборки: " + err.Error())
 			return
 		}
 		j.Total = len(ids)

@@ -269,6 +269,8 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/taste/centroids", s.hCentroids)
 	r.Post("/api/tracks/vectors", s.hTrackVectors)
 	r.Get("/api/jobs", s.hJobs)
+	r.Delete("/api/jobs", s.hJobsDismiss)
+	r.Delete("/api/jobs/{id}", s.hJobsDismiss)
 	r.Post("/api/scan", s.hScan)
 	r.Post("/api/reindex", s.hReindex)
 	r.Post("/api/stop", s.hStop)
@@ -524,6 +526,12 @@ func (s *Service) hJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.jobs.Status())
 }
 
+// DELETE /api/jobs — «Понятно»: убрать карточки итогов всех законченных задач; DELETE /api/jobs/{id} — одну.
+func (s *Service) hJobsDismiss(w http.ResponseWriter, r *http.Request) {
+	n := s.jobs.Dismiss(chi.URLParam(r, "id"))
+	writeJSON(w, map[string]int{"dismissed": n})
+}
+
 func (s *Service) hScan(w http.ResponseWriter, r *http.Request) {
 	dir := strings.TrimSpace(r.URL.Query().Get("dir"))
 	if dir == "" {
@@ -535,6 +543,7 @@ func (s *Service) hScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := s.jobs.StartScan(dir)
+	s.jobs.keep(id) // скан из окна — итог висит карточкой до «Понятно» (шаг 2 ревизии)
 	writeJSON(w, map[string]string{"job": id})
 }
 
@@ -544,6 +553,7 @@ func (s *Service) hReindex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := s.jobs.StartReindex()
+	s.jobs.keep(id)
 	writeJSON(w, map[string]string{"job": id})
 }
 

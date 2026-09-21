@@ -305,6 +305,21 @@
   .clu .ch{font-size:12px; font-weight:700; margin-bottom:6px}
   .clu .ex{font-size:12px; color:var(--mut); padding:2px 0}
   .taste-h{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:800; margin:6px 0 10px}
+
+  /* Итог задачи не исчезает (ревизия 20.09.2026, шаг 2): карточка «Готово / Не вышло» до кнопки «Понятно» */
+  .donestrip{margin:12px 16px 0; padding:10px 14px; border:1px solid var(--line); border-left:4px solid var(--ok);
+    border-radius:10px; background:#fbfdf8; display:flex; align-items:flex-start; gap:14px; flex-shrink:0}
+  .donestrip[hidden]{display:none}
+  .donestrip.bad{border-left-color:var(--warn); background:#fffcf3}
+  .donestrip .dl{flex:1; min-width:0}
+  .donestrip .dh{font-size:12px; font-weight:800; margin-bottom:4px}
+  .donestrip .dr{display:flex; gap:8px; align-items:baseline; font-size:12.5px; padding:2px 0}
+  .donestrip .dr .ic{width:14px; flex-shrink:0; font-weight:800; color:var(--ok)}
+  .donestrip .dr.fail .ic{color:var(--warn)}
+  .donestrip .dr .tm{color:var(--faint); font-variant-numeric:tabular-nums; flex-shrink:0}
+  .donestrip .dr .tx{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .donestrip .dr .nt{color:var(--mut)}
+  .donestrip .more{font-size:12px; color:var(--mut); padding:2px 0 0 22px}
 </style>
 </head>
 <body>
@@ -337,6 +352,12 @@
     </nav>
 
     <div class="main">
+      <!-- Итог законченных задач: висит, пока не нажмёшь «Понятно» -->
+      <div class="donestrip" id="doneStrip" hidden>
+        <div class="dl"><div class="dh" id="doneHead"></div><div id="doneRows"></div><div class="more" id="doneMore" hidden></div></div>
+        <button class="btn" id="doneOk">Понятно</button>
+      </div>
+
       <!-- Каталог -->
       <section class="view on" id="v-catalog">
         <div class="bar">
@@ -1731,10 +1752,50 @@ function updateJobPill(jobs){
   $("#jobPillTxt").textContent = txt;
   pill.hidden = false;
 }
+// Карточка итога (ревизия 20.09.2026, шаг 2): чем кончились задачи, которые запустил сам Alex — скачать песню/альбом,
+// скан папки, пересчёт. Не исчезает сама, пока не нажмёшь «Понятно» (сервер держит её до этого или сутки).
+const DONE_SHOWN = 3;
+function doneRow(j){
+  const bad = j.outcome === "fail";
+  const rest = String(j.label || "").replace(/^[^:]+:\s*/, ""); // «Скачиваю: A — B» → «A — B»
+  let head, note = String(j.note || "");
+  switch(j.kind){
+    case "acquire": head = (bad ? "Не вышло: " : "Скачано: ") + rest; note = note.replace(/^скачано:\s*/i, ""); break;
+    case "torrent": head = (bad ? "Альбом не скачался: " : "Альбом скачан: ") + rest; break;
+    case "scan": head = (bad ? "Скан не вышел: " : "Скан готов: ") + String(j.label || "").replace(/^Скан папки\s*/, ""); break;
+    case "reindex": head = bad ? "Пересчёт отпечатков не вышел" : "Пересчёт отпечатков готов"; break;
+    default: head = (bad ? "Не вышло: " : "Готово: ") + (j.label || "");
+  }
+  const t = j.finished_at ? new Date(j.finished_at).toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"}) : "";
+  return `<div class="dr ${bad ? "fail" : ""}"><span class="ic">${bad ? "!" : "✓"}</span><span class="tm">${esc(t)}</span>`+
+    `<span class="tx">${esc(head)}${note ? ` <span class="nt">— ${esc(note)}</span>` : ""}</span></div>`;
+}
+function renderDone(jobs){
+  const el = $("#doneStrip");
+  const done = jobs.filter(j => j.keep && !j.running && j.finished_at)
+    .sort((a, b) => String(b.finished_at).localeCompare(String(a.finished_at)));
+  if(!done.length){ el.hidden = true; return; }
+  const bad = done.filter(j => j.outcome === "fail").length;
+  el.classList.toggle("bad", bad > 0);
+  $("#doneHead").textContent = bad
+    ? (bad === done.length ? "Не вышло" : "Готово, но не всё вышло")
+    : "Готово";
+  $("#doneRows").innerHTML = done.slice(0, DONE_SHOWN).map(doneRow).join("");
+  const more = done.length - DONE_SHOWN;
+  $("#doneMore").hidden = more <= 0;
+  if(more > 0) $("#doneMore").textContent = "и ещё " + more + " " + plural(more, "задача", "задачи", "задач");
+  el.hidden = false;
+}
+$("#doneOk").onclick = async () => {
+  try{ await fetch("/api/jobs", {method:"DELETE"}); }catch(e){}
+  $("#doneStrip").hidden = true;
+  loadJobs();
+};
 async function loadJobs(){
   try{
     const jobs = await jget("/api/jobs");
     updateJobPill(jobs);
+    renderDone(jobs);
     const running = jobs.some(j=>j.running);
     $("#btnReindex").disabled = running || $("#btnReindex").disabled;
     // «Отменить пересчёт» — жаргонная красная кнопка читалась как «выключить
