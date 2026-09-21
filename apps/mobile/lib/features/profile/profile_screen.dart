@@ -1,8 +1,10 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/apple.dart';
 import '../../core/crash_log.dart';
 import '../../core/net_hint.dart';
 import '../../core/notice.dart';
@@ -13,37 +15,56 @@ import '../admin/admin_screen.dart';
 import '../sync/sync_offer_card.dart';
 import '../settings/settings_screen.dart';
 
-/// Профиль: синхронизация, статистика, настройки. Статистика и настройки —
-/// заглушки, приедут своими шагами.
+/// Профиль: синхронизация, статистика, настройки. Оформление — как «Настройки»
+/// на iPhone (Alex TG 20345, 21.09.2026): крупный заголовок, который при
+/// прокрутке сворачивается, и сгруппированные ряды на серых плашках.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Профиль')),
-      body: ListView(
-        children: [
-          const _CrashCard(),
-          const SyncOfferCard(showIdle: true),
-          _Row(
-            icon: Icons.dns_outlined,
-            title: 'Сервер',
-            subtitle: 'связь с компьютером, полный сброс',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: AppleLargeTitle('Профиль'),
             ),
-          ),
-          _Row(
-            icon: Icons.settings_outlined,
-            title: 'Настройки',
-            subtitle: 'адрес сервера, журнал',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            const _CrashCard(),
+            const SyncOfferCard(showIdle: true),
+            const SizedBox(height: 18),
+            AppleSection(
+              dividerInset: 58,
+              children: [
+                AppleRow(
+                  icon: CupertinoIcons.desktopcomputer,
+                  iconBg: Afisha.blue,
+                  title: 'Сервер',
+                  subtitle: 'связь с компьютером, полный сброс',
+                  chevron: true,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
+                  ),
+                ),
+                AppleRow(
+                  icon: CupertinoIcons.gear_solid,
+                  iconBg: Afisha.gray,
+                  title: 'Настройки',
+                  subtitle: 'адрес сервера, журнал',
+                  chevron: true,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const _UpdateRow(),
-        ],
+            const SizedBox(height: 22),
+            const AppleSection(dividerInset: 58, children: [_UpdateRow()]),
+            const SizedBox(height: 28),
+          ],
+        ),
       ),
     );
   }
@@ -113,37 +134,23 @@ class _CrashCardState extends ConsumerState<_CrashCard> {
   Widget build(BuildContext context) {
     final text = _text;
     if (text == null) return const SizedBox.shrink();
-    return Container(
-      color: const Color(0x33FF5252),
-      child: ListTile(
-        leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF5252)),
-        title: const Text('Приложение падало'),
-        // Человеческая строка вместо сырого стека (Опус-ревью телефона
-        // 14.09.2026, пункт 2) — сам текст сбоя всё ещё доступен по тапу.
-        subtitle: const Text('Есть запись о сбое — тапни, чтобы посмотреть или отправить',
-            style: TextStyle(color: Afisha.inkDim)),
-        trailing: const Icon(Icons.chevron_right, color: Afisha.line),
-        onTap: _open,
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: AppleSection(
+        dividerInset: 58,
+        children: [
+          AppleRow(
+            icon: CupertinoIcons.exclamationmark_triangle_fill,
+            iconBg: Afisha.red,
+            title: 'Приложение падало',
+            // Человеческая строка вместо сырого стека (Опус-ревью телефона
+            // 14.09.2026, пункт 2) — сам текст сбоя всё ещё доступен по тапу.
+            subtitle: 'Есть запись о сбое — тапни, чтобы посмотреть или отправить',
+            chevron: true,
+            onTap: _open,
+          ),
+        ],
       ),
-    );
-  }
-}
-
-class _Row extends StatelessWidget {
-  const _Row({required this.icon, required this.title, required this.subtitle, this.onTap});
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: Afisha.inkDim),
-      title: Text(title),
-      subtitle: Text(subtitle, style: const TextStyle(color: Afisha.inkDim)),
-      trailing: const Icon(Icons.chevron_right, color: Afisha.line),
-      onTap: onTap,
     );
   }
 }
@@ -202,17 +209,20 @@ class _UpdateRowState extends State<_UpdateRow> {
   Widget build(BuildContext context) {
     final u = _available;
     if (u == null) {
-      return _Row(
-        icon: Icons.info_outline,
+      return AppleRow(
+        icon: CupertinoIcons.info,
+        iconBg: Afisha.gray,
         title: 'О программе',
-        subtitle: 'установлена $_installed',
+        value: _installed,
         onTap: _busy ? null : _load,
       );
     }
-    return _Row(
-      icon: Icons.system_update_outlined,
+    return AppleRow(
+      icon: CupertinoIcons.arrow_down_circle_fill,
+      iconBg: Afisha.green,
       title: _busy ? 'Скачивание…' : 'Доступно обновление v${u.versionCode}',
       subtitle: u.changelog.isEmpty ? 'нажми, чтобы поставить' : u.changelog,
+      chevron: !_busy,
       onTap: _busy ? null : _install,
     );
   }

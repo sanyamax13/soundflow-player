@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +9,7 @@ import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/format.dart';
 import '../../core/notice.dart';
+import '../../core/apple.dart';
 import '../../core/theme.dart';
 import '../../core/removal_reasons.dart';
 import '../../data/db.dart';
@@ -456,62 +458,54 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     final searching = _searchCtl.text.trim().isNotEmpty;
     final n = _onlyFav ? (_items?.length ?? 0) : _count;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Моя музыка'),
-        scrolledUnderElevation: 0,
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_items != null)
-                  Text(
-                    _onlyFav
-                        ? '${fmtInt(n)} ${songWord(n)} в избранном'
-                        : '${fmtInt(n)} ${songWord(n)} на телефоне',
-                    style: const TextStyle(
-                      color: Afisha.inkDim,
-                      fontSize: 12.5,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const AppleLargeTitle('Моя музыка'),
+                  if (_items != null)
+                    Text(
+                      _onlyFav
+                          ? '${fmtInt(n)} ${songWord(n)} в избранном'
+                          : '${fmtInt(n)} ${songWord(n)} на телефоне',
+                      style: const TextStyle(
+                        color: Afisha.inkDim,
+                        fontSize: 12.5,
+                      ),
                     ),
+                  const SizedBox(height: 8),
+                  _searchField(),
+                  const SizedBox(height: 8),
+                  AppleSegmented<bool>(
+                    options: const {false: 'Все', true: 'Избранное'},
+                    selected: _onlyFav,
+                    onChanged: (v) {
+                      setState(() => _onlyFav = v);
+                      _refresh();
+                    },
                   ),
-                const SizedBox(height: 8),
-                _searchField(),
-                const SizedBox(height: 8),
-                SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity(horizontal: -2, vertical: -2),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Все')),
-                    ButtonSegment(value: true, label: Text('Избранное')),
-                  ],
-                  selected: {_onlyFav},
-                  onSelectionChanged: (s) {
-                    setState(() => _onlyFav = s.first);
-                    _refresh();
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SyncOfferCard(),
-          const Divider(height: 1, color: Afisha.line),
-          Expanded(
-            child: _items == null
-                ? const Center(child: CircularProgressIndicator())
-                : searching
-                ? _searchResults()
-                : (_folders.isEmpty && _broken.isEmpty)
-                ? _empty()
-                : _alphabetList(),
-          ),
-        ],
+            const SyncOfferCard(),
+            const Divider(height: 0.5, thickness: 0.5, color: Afisha.sep),
+            Expanded(
+              child: _items == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : searching
+                  ? _searchResults()
+                  : (_folders.isEmpty && _broken.isEmpty)
+                  ? _empty()
+                  : _alphabetList(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -527,16 +521,26 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       fillColor: Afisha.surfaceHi,
       hintText: 'Поиск: песня или исполнитель',
       hintStyle: const TextStyle(color: Afisha.inkDim, fontSize: 15),
-      prefixIcon: const Icon(Icons.search, color: Afisha.inkDim, size: 22),
+      prefixIcon: const Icon(
+        CupertinoIcons.search,
+        color: Afisha.inkDim,
+        size: 19,
+      ),
       suffixIcon: _searchCtl.text.isEmpty
           ? null
           : IconButton(
-              icon: const Icon(Icons.close, color: Afisha.inkDim, size: 20),
+              icon: const Icon(
+                CupertinoIcons.xmark_circle_fill,
+                color: Afisha.inkDim,
+                size: 18,
+              ),
               onPressed: () => setState(_searchCtl.clear),
             ),
-      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+      suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide.none,
       ),
     ),
@@ -719,39 +723,52 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     child: Container(
       height: _kRowH,
       padding: const EdgeInsets.only(left: 16, right: 4),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Afisha.line)),
-      ),
-      child: Row(
+      // Разделитель как в iOS: тонкая линия, начинается от текста, а не от края экрана.
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          leading,
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Afisha.inkDim, fontSize: 13),
-                ),
-              ],
-            ),
+          const Positioned(
+            left: 62,
+            right: -4,
+            bottom: 0,
+            height: 0.5,
+            child: ColoredBox(color: Afisha.sep),
           ),
-          if (trailing != null) trailing,
+          Row(
+            children: [
+              leading,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Afisha.inkDim,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
         ],
       ),
     ),
@@ -769,7 +786,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     title: f.display,
     subtitle: '${f.count} ${songWord(f.count)}',
     trailing: PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: Afisha.inkDim),
+      icon: const Icon(CupertinoIcons.ellipsis, color: Afisha.inkDim, size: 22),
       onSelected: (v) {
         switch (v) {
           case 'play':
@@ -817,13 +834,17 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
         visualDensity: VisualDensity.compact,
         onPressed: () => _toggleFav(t),
         icon: Icon(
-          t.favorite ? Icons.favorite : Icons.favorite_border,
+          t.favorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
           color: t.favorite ? Afisha.lime : Afisha.inkDim,
           size: 22,
         ),
       ),
       PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, color: Afisha.inkDim),
+        icon: const Icon(
+          CupertinoIcons.ellipsis,
+          color: Afisha.inkDim,
+          size: 22,
+        ),
         onSelected: (v) {
           switch (v) {
             case 'fav':
@@ -910,7 +931,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       child: Row(
         children: [
           const Icon(
-            Icons.report_gmailerrorred,
+            CupertinoIcons.exclamationmark_circle,
             color: Afisha.inkDim,
             size: 18,
           ),
@@ -925,7 +946,11 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
               ),
             ),
           ),
-          const Icon(Icons.chevron_right, color: Afisha.inkDim),
+          const Icon(
+            CupertinoIcons.chevron_forward,
+            color: Afisha.chevron,
+            size: 15,
+          ),
         ],
       ),
     ),
@@ -1005,7 +1030,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                     _deleteBroken(t);
                   },
                   icon: const Icon(
-                    Icons.delete_outline,
+                    CupertinoIcons.trash,
                     color: Afisha.inkDim,
                     size: 20,
                   ),
@@ -1025,7 +1050,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       appBar: AppBar(
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(CupertinoIcons.back, size: 30),
           onPressed: () => setState(() => _openKey = null),
         ),
         title: Text(
@@ -1058,7 +1083,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                             onPressed: tracks.isEmpty
                                 ? null
                                 : () => _playList(tracks, 0),
-                            icon: const Icon(Icons.play_arrow, size: 20),
+                            icon: const Icon(
+                              CupertinoIcons.play_fill,
+                              size: 16,
+                            ),
                             label: const Text('Играть всё'),
                             style: TextButton.styleFrom(
                               foregroundColor: Afisha.lime,
@@ -1068,7 +1096,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                             onPressed: tracks.isEmpty
                                 ? null
                                 : () => _playList(tracks, 0, shuffle: true),
-                            icon: const Icon(Icons.shuffle, size: 18),
+                            icon: const Icon(CupertinoIcons.shuffle, size: 18),
                             label: const Text('Вперемешку'),
                             style: TextButton.styleFrom(
                               foregroundColor: Afisha.inkDim,
@@ -1082,7 +1110,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
               ],
             ),
           ),
-          const Divider(height: 1, color: Afisha.line),
+          const Divider(height: 0.5, thickness: 0.5, color: Afisha.sep),
           Expanded(
             child: ListView.builder(
               itemCount: tracks.length,

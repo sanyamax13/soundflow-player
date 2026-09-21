@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/apple.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/sync_offer.dart';
@@ -36,11 +38,9 @@ class SyncOfferCard extends ConsumerWidget {
     margin: const EdgeInsets.fromLTRB(16, 10, 16, 6),
     padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
     decoration: BoxDecoration(
-      color: red ? _red.withValues(alpha: 0.10) : Afisha.surfaceHi,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(
-        color: red ? _red.withValues(alpha: 0.55) : Afisha.line,
-      ),
+      color: red ? _red.withValues(alpha: 0.14) : Afisha.groupBg,
+      borderRadius: BorderRadius.circular(12),
+      border: red ? Border.all(color: _red.withValues(alpha: 0.55), width: 0.5) : null,
     ),
     child: child,
   );
@@ -52,8 +52,8 @@ class SyncOfferCard extends ConsumerWidget {
       rows.add(
         _row(
           icon: o.lowSpace
-              ? Icons.priority_high_rounded
-              : Icons.download_rounded,
+              ? CupertinoIcons.exclamationmark
+              : CupertinoIcons.cloud_download_fill,
           tileBg: o.lowSpace ? _red : Afisha.lime,
           tileFg: o.lowSpace ? Colors.white : Colors.black,
           title: o.addTitle,
@@ -75,7 +75,7 @@ class SyncOfferCard extends ConsumerWidget {
       }
       rows.add(
         _row(
-          icon: Icons.delete_outline_rounded,
+          icon: CupertinoIcons.trash_fill,
           tileBg: const Color(0xFF3A3A3C),
           tileFg: Colors.white,
           title: o.removeTitle,
@@ -107,9 +107,9 @@ class SyncOfferCard extends ConsumerWidget {
           height: 40,
           decoration: BoxDecoration(
             color: tileBg,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(9),
           ),
-          child: Icon(icon, color: tileFg, size: 23),
+          child: Icon(icon, color: tileFg, size: 21),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -175,7 +175,7 @@ class SyncOfferCard extends ConsumerWidget {
               height: 40,
               decoration: BoxDecoration(
                 color: Afisha.lime,
-                borderRadius: BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(9),
               ),
               child: const Padding(
                 padding: EdgeInsets.all(10),
@@ -241,16 +241,22 @@ class SyncOfferCard extends ConsumerWidget {
       String two(int n) => n.toString().padLeft(2, '0');
       text = 'Всё на месте · проверено в ${two(t.hour)}:${two(t.minute)}';
     }
-    return ListTile(
-      leading: Icon(
-        o.lastCheckFailed
-            ? Icons.cloud_off_outlined
-            : Icons.check_circle_outline,
-        color: Afisha.inkDim,
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: AppleSection(
+        dividerInset: 58,
+        children: [
+          AppleRow(
+            icon: o.lastCheckFailed
+                ? CupertinoIcons.wifi_slash
+                : CupertinoIcons.arrow_2_circlepath,
+            iconBg: o.lastCheckFailed ? Afisha.red : Afisha.green,
+            title: 'Музыка с компьютера',
+            subtitle: text,
+            onTap: () => o.refresh(announce: false),
+          ),
+        ],
       ),
-      title: const Text('Музыка с компьютера'),
-      subtitle: Text(text, style: const TextStyle(color: Afisha.inkDim)),
-      onTap: () => o.refresh(announce: false),
     );
   }
 }

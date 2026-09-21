@@ -1,6 +1,8 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../../core/app_log.dart';
+import '../../core/apple.dart';
 import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../profile/server_url_screen.dart';
@@ -20,15 +22,23 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Настройки')),
       body: ListView(
+        padding: const EdgeInsets.only(top: 8, bottom: 24),
         children: [
-          const _LogCard(),
-          _Row(
-            icon: Icons.lan_outlined,
-            title: 'Адрес сервера',
-            subtitle: apiBase.replaceFirst('http://', ''),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
-            ),
+          AppleSection(
+            dividerInset: 58,
+            children: [
+              AppleRow(
+                icon: CupertinoIcons.wifi,
+                iconBg: Afisha.blue,
+                title: 'Адрес сервера',
+                subtitle: apiBase.replaceFirst('http://', ''),
+                chevron: true,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
+                ),
+              ),
+              const _LogCard(),
+            ],
           ),
         ],
       ),
@@ -94,34 +104,13 @@ class _LogCardState extends State<_LogCard> {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.receipt_long_outlined, color: Afisha.inkDim),
-      title: const Text('Журнал'),
-      subtitle: Text(
-        _text == null ? 'пока пусто' : 'есть записи за последние часы — тапни, чтобы посмотреть',
-        style: const TextStyle(color: Afisha.inkDim),
-      ),
-      trailing: const Icon(Icons.chevron_right, color: Afisha.line),
+    return AppleRow(
+      icon: CupertinoIcons.doc_text,
+      iconBg: Afisha.gray,
+      title: 'Журнал',
+      subtitle: _text == null ? 'пока пусто' : 'есть записи за последние часы — тапни, чтобы посмотреть',
+      chevron: true,
       onTap: _open,
-    );
-  }
-}
-
-class _Row extends StatelessWidget {
-  const _Row({required this.icon, required this.title, required this.subtitle, this.onTap});
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: Afisha.inkDim),
-      title: Text(title),
-      subtitle: Text(subtitle, style: const TextStyle(color: Afisha.inkDim)),
-      trailing: const Icon(Icons.chevron_right, color: Afisha.line),
-      onTap: onTap,
     );
   }
 }

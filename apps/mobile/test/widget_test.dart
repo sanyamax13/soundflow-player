@@ -122,9 +122,9 @@ void main() {
 
     await tester.tap(find.text('Сервер'));
     await tester.pumpAndSettle();
-    expect(find.text('ЧТО УХОДИТ НА КОМПЬЮТЕР'), findsOneWidget);
-    expect(find.text('СВЯЗЬ С КОМПЬЮТЕРОМ'), findsOneWidget);
-    expect(find.text('БОЛЬШЕ НЕ КАЧАТЬ'), findsNothing);
+    expect(find.text('Что уходит на компьютер'), findsOneWidget);
+    expect(find.text('Связь с компьютером'), findsOneWidget);
+    expect(find.text('Больше не качать'), findsNothing);
     expect(find.text('Компьютер на связи'), findsOneWidget);
   });
 

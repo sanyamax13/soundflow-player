@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/cupertino.dart' show CupertinoScrollBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -164,6 +165,8 @@ class SoundFlowApp extends StatelessWidget {
       title: 'SoundFlow',
       debugShowCheckedModeBanner: false,
       theme: Afisha.theme(),
+      // Прокрутка как на iPhone: списки чуть «пружинят» на краях (Alex TG 20345).
+      scrollBehavior: const CupertinoScrollBehavior(),
       navigatorKey: rootNavigatorKey,
       // Плашка сообщений (core/notice.dart) — над всеми экранами и окнами.
       builder: (context, child) =>

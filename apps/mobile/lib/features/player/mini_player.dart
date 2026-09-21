@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoPageRoute;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
@@ -6,8 +8,11 @@ import '../../core/theme.dart';
 import 'now_playing_screen.dart';
 import 'player_controller.dart';
 
-/// Полоска плеера над нижними вкладками. Видна, когда что-то загружено.
-/// Тап по полоске открывает полный экран плеера.
+/// Плашка плеера над нижними вкладками. Видна, когда что-то загружено.
+/// Тап по плашке открывает полный экран плеера (выезжает снизу, как в Apple
+/// Music). Оформление «как у Apple» (Alex TG 20345, 21.09.2026): скруглённая
+/// серая плашка с небольшим отступом от краёв, обложка со скруглением 8,
+/// значки «play / пауза / вперёд» из набора Cupertino.
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key, required this.controller});
 
@@ -19,8 +24,8 @@ class MiniPlayer extends StatelessWidget {
       valueListenable: controller.now,
       builder: (context, now, _) {
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          switchInCurve: Curves.easeOut,
+          duration: const Duration(milliseconds: 260),
+          switchInCurve: const Cubic(0.32, 0.72, 0, 1),
           switchOutCurve: Curves.easeIn,
           transitionBuilder: (child, anim) => SizeTransition(
             sizeFactor: anim,
@@ -35,57 +40,73 @@ class MiniPlayer extends StatelessWidget {
   }
 
   Widget _bar(BuildContext context, NowPlaying now) {
-    return Material(
-          key: const ValueKey('mp-bar'),
-          color: Afisha.surfaceHi,
-          child: InkWell(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const NowPlayingScreen()),
+    return Padding(
+      key: const ValueKey('mp-bar'),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      child: Material(
+        color: Afisha.groupHi,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            CupertinoPageRoute<void>(
+              fullscreenDialog: true,
+              builder: (_) => const NowPlayingScreen(),
             ),
-            child: Container(
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Afisha.line)),
-              ),
-              padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-              child: Row(
-                children: [
-                  CoverThumb(path: now.coverPath, url: coverUrlFor(now.id), size: 40),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(now.title,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CoverThumb(path: now.coverPath, url: coverUrlFor(now.id), size: 42),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(now.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Afisha.ink,
+                              fontSize: 15,
+                              letterSpacing: -0.3,
+                              fontWeight: FontWeight.w600)),
+                      if (now.artist.isNotEmpty)
+                        Text(now.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                color: Afisha.ink, fontWeight: FontWeight.w600)),
-                        if (now.artist.isNotEmpty)
-                          Text(now.artist,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Afisha.inkDim, fontSize: 12)),
-                      ],
-                    ),
+                                color: Afisha.inkDim, fontSize: 12.5, letterSpacing: -0.1)),
+                    ],
                   ),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: controller.playing,
-                    builder: (context, playing, _) => IconButton(
-                      onPressed: controller.toggle,
-                      icon: Icon(playing ? Icons.pause : Icons.play_arrow, color: Afisha.lime),
-                      iconSize: 32,
-                    ),
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: controller.playing,
+                  builder: (context, playing, _) => IconButton(
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      controller.toggle();
+                    },
+                    icon: Icon(playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+                        color: Afisha.ink),
+                    iconSize: 26,
                   ),
-                  IconButton(
-                    onPressed: controller.next,
-                    icon: const Icon(Icons.skip_next, color: Afisha.ink),
-                    iconSize: 28,
-                  ),
-                ],
-              ),
+                ),
+                IconButton(
+                  onPressed: controller.next,
+                  icon: const Icon(CupertinoIcons.forward_fill, color: Afisha.ink),
+                  iconSize: 26,
+                ),
+              ],
             ),
           ),
-        );
+        ),
+      ),
+    );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -466,7 +467,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             if (widget.onDismiss != null)
               IconButton(
                 onPressed: widget.onDismiss,
-                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                icon: const Icon(CupertinoIcons.chevron_down, color: Colors.white, size: 24),
               )
             else
               const SizedBox(width: 12),
@@ -479,8 +480,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             const Spacer(),
             IconButton(
               onPressed: () => setState(() => _showHelp = true),
-              icon: Icon(Icons.help_outline,
-                  color: Colors.white.withValues(alpha: 0.75), size: 20),
+              icon: Icon(CupertinoIcons.question_circle,
+                  color: Colors.white.withValues(alpha: 0.75), size: 22),
             ),
             // Раньше был GestureDetector впритык к тексту — тап-зона выходила
             // мельче, чем сам значок рядом («?»), и Alex не мог понять, вся
@@ -584,9 +585,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            iconSize: 40,
+            iconSize: 34,
             color: Colors.white,
-            icon: const Icon(Icons.skip_previous),
+            icon: const Icon(CupertinoIcons.backward_fill),
             onPressed: _p.prev,
           ),
           const SizedBox(width: 14),
@@ -597,33 +598,33 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               child: Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: Afisha.lime,
-                  borderRadius: BorderRadius.circular(22),
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(pl ? Icons.pause : Icons.play_arrow,
-                    color: Colors.black, size: 34),
+                child: Icon(pl ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+                    color: Colors.black, size: 30),
               ),
             ),
           ),
           const SizedBox(width: 14),
           IconButton(
-            iconSize: 40,
+            iconSize: 34,
             color: Colors.white,
-            icon: const Icon(Icons.skip_next),
+            icon: const Icon(CupertinoIcons.forward_fill),
             onPressed: _p.next,
           ),
           const SizedBox(width: 10),
           IconButton(
             iconSize: 26,
-            icon: Icon(_fav ? Icons.favorite : Icons.favorite_border,
+            icon: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
                 color: _fav ? Afisha.lime : Colors.white70),
             onPressed: _toggleFavButton,
           ),
           Builder(
             builder: (context) => IconButton(
               iconSize: 24,
-              icon: const Icon(Icons.delete_outline, color: Colors.white70),
+              icon: const Icon(CupertinoIcons.trash, color: Colors.white70),
               onPressed: () {
                 final now = _p.now.value;
                 if (now != null) _confirmDelete(now);
@@ -665,7 +666,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             const SizedBox(height: 10),
             Row(
               children: [
-                const Icon(Icons.queue_music, color: Colors.white54, size: 18),
+                const Icon(CupertinoIcons.list_bullet, color: Colors.white54, size: 18),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text('Дальше: $nextTitle',
@@ -674,7 +675,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                       style: const TextStyle(
                           color: Colors.white, fontSize: 13.5)),
                 ),
-                const Icon(Icons.keyboard_arrow_up, color: Colors.white54),
+                const Icon(CupertinoIcons.chevron_up, color: Colors.white54, size: 18),
               ],
             ),
           ],
@@ -696,7 +697,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 opacity: opacity.clamp(0, 1),
                 child: Transform.scale(
                   scale: scale,
-                  child: const Icon(Icons.favorite,
+                  child: const Icon(CupertinoIcons.heart_fill,
                       color: Afisha.lime, size: 120),
                 ),
               );
@@ -772,7 +773,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.close,
+                                  icon: const Icon(CupertinoIcons.xmark,
                                       color: Afisha.inkDim, size: 20),
                                   onPressed: () {
                                     _p.removeFromQueue(e.key);
@@ -781,7 +782,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                                 ),
                                 ReorderableDragStartListener(
                                   index: x,
-                                  child: const Icon(Icons.drag_handle,
+                                  child: const Icon(CupertinoIcons.line_horizontal_3,
                                       color: Afisha.inkDim),
                                 ),
                               ],
@@ -937,12 +938,12 @@ class _HelpOverlay extends StatelessWidget {
                 const Text('Всё управление — по обложке',
                     style: TextStyle(color: Afisha.inkDim, fontSize: 12)),
                 const SizedBox(height: 14),
-                row(Icons.touch_app, 'Тап', 'пауза или играть'),
-                row(Icons.swipe, 'Смахнуть вбок', 'следующая / предыдущая песня'),
-                row(Icons.keyboard_arrow_up, 'Смахнуть вверх', 'очередь «Дальше»'),
-                row(Icons.keyboard_arrow_down, 'Смахнуть вниз', 'свернуть плеер'),
-                row(Icons.more_horiz, 'Вести по точкам', 'перемотка'),
-                row(Icons.delete_outline, 'Урна внизу',
+                row(CupertinoIcons.hand_point_right, 'Тап', 'пауза или играть'),
+                row(CupertinoIcons.arrow_left_right, 'Смахнуть вбок', 'следующая / предыдущая песня'),
+                row(CupertinoIcons.chevron_up, 'Смахнуть вверх', 'очередь «Дальше»'),
+                row(CupertinoIcons.chevron_down, 'Смахнуть вниз', 'свернуть плеер'),
+                row(CupertinoIcons.ellipsis, 'Вести по точкам', 'перемотка'),
+                row(CupertinoIcons.trash, 'Урна внизу',
                     'убрать песню с телефона совсем (спросит причину)'),
                 const SizedBox(height: 16),
                 Align(

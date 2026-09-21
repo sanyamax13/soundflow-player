@@ -1,8 +1,10 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/apple.dart';
 import '../../core/net_hint.dart';
 import '../../core/notice.dart';
 import '../../core/theme.dart';
@@ -80,35 +82,23 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     );
   }
 
-  Widget _connectivityRow() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.circle,
-                    color: _reachable ? Afisha.lime : Colors.redAccent, size: 12),
-                const SizedBox(width: 8),
-                Text(
-                  _reachable ? 'Компьютер на связи' : 'Компьютер недоступен',
-                  style: const TextStyle(fontSize: 16, color: Afisha.ink),
-                ),
-              ],
-            ),
-            if (!_reachable) ...[
-              const SizedBox(height: 6),
-              const Text(kServerUnreachableHint,
-                  style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 12.5)),
-              const SizedBox(height: 8),
-              TextButton(onPressed: _load, child: const Text('Проверить связь')),
-            ],
-          ],
-        ),
-      );
+  Widget _connectivityRow() => AppleRow(
+    icon: CupertinoIcons.desktopcomputer,
+    iconBg: _reachable ? Afisha.green : Afisha.red,
+    title: _reachable ? 'Компьютер на связи' : 'Компьютер недоступен',
+    subtitle: _reachable ? null : kServerUnreachableHint,
+  );
 
-  Widget _syncBlock() {
+  String _syncTitle() {
     final pending = _pending;
+    return pending == null
+        ? '…'
+        : pending == 0
+        ? 'Всё отправлено'
+        : 'Ждут отправки: $pending';
+  }
+
+  String _lastSyncText() {
     String fmt(DateTime? d) {
       if (d == null) return 'ещё не было';
       final l = d.toLocal();
@@ -116,56 +106,60 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       return '${two(l.day)}.${two(l.month)}.${l.year} ${two(l.hour)}:${two(l.minute)}';
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            pending == null
-                ? '…'
-                : pending == 0
-                    ? 'Всё отправлено'
-                    : 'Ждут отправки: $pending',
-            style: const TextStyle(fontSize: 20, color: Afisha.ink),
-          ),
-          const SizedBox(height: 4),
-          Text('Последняя синхронизация: ${fmt(_lastSync)}',
-              style: const TextStyle(color: Afisha.inkDim)),
-          const SizedBox(height: 8),
-          const Text(
-            'Лайки, удаления и что слушал копятся на телефоне и работают без '
-            'сети. Уходят на компьютер сами, как только появляется связь.',
-            style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 12.5),
-          ),
-        ],
-      ),
-    );
+    return 'Последняя синхронизация: ${fmt(_lastSync)}';
   }
 
   Widget _body() {
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 24),
       children: [
-        _section('Связь с компьютером'),
-        _connectivityRow(),
-        _section('Что уходит на компьютер'),
-        _syncBlock(),
-        // «Полный сброс» лежал рядом с обычной синхронизацией, в два тапа от «стереть всю музыку» (ревизия 20.09.2026,
-        // пункт «убрать вглубь»): теперь спрятан за «Показать опасное», случайно не нажмёшь.
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            key: const Key('danger-zone'),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-            iconColor: Afisha.inkDim,
-            collapsedIconColor: Afisha.inkDim,
-            title: const Text('Показать опасное',
-                style: TextStyle(color: Afisha.inkDim, fontSize: 14)),
-            children: [_resetBlock()],
-          ),
+        AppleSection(
+          header: 'Связь с компьютером',
+          dividerInset: 58,
+          children: [
+            _connectivityRow(),
+            if (!_reachable) AppleRow(title: 'Проверить связь', onTap: _load),
+          ],
         ),
         const SizedBox(height: 24),
+        AppleSection(
+          header: 'Что уходит на компьютер',
+          footer:
+              'Лайки, удаления и что слушал копятся на телефоне и работают без '
+              'сети. Уходят на компьютер сами, как только появляется связь.',
+          children: [AppleRow(title: _syncTitle(), subtitle: _lastSyncText())],
+        ),
+        const SizedBox(height: 24),
+        // «Полный сброс» лежал рядом с обычной синхронизацией, в два тапа от «стереть всю музыку» (ревизия 20.09.2026,
+        // пункт «убрать вглубь»): теперь спрятан за «Показать опасное», случайно не нажмёшь.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Material(
+            color: Afisha.groupBg,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                key: const Key('danger-zone'),
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                iconColor: Afisha.inkDim,
+                collapsedIconColor: Afisha.inkDim,
+                title: const Text(
+                  'Показать опасное',
+                  style: TextStyle(
+                    color: Afisha.inkDim,
+                    fontSize: 17,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                children: [_resetBlock()],
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -178,7 +172,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
   Widget _resetBlock() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -186,18 +180,32 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             'Сотрёт всю музыку, лайки и историю на ЭТОМ телефоне — будет как '
             'после первой установки. На сервере (комп) и на других '
             'устройствах ничего не меняется. Отменить нельзя.',
-            style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 12.5),
+            style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 13),
           ),
           const SizedBox(height: 12),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
-            onPressed: _resetBusy ? null : _confirmReset,
-            child: _resetBusy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Полный сброс'),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Afisha.red,
+                minimumSize: const Size(0, 46),
+                side: BorderSide(
+                  color: Afisha.red.withValues(alpha: 0.5),
+                  width: 0.5,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: _resetBusy ? null : _confirmReset,
+              child: _resetBusy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Полный сброс'),
+            ),
           ),
         ],
       ),
@@ -214,10 +222,16 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           'Отменить нельзя.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Стереть всё', style: TextStyle(color: Colors.redAccent)),
+            child: const Text(
+              'Стереть всё',
+              style: TextStyle(color: Afisha.red),
+            ),
           ),
         ],
       ),
@@ -227,7 +241,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     setState(() => _resetBusy = true);
     try {
       await downloads.fullReset();
-      Notice.show('Готово', subtitle: 'Телефон как новый', kind: NoticeKind.done);
+      Notice.show(
+        'Готово',
+        subtitle: 'Телефон как новый',
+        kind: NoticeKind.done,
+      );
     } catch (e) {
       Notice.show('Не вышло', subtitle: '$e', kind: NoticeKind.error);
     } finally {
@@ -235,11 +253,4 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       await _load();
     }
   }
-
-  Widget _section(String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-        child: Text(title.toUpperCase(),
-            style: const TextStyle(
-                color: Afisha.lime, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1)),
-      );
 }

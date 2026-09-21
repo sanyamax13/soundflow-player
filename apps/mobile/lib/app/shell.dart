@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
@@ -11,6 +13,8 @@ import 'providers.dart';
 /// Каркас приложения. Вкладки (решение Alex 04.09.2026): Поток · Моя музыка ·
 /// Профиль. Настройки — внутри профиля. Чарты и альбомы убраны.
 /// Мини-плеер над вкладками — кроме «Потока», там и так плеер на весь экран.
+/// Нижнее меню — как в iPhone (Alex TG 20345, 21.09.2026): значки Cupertino,
+/// подпись 10 pt, выбранная вкладка — лаймовая и «заливкой».
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
 
@@ -22,7 +26,16 @@ class _ShellState extends ConsumerState<Shell> {
   int _tab = 0;
 
   static const _labels = ['Поток', 'Моя музыка', 'Профиль'];
-  static const _icons = [Icons.graphic_eq, Icons.library_music_outlined, Icons.person_outline];
+  static const _icons = [
+    CupertinoIcons.dot_radiowaves_left_right,
+    CupertinoIcons.music_albums,
+    CupertinoIcons.person_crop_circle,
+  ];
+  static const _iconsOn = [
+    CupertinoIcons.dot_radiowaves_left_right,
+    CupertinoIcons.music_albums_fill,
+    CupertinoIcons.person_crop_circle_fill,
+  ];
 
   // Экран строим только когда вкладку открыли — не дёргаем сеть на старте.
   Widget _screen(int i) => switch (i) {
@@ -30,6 +43,12 @@ class _ShellState extends ConsumerState<Shell> {
         2 => const ProfileScreen(),
         _ => const StreamScreen(),
       };
+
+  void _select(int i) {
+    if (i == _tab) return;
+    HapticFeedback.selectionClick();
+    setState(() => _tab = i);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,16 +64,115 @@ class _ShellState extends ConsumerState<Shell> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_tab != 0) MiniPlayer(controller: ref.read(playerProvider)),
-          NavigationBar(
-            backgroundColor: onStream ? Colors.transparent : Afisha.surface,
-            selectedIndex: _tab,
-            onDestinationSelected: (i) => setState(() => _tab = i),
-            destinations: [
-              for (var i = 0; i < _labels.length; i++)
-                NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
-            ],
+          _AppleTabBar(
+            selected: _tab,
+            transparent: onStream,
+            onSelect: _select,
+            labels: _labels,
+            icons: _icons,
+            iconsOn: _iconsOn,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Нижнее меню в стиле iOS: тонкая линия сверху, значок 26 pt и подпись 10 pt.
+/// Свою «стеклянность» не рисуем: под меню нет прокручиваемого содержимого,
+/// размывать нечего.
+class _AppleTabBar extends StatelessWidget {
+  const _AppleTabBar({
+    required this.selected,
+    required this.transparent,
+    required this.onSelect,
+    required this.labels,
+    required this.icons,
+    required this.iconsOn,
+  });
+
+  final int selected;
+  final bool transparent;
+  final ValueChanged<int> onSelect;
+  final List<String> labels;
+  final List<IconData> icons;
+  final List<IconData> iconsOn;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      padding: EdgeInsets.only(bottom: bottom),
+      decoration: BoxDecoration(
+        color: transparent ? Colors.transparent : const Color(0xFF121214),
+        border: Border(
+          top: BorderSide(
+            color: transparent ? Colors.transparent : const Color(0xFF2A2A2D),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              Expanded(
+                child: _TabItem(
+                  label: labels[i],
+                  icon: i == selected ? iconsOn[i] : icons[i],
+                  on: i == selected,
+                  onTap: () => onSelect(i),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabItem extends StatelessWidget {
+  const _TabItem({
+    required this.label,
+    required this.icon,
+    required this.on,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = on ? Afisha.lime : Afisha.gray;
+    return Semantics(
+      button: true,
+      selected: on,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 26, color: color),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.1,
+                color: color,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

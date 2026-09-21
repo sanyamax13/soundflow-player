@@ -1,0 +1,299 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'theme.dart';
+
+/// Общие кирпичики оформления «как у Apple» (Alex TG 20345, 21.09.2026):
+/// сгруппированный список на серых плашках, ряд с цветным значком, переключатель
+/// «сегменты». Цвета и радиусы — из [Afisha] (тёмная тема iOS).
+
+/// Крупный заголовок экрана вкладки, как в iOS (34 pt, жирный). Отступы —
+/// на стороне экрана: у всех вкладок заголовок стоит на одном и том же месте.
+class AppleLargeTitle extends StatelessWidget {
+  const AppleLargeTitle(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: const TextStyle(
+      fontSize: 34,
+      height: 1.15,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.6,
+      color: Afisha.ink,
+    ),
+  );
+}
+
+/// Группа рядов на скруглённой серой плашке с тонкими разделителями,
+/// сверху необязательная подпись, снизу — пояснение (как в «Настройках» iPhone).
+class AppleSection extends StatelessWidget {
+  const AppleSection({
+    super.key,
+    required this.children,
+    this.header,
+    this.footer,
+    this.dividerInset = 16,
+  });
+
+  final List<Widget> children;
+  final String? header;
+  final String? footer;
+
+  /// Отступ разделителя слева: 16 для рядов без значка, 58 — со значком.
+  final double dividerInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) {
+        rows.add(
+          Divider(
+            height: 0.5,
+            thickness: 0.5,
+            indent: dividerInset,
+            color: Afisha.sep,
+          ),
+        );
+      }
+      rows.add(children[i]);
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (header != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 7),
+              child: Text(
+                header!,
+                style: const TextStyle(
+                  color: Afisha.inkDim,
+                  fontSize: 13,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ),
+          Material(
+            color: Afisha.groupBg,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: rows),
+          ),
+          if (footer != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 7, 16, 0),
+              child: Text(
+                footer!,
+                style: const TextStyle(
+                  color: Afisha.inkDim,
+                  fontSize: 13,
+                  height: 1.3,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ряд списка: цветной значок-квадрат слева, заголовок, пояснение или значение
+/// справа и стрелка «>», если ряд открывает экран. Нажатие — серое затемнение.
+class AppleRow extends StatelessWidget {
+  const AppleRow({
+    super.key,
+    required this.title,
+    this.icon,
+    this.iconBg = Afisha.gray,
+    this.subtitle,
+    this.value,
+    this.trailing,
+    this.chevron = false,
+    this.onTap,
+    this.destructive = false,
+  });
+
+  final String title;
+  final IconData? icon;
+  final Color iconBg;
+  final String? subtitle;
+  final String? value;
+  final Widget? trailing;
+  final bool chevron;
+  final VoidCallback? onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSub = subtitle != null && subtitle!.isNotEmpty;
+    final row = Padding(
+      padding: EdgeInsets.fromLTRB(16, hasSub ? 9 : 7, 12, hasSub ? 9 : 7),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 30),
+        child: Row(
+          children: [
+            if (icon != null) ...[
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Icon(icon, size: 18, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 17,
+                      letterSpacing: -0.4,
+                      color: destructive ? Afisha.red : Afisha.ink,
+                    ),
+                  ),
+                  if (hasSub)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        subtitle!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          height: 1.25,
+                          letterSpacing: -0.1,
+                          color: Afisha.inkDim,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (value != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                value!,
+                style: const TextStyle(
+                  fontSize: 17,
+                  letterSpacing: -0.4,
+                  color: Afisha.inkDim,
+                ),
+              ),
+            ],
+            ?trailing,
+            if (chevron) ...[
+              const SizedBox(width: 6),
+              const Icon(
+                CupertinoIcons.chevron_forward,
+                size: 15,
+                color: Afisha.chevron,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
+  }
+}
+
+/// Переключатель «сегменты» как в iOS: серая дорожка и подвижный светлый
+/// бегунок под выбранным пунктом.
+class AppleSegmented<T> extends StatelessWidget {
+  const AppleSegmented({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  /// Значение → подпись, порядок сохраняется.
+  final Map<T, String> options;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = options.keys.toList();
+    final idx = keys.indexOf(selected).clamp(0, keys.length - 1);
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: Afisha.groupBg,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final w = box.maxWidth / keys.length;
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: const Cubic(0.32, 0.72, 0, 1),
+                left: w * idx,
+                top: 0,
+                bottom: 0,
+                width: w,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF636366),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  for (final k in keys)
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (k == selected) return;
+                          HapticFeedback.selectionClick();
+                          onChanged(k);
+                        },
+                        child: Center(
+                          child: Text(
+                            options[k]!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              letterSpacing: -0.1,
+                              fontWeight: k == selected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: Afisha.ink,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
