@@ -32,7 +32,7 @@ var torrentSlot = make(chan struct{}, 1)
 // движком ONNX в этом же процессе, без похода в питон.
 type localFinder struct {
 	*sidecar.Client // FindAudio, ID3Info, YandexTrackCover, YandexSearchArtist, Health
-	eng             *inference.Engine
+	eng             *inference.Lazy
 	pm              pathmap.Mapper
 	// startTorrents — включить qBittorrent перед торрент-ступенью. nil — обычный
 	// ensureQBittorrent (подмена нужна только тестам).

@@ -2535,7 +2535,7 @@ async function checkPhoneStatus(){
   }catch(e){}
 }
 checkPhoneStatus();
-setInterval(checkPhoneStatus, 60000);
+setInterval(() => { if(!document.hidden) checkPhoneStatus(); }, 60000);
 
 /* --- «Убрано на телефоне»: окно подтверждения стирания (Alex TG 19943/19948) ---
    Телефон передал, что песни убраны; файлы на компьютере сами НЕ стираются, а ждут
@@ -2780,6 +2780,9 @@ $("#pcAlign").onclick = async () => {
 
 /* ---------- обновление ---------- */
 function tick(){
+  // Окно свёрнуто/скрыто — программу не опрашиваем (лишняя работа и на компьютере, и в самом окне);
+  // вернулись к окну — обновляемся сразу (visibilitychange ниже).
+  if(document.hidden) return;
   loadInfo();
   checkRemovals();
   checkMissing();
@@ -2798,6 +2801,7 @@ function tick(){
 loadInfo(); loadCatalog();
 showView(location.hash.slice(1) || "catalog");
 setInterval(tick, 2000);
+document.addEventListener("visibilitychange", () => { if(!document.hidden){ tick(); checkPhoneStatus(); } });
 </script>
 </body>
 </html>

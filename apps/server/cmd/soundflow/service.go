@@ -37,7 +37,7 @@ type Service struct {
 	dbPath    string
 	assetsDir string
 	db        *localdb.DB
-	eng       *inference.Engine // nil, если не нашли onnxruntime.dll/cnn14.onnx
+	eng       *inference.Lazy // nil, если не нашли onnxruntime.dll/cnn14.onnx; сама модель грузится по требованию и выгружается после простоя
 	jobs      *JobRunner
 	phoneAddr string
 	phoneSrv  *http.Server
@@ -114,8 +114,10 @@ func NewService() (*Service, error) {
 	}()
 
 	assets := env("SOUNDFLOW_ASSETS", exeDir())
-	var eng *inference.Engine
-	if e, err := inference.Open(assets); err == nil {
+	// Оптимизация 21.09.2026 (Alex TG 20331 «максимальная оптимизация»): модель (~320 МБ) больше не
+	// висит в памяти всё время — грузится, когда есть что считать, и выгружается после простоя.
+	var eng *inference.Lazy
+	if e, err := inference.NewLazy(assets, modelIdleTimeout()); err == nil {
 		eng = e
 	} else {
 		fmt.Printf("SoundFlow: модель отпечатков не загружена (%v) — окно и каталог работают, пересчёт выключен\n", err)
@@ -343,6 +345,7 @@ func (s *Service) hInfo(w http.ResponseWriter, r *http.Request) {
 		"addr_fell_back":  fellBack, // порт из настроек был занят, взяли следующий свободный
 		"configured_addr": localAddr(s.phoneAddr),
 		"has_model":       s.eng != nil,
+		"model_loaded":    s.eng != nil && s.eng.Loaded(), // сейчас в памяти (по требованию грузится и выгружается)
 		"tracks":          c.Tracks,
 		"with_vector":     c.WithVector,
 		"albums":          c.AlbumsGuess,
@@ -782,6 +785,24 @@ func splitSegs(s string) []string {
 }
 
 // ---------------- утилиты ----------------
+
+// modelIdleTimeout — через сколько простоя выгружать модель отпечатков из памяти. По умолчанию
+// 3 минуты: серия новых песен (скан, «Волна», «Найти и скачать») укладывается в одну загрузку, а
+// покой освобождает ~320 МБ. SOUNDFLOW_MODEL_IDLE — «90s», «10m»; «0» — не выгружать (как раньше).
+func modelIdleTimeout() time.Duration {
+	const def = 3 * time.Minute
+	v := strings.TrimSpace(os.Getenv("SOUNDFLOW_MODEL_IDLE"))
+	if v == "" {
+		return def
+	}
+	if v == "0" {
+		return 0
+	}
+	if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+		return d
+	}
+	return def
+}
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
