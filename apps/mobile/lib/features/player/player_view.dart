@@ -863,8 +863,11 @@ class _LivingBackdrop extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (img != null)
+                // Alex TG 24.09.2026: «замылен, чтобы было видно что это
+                // обложка размыта» — 45 было слишком сильно (цвет без
+                // формы), убавил, чтобы силуэт/цвета обложки узнавались.
                 ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45, tileMode: TileMode.decal),
+                  imageFilter: ImageFilter.blur(sigmaX: 22, sigmaY: 22, tileMode: TileMode.decal),
                   child: Image(image: img!, fit: BoxFit.cover, color: Colors.black.withValues(alpha: 0.12), colorBlendMode: BlendMode.darken),
                 ),
               DecoratedBox(
