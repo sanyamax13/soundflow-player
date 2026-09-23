@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
@@ -75,6 +76,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   late final AnimationController _bg;
   late final AnimationController _heart;
   late final AnimationController _dragX;
+  // Плашка «Дальше» тянется за пальцем (Alex TG 24.09.2026: «аккуратно за
+  // моим пальцем она шла бы, сейчас просто по свайпу поднимается сразу
+  // вся») — 0 = свёрнута (только строка «Дальше: …»), 1 = раскрыта на
+  // весь список. Значение двигается ЖИВЬЁМ во время onVerticalDragUpdate,
+  // а не только по итоговой скорости жеста.
+  late final AnimationController _queueOpen;
+  static const double _queuePeek = 78;
 
   bool _showHelp = false;
 
@@ -90,6 +98,14 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 720),
     );
     _dragX = AnimationController.unbounded(vsync: this, value: 0);
+    _queueOpen = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+  }
+
+  void _animateQueueTo(double target) {
+    _queueOpen.animateTo(target, curve: Curves.easeOutCubic);
   }
 
   @override
@@ -110,6 +126,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
+    _queueOpen.dispose();
     _tint.dispose();
     super.dispose();
   }
@@ -412,7 +429,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               // Свой слой: фон перерисовывается каждый кадр (медленный перелив), и без
               // границы вместе с ним каждый кадр заново рисовался весь экран плеера —
               // обложка, тексты, кнопки (оптимизация 21.09.2026, Alex TG 20331).
-              RepaintBoundary(child: _LivingBackdrop(anim: _bg, colors: colors)),
+              RepaintBoundary(child: _LivingBackdrop(anim: _bg, colors: colors, img: img)),
               SafeArea(
                 child: Column(
                   children: [
@@ -447,10 +464,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     const SizedBox(height: 12),
                     _transport(),
                     const SizedBox(height: 16),
-                    _queueHandle(now),
+                    const SizedBox(height: _queuePeek),
                   ],
                 ),
               ),
+              _queueSheet(now),
               _heartPop(),
               if (_showHelp) _HelpOverlay(onClose: () => setState(() => _showHelp = false)),
             ],
@@ -471,12 +489,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               )
             else
               const SizedBox(width: 12),
-            const Spacer(),
-            Text('ПОТОК',
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 12,
-                    letterSpacing: 2)),
             const Spacer(),
             IconButton(
               onPressed: () => setState(() => _showHelp = true),
@@ -549,7 +561,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         if (v > 300) {
           widget.onDismiss?.call();
         } else if (v < -300) {
-          _openQueue(now);
+          _animateQueueTo(1);
         }
       },
       child: AnimatedBuilder(
@@ -634,53 +646,165 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         ],
       );
 
-  Widget _queueHandle(NowPlaying now) {
+  // Плашка «Дальше» + список очереди в одном раскрывающемся блоке: свёрнута
+  // (высота _queuePeek) — просто строка, ведёшь пальцем — тянется живьём
+  // (onVerticalDragUpdate двигает _queueOpen на каждый кадр жеста, а не
+  // только по итоговой скорости), отпустил — доезжает до 0 или 1 сама.
+  Widget _queueSheet(NowPlaying now) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.7;
+    final dragRange = maxHeight - _queuePeek;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: SafeArea(
+        top: false,
+        child: AnimatedBuilder(
+          animation: _queueOpen,
+          builder: (context, _) {
+            final t = _queueOpen.value;
+            final height = _queuePeek + dragRange * t;
+            return ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              child: Container(
+                width: double.infinity,
+                height: height,
+                color: Afisha.surface.withValues(alpha: 0.6 + 0.4 * t),
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _animateQueueTo(t > 0.5 ? 0 : 1),
+                      onVerticalDragUpdate: (d) {
+                        _queueOpen.value =
+                            (_queueOpen.value - d.delta.dy / dragRange).clamp(0.0, 1.0);
+                      },
+                      onVerticalDragEnd: (d) {
+                        final v = d.primaryVelocity ?? 0;
+                        if (v < -300) return _animateQueueTo(1);
+                        if (v > 300) return _animateQueueTo(0);
+                        _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0);
+                      },
+                      child: _queueHandleRow(now),
+                    ),
+                    if (t > 0.01)
+                      Expanded(
+                        child: Opacity(
+                          opacity: t.clamp(0.0, 1.0),
+                          child: IgnorePointer(
+                            ignoring: t < 0.6,
+                            child: _queueBody(now),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _queueHandleRow(NowPlaying now) {
     final q = _p.queueView;
     final i = _p.currentIndex;
     final nextTitle = (i >= 0 && i + 1 < q.length)
         ? '${q[i + 1].title} — ${q[i + 1].artist}'
         : 'больше ничего';
-    return GestureDetector(
-      onTap: () => _openQueue(now),
-      onVerticalDragEnd: (d) {
-        if ((d.primaryVelocity ?? 0) < -100) _openQueue(now);
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 34,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
+      child: Column(
+        children: [
+          Container(
+            width: 34,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(CupertinoIcons.list_bullet, color: Colors.white54, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Дальше: $nextTitle',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 13.5)),
               ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(CupertinoIcons.list_bullet, color: Colors.white54, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text('Дальше: $nextTitle',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13.5)),
-                ),
-                const Icon(CupertinoIcons.chevron_up, color: Colors.white54, size: 18),
-              ],
-            ),
-          ],
-        ),
+              const Icon(CupertinoIcons.chevron_up, color: Colors.white54, size: 18),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _queueBody(NowPlaying now) {
+    return StatefulBuilder(
+      builder: (context, setBodyState) {
+        final q = _p.queueView;
+        final i = _p.currentIndex;
+        final upcoming = <MapEntry<int, NowPlaying>>[
+          for (var k = 0; k < q.length; k++)
+            if (k > i) MapEntry(k, q[k]),
+        ];
+        if (upcoming.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('Очередь пустая', style: TextStyle(color: Afisha.inkDim)),
+          );
+        }
+        return ReorderableListView.builder(
+          buildDefaultDragHandles: false,
+          itemCount: upcoming.length,
+          onReorderItem: (oldLocal, newLocal) {
+            final oldReal = upcoming[oldLocal].key;
+            final newReal = i + 1 + newLocal;
+            _p.reorderQueue(oldReal, newReal);
+            setBodyState(() {});
+          },
+          itemBuilder: (_, x) {
+            final e = upcoming[x];
+            return ListTile(
+              key: ValueKey(e.key),
+              leading: CoverThumb(
+                path: e.value.coverPath,
+                url: coverUrlFor(e.value.id),
+                size: 44,
+              ),
+              title: Text(e.value.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(e.value.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(CupertinoIcons.xmark, color: Afisha.inkDim, size: 20),
+                    onPressed: () {
+                      _p.removeFromQueue(e.key);
+                      setBodyState(() {});
+                    },
+                  ),
+                  ReorderableDragStartListener(
+                    index: x,
+                    child: const Icon(CupertinoIcons.line_horizontal_3, color: Afisha.inkDim),
+                  ),
+                ],
+              ),
+              onTap: () {
+                _animateQueueTo(0);
+                _p.jumpTo(e.key);
+              },
+            );
+          },
+        );
+      },
     );
   }
 
@@ -706,103 +830,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         ),
       );
 
-  void _openQueue(NowPlaying now) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Afisha.surface,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setModalState) {
-          final q = _p.queueView;
-          final i = _p.currentIndex;
-          final upcoming = <MapEntry<int, NowPlaying>>[
-            for (var k = 0; k < q.length; k++)
-              if (k > i) MapEntry(k, q[k]),
-          ];
-          return SafeArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.7),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Дальше',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                  if (upcoming.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('Очередь пустая',
-                          style: TextStyle(color: Afisha.inkDim)),
-                    )
-                  else
-                    Flexible(
-                      child: ReorderableListView.builder(
-                        shrinkWrap: true,
-                        buildDefaultDragHandles: false,
-                        itemCount: upcoming.length,
-                        onReorderItem: (oldLocal, newLocal) {
-                          final oldReal = upcoming[oldLocal].key;
-                          final newReal = i + 1 + newLocal;
-                          _p.reorderQueue(oldReal, newReal);
-                          setModalState(() {});
-                        },
-                        itemBuilder: (_, x) {
-                          final e = upcoming[x];
-                          return ListTile(
-                            key: ValueKey(e.key),
-                            leading: CoverThumb(
-                              path: e.value.coverPath,
-                              url: coverUrlFor(e.value.id),
-                              size: 44,
-                            ),
-                            title: Text(e.value.title,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: Text(e.value.artist,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(CupertinoIcons.xmark,
-                                      color: Afisha.inkDim, size: 20),
-                                  onPressed: () {
-                                    _p.removeFromQueue(e.key);
-                                    setModalState(() {});
-                                  },
-                                ),
-                                ReorderableDragStartListener(
-                                  index: x,
-                                  child: const Icon(CupertinoIcons.line_horizontal_3,
-                                      color: Afisha.inkDim),
-                                ),
-                              ],
-                            ),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _p.jumpTo(e.key);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 }
 
 // ── живой фон: медленно переливается цветами обложки (Alex TG 18608) ──────
@@ -810,10 +837,15 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 // затемнение к чёрному, чтобы белый текст читался. Картинки на фоне нет —
 // чище и легче для телефона.
 class _LivingBackdrop extends StatelessWidget {
-  const _LivingBackdrop({required this.anim, required this.colors});
+  const _LivingBackdrop({required this.anim, required this.colors, required this.img});
 
   final Animation<double> anim;
   final CoverColors colors;
+  // Обложка текущей песни, растянутая и размытая на весь экран (Alex TG
+  // 24.09.2026: «облодка как бы размывалась на весь экран», как в
+  // Apple Music/Spotify) — под тем же цветным «живым» свечением, что и
+  // раньше, оно теперь лежит НА обложке, не на сплошном фоне.
+  final ImageProvider? img;
 
   @override
   Widget build(BuildContext context) {
@@ -830,6 +862,11 @@ class _LivingBackdrop extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
+              if (img != null)
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45, tileMode: TileMode.decal),
+                  child: Image(image: img!, fit: BoxFit.cover, color: Colors.black.withValues(alpha: 0.12), colorBlendMode: BlendMode.darken),
+                ),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
