@@ -181,7 +181,13 @@ type SplitResult struct {
 // lossless-кодеков не теряет ни бита; `-ss` идёт ПОСЛЕ `-i` — точный
 // (не по ключевым кадрам) срез по времени.
 func Split(ffmpegPath, audioPath string, cue *Cue, coverPath string) ([]SplitResult, error) {
-	ext := filepath.Ext(audioPath)
+	return SplitTo(ffmpegPath, audioPath, cue, coverPath, filepath.Ext(audioPath))
+}
+
+// SplitTo — то же, что Split, но расширение получившихся файлов задаёт вызывающий: образ в APE/WavPack/WAV режем в
+// «.flac» (ffmpeg их читает, а APE писать не умеет; FLAC — без потерь и играет на телефоне). Образ не перезаписывается:
+// если имя песни совпало бы с именем самого образа — ошибка, а не тихая порча исходника (`-y`).
+func SplitTo(ffmpegPath, audioPath string, cue *Cue, coverPath, ext string) ([]SplitResult, error) {
 	dir := filepath.Dir(audioPath)
 	var out []SplitResult
 	for i, tr := range cue.Tracks {
@@ -191,6 +197,9 @@ func Split(ffmpegPath, audioPath string, cue *Cue, coverPath string) ([]SplitRes
 		}
 		name := fmt.Sprintf("%02d - %s%s", tr.Num, sanitizeFilename(tr.Title), ext)
 		outPath := filepath.Join(dir, name)
+		if strings.EqualFold(outPath, audioPath) {
+			return out, fmt.Errorf("cuesplit: песня %d называется так же, как сам образ (%s) — не режу, чтобы не затереть его", tr.Num, name)
+		}
 
 		args := []string{"-y", "-i", audioPath, "-ss", fmt.Sprintf("%.3f", tr.StartSec)}
 		if i+1 < len(cue.Tracks) {

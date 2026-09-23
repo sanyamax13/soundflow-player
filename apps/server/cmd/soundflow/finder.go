@@ -3,11 +3,16 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
+	"soundflow/server/internal/cuesplit"
 	"soundflow/server/internal/inference"
 	"soundflow/server/internal/pathmap"
+	"soundflow/server/internal/proc"
 	"soundflow/server/internal/sidecar"
 )
 
@@ -19,6 +24,10 @@ var torrentProviders = []string{"nnmclub", "rutor", "tapochek"}
 // torrentStageTimeout — сколько ждём торрент-ступень: поиск по трекерам +
 // скачивание альбома. Обычных 8 минут клиента на это может не хватить.
 const torrentStageTimeout = 11 * time.Minute
+
+// losslessStageTimeout — FLAC-проход (Alex TG 20372 и 20374, 21.09.2026): mp3-альбомы песню не дали, ищем в lossless-
+// раздачах (FLAC по песне или «образ + .cue»). Образ весит сотни мегабайт, поэтому срок больше, чем у mp3-ступени.
+const losslessStageTimeout = 30 * time.Minute
 
 // torrentSlot — торрент-заход идёт по одному. Он держит слот качалки минуты (поиск по трекерам и
 // скачивание альбома), а «скачать все» по волне ставит в очередь сотню песен разом: без очереди десятки
@@ -37,6 +46,8 @@ type localFinder struct {
 	// startTorrents — включить qBittorrent перед торрент-ступенью. nil — обычный
 	// ensureQBittorrent (подмена нужна только тестам).
 	startTorrents func() error
+	// splitCue — вырезать песню из образа (подмена нужна тестам). nil — cuesplit + ffmpeg программы.
+	splitCue func(res sidecar.FindAudioResult) (sidecar.FindAudioResult, error)
 }
 
 // FindAudio — поиск и скачивание в два захода. Сначала только Яндекс (быстро,
@@ -69,7 +80,74 @@ func (f *localFinder) FindAudio(ctx context.Context, artist, title string, expec
 		log.Printf("торренты для «%s — %s»: %v", artist, title, err)
 		return res, nil
 	}
-	return f.Client.WithTimeout(torrentStageTimeout).FindAudio(ctx, artist, title, expectedDurationSec, withSkipped(skip, "yandex"))
+	tor, err := f.Client.WithTimeout(torrentStageTimeout).FindAudio(ctx, artist, title, expectedDurationSec, withSkipped(skip, "yandex"))
+	if err != nil || tor.Found {
+		return tor, err
+	}
+	// Третий заход — FLAC. Слот торрентов всё ещё наш (defer выше). Его сбой или «не нашёл» для вызывающего — то же
+	// «не найдено» от mp3-захода, не ошибка.
+	ls, lerr := f.Client.WithTimeout(losslessStageTimeout).FindAudioLossless(ctx, artist, title, expectedDurationSec, withSkipped(skip, "yandex"))
+	if lerr != nil {
+		log.Printf("FLAC-заход для «%s — %s»: %v", artist, title, lerr)
+		return tor, nil
+	}
+	if !ls.Found {
+		return tor, nil
+	}
+	if ls.CueFile == "" {
+		return ls, nil // готовый FLAC на песню
+	}
+	split := f.splitCue
+	if split == nil {
+		split = func(r sidecar.FindAudioResult) (sidecar.FindAudioResult, error) {
+			return splitCueTarget(f.pm, proc.FFmpeg(), r)
+		}
+	}
+	out, serr := split(ls)
+	if serr != nil {
+		log.Printf("FLAC-заход для «%s — %s»: образ скачан, но песню вырезать не вышло: %v", artist, title, serr)
+		return tor, nil
+	}
+	return out, nil
+}
+
+// splitCueTarget — образ альбома + .cue скачаны сайдкаром (FilePath — образ, CueFile — разметка, CueTrack — нужная
+// песня). Режем ВЕСЬ альбом без потерь в FLAC рядом с образом (как это делает скан папки для чужих образов: остальные
+// песни потом подберёт пересканирование), возвращаем результат с путём к вырезанной нужной песне. Образ стираем, но
+// только когда вырезаны ВСЕ песни: он и так лежит в папке этой раздачи и при нужде качается заново.
+func splitCueTarget(pm pathmap.Mapper, ffmpeg string, res sidecar.FindAudioResult) (sidecar.FindAudioResult, error) {
+	image := pm.ToLocal(res.FilePath)
+	cue, err := cuesplit.Parse(pm.ToLocal(res.CueFile))
+	if err != nil {
+		return res, err
+	}
+	results, err := cuesplit.SplitTo(ffmpeg, image, cue, findCoverImage(filepath.Dir(image)), ".flac")
+	if err != nil {
+		return res, err
+	}
+	target := ""
+	for _, r := range results {
+		if r.Track.Num == res.CueTrack {
+			target = r.Path
+		}
+		if fi, e := os.Stat(r.Path); e != nil || fi.Size() == 0 {
+			return res, fmt.Errorf("песня %d не получилась (пустой файл %s)", r.Track.Num, r.Path)
+		}
+	}
+	if target == "" || len(results) != len(cue.Tracks) {
+		return res, fmt.Errorf("в разметке нет песни №%d или вырезано %d из %d", res.CueTrack, len(results), len(cue.Tracks))
+	}
+	if err := os.Remove(image); err != nil {
+		log.Printf("образ %s не удалился: %v", image, err)
+	}
+	res.FilePath = pm.ToCanonical(target)
+	if fi, e := os.Stat(target); e == nil {
+		res.SizeBytes = fi.Size()
+	}
+	res.DurationSec = probeDurationSec(target)
+	res.BitrateKbps = 0
+	res.CueFile, res.CueTrack = "", 0
+	return res, nil
 }
 
 // withSkipped — skip плюс ещё источники (без повторов, исходный срез не трогаем).
