@@ -145,7 +145,7 @@ class _CrashCardState extends ConsumerState<_CrashCard> {
             title: 'Приложение падало',
             // Человеческая строка вместо сырого стека (Опус-ревью телефона
             // 14.09.2026, пункт 2) — сам текст сбоя всё ещё доступен по тапу.
-            subtitle: 'Есть запись о сбое — тапни, чтобы посмотреть или отправить',
+            subtitle: 'Есть запись о сбое — нажмите, чтобы посмотреть или отправить',
             chevron: true,
             onTap: _open,
           ),
@@ -199,7 +199,7 @@ class _UpdateRowState extends State<_UpdateRow> {
       await downloadAndInstallUpdate(u.apkUrl);
     } catch (_) {
       Notice.show('Не получилось скачать обновление',
-          subtitle: 'Проверь интернет и нажми ещё раз', kind: NoticeKind.error);
+          subtitle: 'Проверьте интернет и нажмите ещё раз', kind: NoticeKind.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -221,7 +221,7 @@ class _UpdateRowState extends State<_UpdateRow> {
       icon: CupertinoIcons.arrow_down_circle_fill,
       iconBg: Afisha.green,
       title: _busy ? 'Скачивание…' : 'Доступно обновление v${u.versionCode}',
-      subtitle: u.changelog.isEmpty ? 'нажми, чтобы поставить' : u.changelog,
+      subtitle: u.changelog.isEmpty ? 'нажмите, чтобы поставить' : u.changelog,
       chevron: !_busy,
       onTap: _busy ? null : _install,
     );

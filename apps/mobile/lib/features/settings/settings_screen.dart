@@ -69,7 +69,7 @@ class _LogCardState extends State<_LogCard> {
   }
 
   Future<void> _open() async {
-    final text = _text ?? 'Журнал пока пуст — нажми радио или сделай что-нибудь в приложении.';
+    final text = _text ?? 'Журнал пока пуст — включите радио или сделайте что-нибудь в приложении.';
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -108,7 +108,7 @@ class _LogCardState extends State<_LogCard> {
       icon: CupertinoIcons.doc_text,
       iconBg: Afisha.gray,
       title: 'Журнал',
-      subtitle: _text == null ? 'пока пусто' : 'есть записи за последние часы — тапни, чтобы посмотреть',
+      subtitle: _text == null ? 'пока пусто' : 'есть записи за последние часы — нажмите, чтобы посмотреть',
       chevron: true,
       onTap: _open,
     );

@@ -30,7 +30,7 @@ Future<String?> pickRemovalReason(BuildContext context) {
             padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('Почему убираешь совсем?',
+              child: Text('Причина удаления',
                   style: TextStyle(
                       color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
             ),

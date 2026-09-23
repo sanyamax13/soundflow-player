@@ -177,12 +177,12 @@ class SyncOffer extends ChangeNotifier {
         ? null
         : '${parts.first[0].toUpperCase()}${parts.join(' · ').substring(1)}';
     if (r.stopped) {
-      Notice.show('Остановил', subtitle: did);
+      Notice.show('Остановлено', subtitle: did);
     } else if (r.failed > 0) {
       Notice.show(
         'Не всё получилось',
         subtitle:
-            '${did == null ? '' : '$did. '}Не вышло: ${r.failed}. Нажми ещё раз',
+            '${did == null ? '' : '$did. '}Не вышло: ${r.failed}. Нажмите ещё раз',
         kind: NoticeKind.warn,
       );
     } else if (did == null) {

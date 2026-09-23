@@ -233,9 +233,9 @@ class SyncOfferCard extends ConsumerWidget {
   Widget _idle(SyncOffer o) {
     final String text;
     if (o.lastCheckFailed) {
-      text = 'Компьютер не отвечает. Открой окно SoundFlow на компьютере';
+      text = 'Компьютер не отвечает. Откройте окно SoundFlow на компьютере';
     } else if (o.checkedAt == null) {
-      text = 'Проверяю…';
+      text = 'Проверка…';
     } else {
       final t = o.checkedAt!;
       String two(int n) => n.toString().padLeft(2, '0');

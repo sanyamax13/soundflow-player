@@ -69,7 +69,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     if (!mounted) return;
     setState(() => _scanning = false);
     if (found == null) {
-      Notice.show('Не нашёл в сети', subtitle: 'Впиши адрес вручную', kind: NoticeKind.warn);
+      Notice.show('Не найден в сети', subtitle: 'Введите адрес вручную', kind: NoticeKind.warn);
       return;
     }
     _ctrl.text = found;
