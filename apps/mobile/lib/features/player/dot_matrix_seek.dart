@@ -54,7 +54,11 @@ class DotMatrixSeek extends StatelessWidget {
   static const _height = 46.0;
 
   static const _digitStyle = TextStyle(
-    fontSize: 32,
+    // Было 32 — крупнее названия песни (26 в player_view.dart), глаз
+    // цеплялся не за то (Опус-ревью «Поток» 23.09.2026, пункт 2). Остаются
+    // заметно крупными цифрами (Alex TG 19.09.2026, вариант 19), просто
+    // мельче заголовка.
+    fontSize: 24,
     fontWeight: FontWeight.w600,
     height: 1,
     fontFeatures: [FontFeature.tabularFigures()],
@@ -163,8 +167,12 @@ class _MatrixPainter extends CustomPainter {
       final dot = i == head ? base * 1.2 : base;
       for (var j = 0; j < rows; j++) {
         final center = Offset(i * cw + cw / 2, j * rh + rh / 2);
+        // Полностью круглые точки, не скруглённые квадраты — на экране
+        // скруглено всё (кнопки, обложка, плашки), а квадратная сетка была
+        // единственным «чужим» мотивом (Опус-ревью «Поток» 23.09.2026,
+        // пункт 7).
         canvas.drawRRect(
-          RRect.fromRectAndRadius(Rect.fromCenter(center: center, width: dot, height: dot), Radius.circular(dot * 0.25)),
+          RRect.fromRectAndRadius(Rect.fromCenter(center: center, width: dot, height: dot), Radius.circular(dot / 2)),
           i <= head ? onPaint : offPaint,
         );
       }

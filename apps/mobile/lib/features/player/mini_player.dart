@@ -58,9 +58,16 @@ class MiniPlayer extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
             child: Row(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CoverThumb(path: now.coverPath, url: coverUrlFor(now.id), size: 42),
+                // Тот же тег Hero, что у обложки полного плеера
+                // (player_view.dart, _coverArea) — при открытии обложка
+                // «вырастает» с этого места, а не пропадает/появляется другая
+                // (Опус-ревью «Поток» 23.09.2026, пункт 12, «как в Apple Music»).
+                Hero(
+                  tag: 'player-cover',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CoverThumb(path: now.coverPath, url: coverUrlFor(now.id), size: 42),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

@@ -71,6 +71,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   final ValueNotifier<CoverColors> _tint =
       ValueNotifier(CoverColors.fallback);
 
+  // Куда «прилетает» сердечко при лайке — центр кнопки лайка в _transport(),
+  // а не центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3: место нажатия
+  // и место анимации не совпадали).
+  final LayerLink _favLink = LayerLink();
+
   // Медленный перелив фона под цвет обложки (Alex TG 18608). Обложка не
   // трогается — она якорь.
   late final AnimationController _bg;
@@ -90,8 +95,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   void initState() {
     super.initState();
     _bg = AnimationController(
+      // 45 с, не 15 — за получас слушания фон не должен тикать заметным
+      // ритмом рядом с точками перемотки (Опус-ревью «Поток» 23.09.2026,
+      // пункт 6: несколько несвязанных движений в такт друг другу не идут).
       vsync: this,
-      duration: const Duration(seconds: 15),
+      duration: const Duration(seconds: 45),
     );
     _heart = AnimationController(
       vsync: this,
@@ -435,17 +443,20 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   children: [
                     _topBar(now),
                     const Spacer(),
-                    _coverArea(now, img),
+                    _coverArea(now, img, colors),
                     const Spacer(),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 26),
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Text(now.title,
                           textAlign: TextAlign.center,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 23,
+                              // Было 23 — мельче цифр времени под ним (32).
+                              // Название важнее «сколько прошло» (Опус-ревью
+                              // «Поток» 23.09.2026, пункт 2).
+                              fontSize: 26,
                               fontWeight: FontWeight.w600)),
                     ),
                     const SizedBox(height: 4),
@@ -453,7 +464,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                         style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.6),
                             fontSize: 13)),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 20),
                     // Полоса обновляется несколько раз в секунду (позиция) — свой слой,
                     // чтобы не тянуть за собой перерисовку остального экрана.
                     RepaintBoundary(
@@ -479,7 +490,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   }
 
   Widget _topBar(NowPlaying now) => Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 10, 0),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
         child: Row(
           children: [
             if (widget.onDismiss != null)
@@ -490,10 +501,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             else
               const SizedBox(width: 12),
             const Spacer(),
+            // Мельче и бледнее радио-таблетки — подсказку открывают один раз,
+            // радио жмут часто, они не должны выглядеть одинаково важными
+            // (Опус-ревью «Поток» 23.09.2026, пункт 5).
             IconButton(
               onPressed: () => setState(() => _showHelp = true),
               icon: Icon(CupertinoIcons.question_circle,
-                  color: Colors.white.withValues(alpha: 0.75), size: 22),
+                  color: Colors.white.withValues(alpha: 0.45), size: 18),
             ),
             // Раньше был GestureDetector впритык к тексту — тап-зона выходила
             // мельче, чем сам значок рядом («?»), и Alex не мог понять, вся
@@ -519,11 +533,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('∞',
-                              style: TextStyle(
-                                  color: on ? Afisha.lime : Colors.white70,
-                                  fontSize: 15,
-                                  height: 1)),
+                          // Была буква «∞» текстом — единственный текстовый
+                          // символ среди иконок на экране (Опус-ревью «Поток»
+                          // 23.09.2026, пункт 4). Тот же смысл, настоящая иконка.
+                          Icon(CupertinoIcons.infinite,
+                              color: on ? Afisha.lime : Colors.white70, size: 16),
                           const SizedBox(width: 6),
                           const Text('радио',
                               style:
@@ -539,7 +553,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         ),
       );
 
-  Widget _coverArea(NowPlaying now, ImageProvider? img) {
+  Widget _coverArea(NowPlaying now, ImageProvider? img, CoverColors colors) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
@@ -572,19 +586,35 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         ),
         child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Afisha.surfaceHi,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 40,
-                      offset: const Offset(0, 16)),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+            // Hero — тот же тег, что у обложки в мини-плеере (mini_player.dart):
+            // при переходе снизу обложка «вырастает» с места мини-плеера, а не
+            // пропадает/появляется новая (Опус-ревью «Поток» 23.09.2026,
+            // пункт 12, «как в Apple Music»). На вкладке «Поток» этот виджет
+            // ни с кем не летает — Hero просто ничего не делает, пока рядом
+            // нет второго с тем же тегом.
+            child: Hero(
+              tag: 'player-cover',
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Afisha.surfaceHi,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    // Обычная тёмная тень для глубины.
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 40,
+                        offset: const Offset(0, 16)),
+                    // Цветной ореол цвета обложки поверх чёрного фона внизу
+                    // экрана — раньше тут была только чёрная тень, и она
+                    // сливалась с чёрным низом фона, наполовину терялась
+                    // (Опус-ревью «Поток» 23.09.2026, пункт 9). Цветной свет
+                    // на чёрном виден, в отличие от чёрной тени на чёрном.
+                    BoxShadow(
+                        color: colors.glow.withValues(alpha: 0.30),
+                        blurRadius: 60,
+                        offset: const Offset(0, 20)),
+                  ],
+                ),
                 child: CoverArt(trackId: now.id, localPath: now.coverPath),
               ),
             ),
@@ -627,11 +657,16 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             onPressed: _p.next,
           ),
           const SizedBox(width: 10),
-          IconButton(
-            iconSize: 26,
-            icon: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-                color: _fav ? Afisha.lime : Colors.white70),
-            onPressed: _toggleFavButton,
+          // Цель для сердечка-анимации (_heartPop) — оно прилетает СЮДА, а не
+          // в центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3).
+          CompositedTransformTarget(
+            link: _favLink,
+            child: IconButton(
+              iconSize: 26,
+              icon: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                  color: _fav ? Afisha.lime : Colors.white70),
+              onPressed: _toggleFavButton,
+            ),
           ),
           Builder(
             builder: (context) => IconButton(
@@ -715,7 +750,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         : 'больше ничего';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
       child: Column(
         children: [
           Container(
@@ -809,7 +844,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   }
 
   Widget _heartPop() => IgnorePointer(
-        child: Center(
+        child: CompositedTransformFollower(
+          link: _favLink,
+          targetAnchor: Alignment.center,
+          followerAnchor: Alignment.center,
           child: AnimatedBuilder(
             animation: _heart,
             builder: (context, _) {
@@ -821,8 +859,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 opacity: opacity.clamp(0, 1),
                 child: Transform.scale(
                   scale: scale,
+                  // Было 120 — от центра экрана хватало места. Растёт теперь
+                  // от кнопки лайка внизу экрана, крупнее — упиралось бы в
+                  // край (Опус-ревью «Поток» 23.09.2026, пункт 3).
                   child: const Icon(CupertinoIcons.heart_fill,
-                      color: Afisha.lime, size: 120),
+                      color: Afisha.lime, size: 90),
                 ),
               );
             },
@@ -864,10 +905,10 @@ class _LivingBackdrop extends StatelessWidget {
             children: [
               if (img != null)
                 // Alex TG 24.09.2026: «замылен, чтобы было видно что это
-                // обложка размыта» — 45 было слишком сильно (цвет без
-                // формы), убавил, чтобы силуэт/цвета обложки узнавались.
+                // обложка размыта» — было 45, потом 22, потом 12, всё ещё
+                // сильно — обложка не узнавалась. Ослабил ещё раз.
                 ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 22, sigmaY: 22, tileMode: TileMode.decal),
+                  imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6, tileMode: TileMode.decal),
                   child: Image(image: img!, fit: BoxFit.cover, color: Colors.black.withValues(alpha: 0.12), colorBlendMode: BlendMode.darken),
                 ),
               DecoratedBox(
@@ -962,7 +1003,9 @@ class _HelpOverlay extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
             decoration: BoxDecoration(
               color: Afisha.surface,
-              borderRadius: BorderRadius.circular(22),
+              // Было 22 — третье своё число рядом с обложкой/плашками (20
+              // везде). Опус-ревью «Поток» 23.09.2026, пункт 11.
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Afisha.line),
             ),
             child: Column(

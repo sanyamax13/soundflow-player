@@ -72,6 +72,24 @@ void main() {
         break;
       }
     }
+    // Экран «Поток» — почти все значки Cupertino (chevron, радио, сердце,
+    // урна…). Без своего шрифта они рисуются пустыми квадратами — картинка
+    // для Alex была бы нечестной. Путь берём из pubspec.lock (cupertino_icons).
+    for (final p in [
+      r'C:\Users\brain\AppData\Local\Pub\Cache\hosted\pub.dev\cupertino_icons-1.0.9\assets\CupertinoIcons.ttf',
+    ]) {
+      final f = File(p);
+      if (f.existsSync()) {
+        // TextStyle подставляет 'packages/<pkg>/<family>', когда у
+        // IconData задан fontPackage — регистрировать надо под ЭТИМ именем,
+        // иначе Flutter не найдёт шрифт и нарисует пустой квадрат.
+        await (FontLoader('packages/cupertino_icons/CupertinoIcons')
+              ..addFont(
+                  Future.value(ByteData.view(f.readAsBytesSync().buffer))))
+            .load();
+        break;
+      }
+    }
   });
 
   testWidgets('Поток — вид сразу при запуске', (t) async {

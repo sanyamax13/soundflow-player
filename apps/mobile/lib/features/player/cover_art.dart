@@ -16,8 +16,12 @@ ImageProvider? coverImageProvider(String trackId, String? localPath) {
   return url.isEmpty ? null : NetworkImage(url);
 }
 
-/// Сама обложка — квадрат, целиком, ничего не обрезано, скруглённая. Ставится
-/// в колонку (обычно в [Expanded] + [Center]), название идёт строго под ней.
+/// Сама обложка — квадрат, скруглённая, картинка заполняет его целиком (не
+/// квадратная — обрезается по краям, как в Apple Music/Spotify). Раньше была
+/// `BoxFit.contain`: не квадратная обложка оставляла по бокам полоски фона
+/// плитки, а тень под ней рисовала «парящий предмет» шире реальной картинки
+/// — нечестно (Опус-ревью «Поток» 23.09.2026, пункт 8). Ставится в колонку
+/// (обычно в [Expanded] + [Center]), название идёт строго под ней.
 class CoverArt extends StatelessWidget {
   const CoverArt({super.key, required this.trackId, this.localPath});
 
@@ -35,13 +39,16 @@ class CoverArt extends StatelessWidget {
     );
     return AspectRatio(
       aspectRatio: 1,
+      // Тот же радиус, что и у карточки-обёртки в player_view.dart (20) —
+      // было 12, третье своё число среди похожих скруглений экрана
+      // (Опус-ревью «Поток» 23.09.2026, пункт 11).
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: img == null
             ? fallback
             : Image(
                 image: img,
-                fit: BoxFit.contain,
+                fit: BoxFit.cover,
                 gaplessPlayback: true,
                 errorBuilder: (_, _, _) => fallback,
               ),
