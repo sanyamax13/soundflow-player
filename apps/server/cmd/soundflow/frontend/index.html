@@ -59,6 +59,15 @@
     --sh-3:0 24px 64px rgba(0,0,0,.7);
   }
 
+  /* Тот же файл шрифта, что и на телефоне (apps/mobile/assets/fonts) — сюда
+     скопирован, не просто назван в CSS. Без этого блока браузер Windows
+     тихо подставлял свой Segoe UI вместо Inter, хотя имя в font-family
+     было верным (Опус-ревью «Поток» 23.09.2026, пункт про единый шрифт). */
+  @font-face{font-family:Inter; font-weight:400; src:url("fonts/Inter-Regular.ttf") format("truetype")}
+  @font-face{font-family:Inter; font-weight:500; src:url("fonts/Inter-Medium.ttf") format("truetype")}
+  @font-face{font-family:Inter; font-weight:600; src:url("fonts/Inter-SemiBold.ttf") format("truetype")}
+  @font-face{font-family:Inter; font-weight:700; src:url("fonts/Inter-Bold.ttf") format("truetype")}
+
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{height:100%; overflow:hidden}
   body{font-family:Inter,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; font-size:var(--fs-callout); color:var(--ink);
