@@ -173,6 +173,71 @@ void _spectrumVu(Canvas c, Size s) {
   }
 }
 
+// ── 9/10/11: не столбик целиком одним цветом, а КАЖДЫЙ столбик сам разбит
+// на 3 зоны по высоте (серый низ → синий середина → красный верх), как
+// на старом аппаратном эквалайзере/VU-метре — красная зона видна только у
+// самых высоких столбиков. Alex TG 23.09.2026 (голосовое): «столбик сам
+// определял, где тихо, где средне, где громко — и делился по цвету».
+const _segGrey = Color(0xFF7A7A85);
+const _segBlue = Color(0xFF4DA3FF);
+const _segRed = Color(0xFFFF4D4D);
+// Доли ВЫСОТЫ САМОГО СТОЛБИКА, не всей полосы — серая зона самая широкая,
+// красная — только на самом верху, как на реальных индикаторах.
+const _segGreyFrac = 0.55;
+const _segBlueFrac = 0.35;
+// Остаток (0.10) — красная зона.
+
+void _segmentedBar(Canvas c, double x, double width, double barTopY, double baseY, bool played) {
+  if (!played) {
+    c.drawRect(Rect.fromLTWH(x, barTopY, width, baseY - barTopY), Paint()..color = _dim);
+    return;
+  }
+  final h = baseY - barTopY;
+  final greyH = h * _segGreyFrac;
+  final blueH = h * _segBlueFrac;
+  c.drawRect(Rect.fromLTWH(x, baseY - greyH, width, greyH), Paint()..color = _segGrey);
+  if (h > greyH) {
+    final blueTop = math.max(barTopY, baseY - greyH - blueH);
+    c.drawRect(Rect.fromLTWH(x, blueTop, width, (baseY - greyH) - blueTop), Paint()..color = _segBlue);
+  }
+  if (h > greyH + blueH) {
+    c.drawRect(Rect.fromLTWH(x, barTopY, width, (baseY - greyH - blueH) - barTopY), Paint()..color = _segRed);
+  }
+}
+
+void _shadedSeg(Canvas c, Size s) {
+  final n = _bars3.length;
+  final gap = s.width / n;
+  final w = gap * 0.62;
+  for (var i = 0; i < n; i++) {
+    final h = (s.height * _bars3[i]).clamp(3.0, s.height);
+    final x = i * gap + (gap - w) / 2;
+    _segmentedBar(c, x, w, s.height - h, s.height, (i + 0.5) / n <= _p);
+  }
+}
+
+void _chunkySeg(Canvas c, Size s) {
+  final n = _bars4.length;
+  final gap = s.width / n;
+  final w = gap * 0.66;
+  for (var i = 0; i < n; i++) {
+    final h = (s.height * _bars4[i]).clamp(6.0, s.height);
+    final x = i * gap + (gap - w) / 2;
+    _segmentedBar(c, x, w, s.height - h, s.height, (i + 0.5) / n <= _p);
+  }
+}
+
+void _spectrumSeg(Canvas c, Size s) {
+  final n = _bars5.length;
+  final gap = s.width / n;
+  final w = math.max(1.2, gap * 0.5);
+  for (var i = 0; i < n; i++) {
+    final h = (s.height * _bars5[i]).clamp(2.0, s.height);
+    final x = i * gap + (gap - w) / 2;
+    _segmentedBar(c, x, w, s.height - h, s.height, (i + 0.5) / n <= _p);
+  }
+}
+
 class _V {
   const _V(this.no, this.title, this.note, this.strip);
   final String no;
@@ -193,6 +258,15 @@ final _variants = <_V>[
       'та же форма столбиков, что и в №4, но цвет по громкости: серый→синий→красный', () => _paint(_chunkyVu)),
   _V('8', 'Спектроанализатор — VU-метр (как №5, цветной)',
       'та же форма столбиков, что и в №5, но цвет по громкости: серый→синий→красный', () => _paint(_spectrumVu)),
+  _V('9', 'Оттенок по высоте — зонами (как №3)',
+      'каждый столбик сам разбит на 3 зоны по высоте: серый→синий→красный, а не целиком одним цветом',
+      () => _paint(_shadedSeg)),
+  _V('10', 'Крупные столбики — зонами (как №4)',
+      'каждый столбик сам разбит на 3 зоны по высоте: серый→синий→красный, а не целиком одним цветом',
+      () => _paint(_chunkySeg)),
+  _V('11', 'Спектроанализатор — зонами (как №5)',
+      'каждый столбик сам разбит на 3 зоны по высоте: серый→синий→красный, а не целиком одним цветом',
+      () => _paint(_spectrumSeg)),
 ];
 
 Widget _row(_V v) => Padding(
