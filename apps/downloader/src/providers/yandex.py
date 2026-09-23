@@ -64,6 +64,7 @@ class YandexMatch:
     bitrate_kbps: int | None = None
     duration_sec: int | None = None
     score: float = 0.0
+    is_alternate: bool = False
 
 
 def _norm(s: str) -> str:
@@ -94,15 +95,19 @@ def _find_sync(artist: str, title: str, expected_duration_sec: int | None):
         log.warning("yandex search failed %r—%r: %s", artist, title, e)
         return None
 
-    best = None
-    best_score = 0.0
+    # Ремикс/лайв/кавер больше НЕ блокируется условием — правило Alex 23.09.2026
+    # («не вместо оригинала, а вместе с оригиналом; убери условие "не нашло —
+    # качает ремикс"»): один проход, альтернативная версия — обычный candidate.
+    # Небольшой штраф к score (не жёсткий отказ) — чтобы при РАВНОМ совпадении
+    # победил обычный вариант, а не порядок в выдаче Яндекса; если обычной нет
+    # или ремикс заметно точнее совпадает — он и выигрывает как лучший.
+    best, best_score, best_is_alt = None, 0.0, False
     for t in results[:12]:
         if not getattr(t, "available", True):
             continue
         ver = getattr(t, "version", None)
         full_title = f"{t.title} ({ver})" if ver else (t.title or "")
-        if is_alternate_version(full_title, title)[0]:
-            continue
+        is_alt = is_alternate_version(full_title, title)[0]
         t_artist = ", ".join(a.name for a in (t.artists or []) if a and a.name)
         # _sim2 — с учётом транслита: Яндекс часто пишет русских артистов
         # латиницей («Molchat Doma» ↔ «Молчат Дама»), побуквенное даёт 0.
@@ -114,10 +119,16 @@ def _find_sync(artist: str, title: str, expected_duration_sec: int | None):
         if sa < 0.5 or st < 0.55:
             continue
         score = sa * 0.4 + st * 0.6
+        if is_alt:
+            score *= 0.9
         if score > best_score:
-            best_score, best = score, t
+            best_score, best, best_is_alt = score, t, is_alt
     if best is None:
         return None
+    used_alt = best_is_alt
+    if used_alt:
+        ver = getattr(best, "version", None)
+        log.info("yandex: взял альтернативную версию %r (%s)", best.title, ver or "?")
 
     dur = (best.duration_ms // 1000) if best.duration_ms else None
     if duration_off(dur, expected_duration_sec):
@@ -137,7 +148,7 @@ def _find_sync(artist: str, title: str, expected_duration_sec: int | None):
     t_artist = ", ".join(a.name for a in (best.artists or []) if a and a.name)
     return best, chosen_br, YandexMatch(
         artist=t_artist, title=best.title or title, track_id=str(best.id),
-        bitrate_kbps=chosen_br, duration_sec=dur, score=best_score,
+        bitrate_kbps=chosen_br, duration_sec=dur, score=best_score, is_alternate=used_alt,
     )
 
 

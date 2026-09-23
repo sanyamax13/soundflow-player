@@ -52,6 +52,7 @@ class MusifyMatch:
     bitrate_kbps: int | None = None
     duration_sec: int | None = None
     score: float = 0.0
+    is_alternate: bool = False
 
 
 def _norm(s: str) -> str:
@@ -110,23 +111,27 @@ def _find_track_sync(artist: str, title: str,
     if not candidates:
         return None
 
-    # Скоринг: artist_sim + title_sim, требуем оба не ниже 0.55. Плюс
-    # отбрасываем альтернативные версии (remix/slowed/cover/...) которые
-    # мы не запрашивали — как в soundcloud/youtube провайдерах.
-    scored: list[tuple[float, str, str, str]] = []
+    # Скоринг: artist_sim + title_sim, требуем оба не ниже 0.55. Альтернативная
+    # версия (remix/slowed/cover/...) больше НЕ отбрасывается условием — правило
+    # Alex 23.09.2026 («не вместо оригинала, а вместе с оригиналом; убери условие
+    # "не нашло — качает ремикс"»): небольшой штраф к score (не отказ), чтобы при
+    # РАВНОМ совпадении победил обычный вариант, а не порядок в списке кандидатов.
+    scored: list[tuple[float, str, str, str, bool]] = []
     for href, t, a in candidates:
-        if is_alternate_version(t, title)[0]:
-            log.info("musify: skip alt-version %r", t)
-            continue
+        is_alt = is_alternate_version(t, title)[0]
         sa = _similarity(a, artist)
         st = _similarity(t, title)
         score = sa * 0.4 + st * 0.6
+        if is_alt:
+            score *= 0.9
         if sa >= 0.55 and st >= 0.55:
-            scored.append((score, href, a, t))
+            scored.append((score, href, a, t, is_alt))
     if not scored:
         return None
     scored.sort(key=lambda x: x[0], reverse=True)
-    best_score, best_href, best_artist, best_title = scored[0]
+    best_score, best_href, best_artist, best_title, used_alt = scored[0]
+    if used_alt:
+        log.info("musify: взял альтернативную версию %r", best_title)
 
     track_url = urljoin(BASE, best_href)
     r = session.get(track_url, impersonate=IMPERSONATE, timeout=20)
@@ -170,6 +175,7 @@ def _find_track_sync(artist: str, title: str,
         bitrate_kbps=bitrate,
         duration_sec=duration,
         score=best_score,
+        is_alternate=used_alt,
     )
 
 

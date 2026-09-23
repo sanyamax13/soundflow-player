@@ -57,7 +57,15 @@ func (d *DB) InsertTrackWithFile(t NewTrack, f NewTrackFile) error {
 	); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`
+	// ON CONFLICT(normalized_key) DO NOTHING — вторая одновременная закачка
+	// той же песни (найдено 23.09.2026: гонка в acquire.Service.Acquire,
+	// теперь закрыта замком по normKey) молча пропускала эту вставку, но
+	// строка в tracks выше уже успела вставиться и коммитилась — каталог
+	// получал «пустой» трек без файла (0 байт на телефоне, карточка «скачать»
+	// никогда не пропадала, потому что такую строку нельзя докачать). Раз
+	// вставка не подействовала — normalized_key уже занят, откатываем ВСЮ
+	// транзакцию, а не тихо коммитим половину.
+	res, err := tx.Exec(`
 		INSERT INTO track_files (id,track_id,normalized_key,file_path,mime_type,
 		                         bitrate_kbps,size_bytes,duration_sec,source,quality_tier,downloaded_at)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -65,8 +73,12 @@ func (d *DB) InsertTrackWithFile(t NewTrack, f NewTrackFile) error {
 		f.ID, t.ID, f.NormalizedKey, f.FilePath, f.MimeType, nullInt(f.BitrateKbps),
 		f.SizeBytes, nullInt(f.DurationSec), f.Source, def(f.QualityTier, "unknown"),
 		time.Now().UTC().Format(time.RFC3339),
-	); err != nil {
+	)
+	if err != nil {
 		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errors.New("normalized_key уже занят другим файлом (параллельная закачка той же песни)")
 	}
 	return tx.Commit()
 }

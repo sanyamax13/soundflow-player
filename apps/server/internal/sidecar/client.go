@@ -99,6 +99,21 @@ func (c *Client) Health(ctx context.Context) error {
 	return nil
 }
 
+// ExtraTrack — доп. файл, который сайдкар скачал ВМЕСТЕ с основным (не вместо):
+// либо другие песни того же альбома (rutracker_album/rutor_album/...), либо —
+// с 23.09.2026 — версия с РОВНО таким же совпадением по артисту/названию, что
+// и основная (обычно обычная версия + официальный ремикс под тем же именем;
+// Alex TG 23.09.2026: «пусть оба качаются, я сам удалю во время прослушивания»).
+// Каталог кладёт их отдельными треками — см. acquire.go importExtraTracks.
+type ExtraTrack struct {
+	FilePath    string `json:"file_path"`
+	Artist      string `json:"artist"`
+	Title       string `json:"title"`
+	DurationSec int    `json:"duration_sec"`
+	BitrateKbps int    `json:"bitrate_kbps"`
+	SizeBytes   int64  `json:"size_bytes"`
+}
+
 // FindAudioResult — что вернул /find-audio. FilePath — КАНОНИЧЕСКИЙ путь.
 type FindAudioResult struct {
 	Found       bool   `json:"found"`
@@ -108,6 +123,13 @@ type FindAudioResult struct {
 	SizeBytes   int64  `json:"size_bytes"`
 	Source      string `json:"source"`
 	ProviderURL string `json:"provider_url"`
+	// FLAC-проход, «образ + .cue»: FilePath — образ диска целиком, CueFile — разметка, CueTrack — номер нужной песни в
+	// ней. Песню вырезает программа (finder.go), сайдкар этого не делает.
+	CueFile  string `json:"cue_file"`
+	CueTrack int    `json:"cue_track"`
+	// ExtraTracks — см. тип ExtraTrack выше. Раньше сайдкар их уже считал (альбомы), но Go-сторона не читала это
+	// поле вообще — молча терялись. С 23.09.2026 читаем и кладём в каталог (acquire.go).
+	ExtraTracks []ExtraTrack `json:"extra_tracks"`
 }
 
 // FindAudio — поиск+скачивание через цепочку (Яндекс 320 → торренты).
@@ -119,6 +141,23 @@ func (c *Client) FindAudio(ctx context.Context, artist, title string, expectedDu
 		"artist":         artist,
 		"title":          title,
 		"skip_providers": skipProviders,
+	}
+	if expectedDurationSec > 0 {
+		body["expected_duration_sec"] = expectedDurationSec
+	}
+	var out FindAudioResult
+	err := c.post(ctx, "/find-audio", body, &out)
+	return out, err
+}
+
+// FindAudioLossless — то же, но ТОЛЬКО в lossless-раздачах торрентов (FLAC по песне или образ + .cue). Звать после
+// обычного прохода, когда mp3-альбомы песню не дали (Alex TG 20372/20374): раздачи тяжёлые.
+func (c *Client) FindAudioLossless(ctx context.Context, artist, title string, expectedDurationSec int, skipProviders []string) (FindAudioResult, error) {
+	body := map[string]any{
+		"artist":         artist,
+		"title":          title,
+		"skip_providers": skipProviders,
+		"lossless":       true,
 	}
 	if expectedDurationSec > 0 {
 		body["expected_duration_sec"] = expectedDurationSec

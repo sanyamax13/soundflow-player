@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"soundflow/server/internal/db"
+	"soundflow/server/internal/localdb"
+	"soundflow/server/internal/litestore"
 	"soundflow/server/internal/quality"
 	"soundflow/server/internal/sidecar"
 )
@@ -18,9 +22,13 @@ type fakeFinder struct {
 	err              error
 	id3Artist, id3Ti string
 	vec              []float32
+	delay            time.Duration // имитирует медленную закачку — для теста гонки
 }
 
 func (f fakeFinder) FindAudio(_ context.Context, _, _ string, _ int, _ []string) (sidecar.FindAudioResult, error) {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	return f.res, f.err
 }
 func (f fakeFinder) ID3Info(_ context.Context, _ string) (string, string, error) {
@@ -124,6 +132,63 @@ func TestAcquireNotFound(t *testing.T) {
 	_, err := s.Acquire(context.Background(), Request{Artist: "Nobody " + randID(), Title: "Nothing"})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ждал ErrNotFound, получил %v", err)
+	}
+}
+
+// TestAcquireConcurrentSameSongNoDuplicate — баг с телефона 23.09.2026: две
+// закачки одной и той же песни, запущенные почти одновременно (второй клик
+// «Скачать все», пока первая партия ещё качается фоном — /api/acquire
+// отвечает мгновенно, реальная закачка идёт в горутине), заводили ДВЕ строки
+// каталога на одну песню. Без замка по normKey оба вызова проходят проверку
+// «уже в каталоге?» раньше, чем первый успевает вставить строку. Реальный
+// litestore/SQLite backend, не заглушка — на нём и жила гонка.
+func TestAcquireConcurrentSameSongNoDuplicate(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	ldb, err := localdb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("localdb.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = ldb.Close() })
+	store := litestore.New(ldb)
+
+	artist := "RaceTest " + randID()
+	title := "Song"
+	s := &Service{DB: store, Finder: fakeFinder{
+		delay: 80 * time.Millisecond,
+		res: sidecar.FindAudioResult{
+			Found: true, FilePath: `E:\soundflow-data\cache\race.mp3`, BitrateKbps: 320,
+			DurationSec: 200, SizeBytes: 8_000_000, Source: "yandex", ProviderURL: "yandexmusic://race",
+		},
+	}}
+
+	var wg sync.WaitGroup
+	results := make([]Result, 2)
+	errs := make([]error, 2)
+	for i := range 2 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = s.Acquire(context.Background(), Request{Artist: artist, Title: title})
+		}(i)
+	}
+	wg.Wait()
+
+	for i, e := range errs {
+		if e != nil {
+			t.Fatalf("Acquire #%d: %v", i, e)
+		}
+	}
+	if results[0].TrackID != results[1].TrackID {
+		t.Fatalf("два разных трека на одну песню: %+v vs %+v — дубль не пойман", results[0], results[1])
+	}
+	created := 0
+	for _, r := range results {
+		if r.Created {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("ждал ровно один Created=true из двух, получил %d", created)
 	}
 }
 

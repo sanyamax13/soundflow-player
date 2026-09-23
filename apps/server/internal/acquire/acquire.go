@@ -10,7 +10,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
 
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/quality"
@@ -38,6 +40,36 @@ type Finder interface {
 type Service struct {
 	DB     Store
 	Finder Finder
+
+	// keyMu — по одному замку на normKey: пока одна песня качается, вторый
+	// параллельный запрос на неё же ждёт, а не проверяет каталог раньше
+	// времени. Без этого «Скачать все» + повторный клик по той же кнопке,
+	// пока первая партия ещё качается фоном, заводили ДВЕ строки каталога на
+	// одну и ту же песню (найдено 23.09.2026: 5 песен продублировались,
+	// телефону они обе попадали в план — карточка «скачать» не пропадала).
+	keyMu locks
+}
+
+// locks — самодельный «замок по ключу»: разные normKey качаются параллельно
+// как и раньше, одинаковые — по очереди.
+type locks struct {
+	mu   sync.Mutex
+	byID map[string]*sync.Mutex
+}
+
+func (l *locks) lock(key string) func() {
+	l.mu.Lock()
+	if l.byID == nil {
+		l.byID = make(map[string]*sync.Mutex)
+	}
+	m, ok := l.byID[key]
+	if !ok {
+		m = &sync.Mutex{}
+		l.byID[key] = m
+	}
+	l.mu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 type Request struct {
@@ -75,6 +107,10 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 	}
 
 	normKey := quality.NormalizedKey(req.Artist, req.Title)
+
+	// Замок по normKey — см. комментарий у Service.keyMu.
+	unlock := s.keyMu.lock(normKey)
+	defer unlock()
 
 	// 2. Разметка со старого плеера: удалён/скрыт — не качаем.
 	legacyKind, err := s.DB.LegacyMarkKind(ctx, normKey)
@@ -181,7 +217,69 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
+	// 10. Доп. версии, скачанные ВМЕСТЕ с основной — то же альбомное поле
+	//     ExtraTracks (раньше молча терялось, никто не читал), с 23.09.2026
+	//     туда же попадают и «ничьи» по совпадению (обычная+ремикс с
+	//     одинаковым счётом — Alex: «пусть оба качаются»). Лучшее старание:
+	//     ошибка здесь не должна портить исход основного трека.
+	s.importExtraTracks(ctx, res.ExtraTracks, coverURL)
+
 	return Result{TrackID: trackID, Created: true, Source: res.Source, QualityTier: tier.String(), Favorite: legacyFav, CoverURL: coverURL}, nil
+}
+
+// importExtraTracks — кладёт в каталог доп. файлы, которые сайдкар скачал
+// ВМЕСТЕ с основным треком (см. sidecar.ExtraTrack). Каждый — отдельная
+// строка каталога со своим normKey; уже есть в базе или не проходит по
+// качеству — тихо пропускаем, это не повод завалить основной Acquire.
+func (s *Service) importExtraTracks(ctx context.Context, extras []sidecar.ExtraTrack, coverURL string) {
+	for _, et := range extras {
+		artist, title, _ := quality.CleanTags(et.Artist, et.Title, "")
+		if artist == "" || title == "" || et.FilePath == "" {
+			continue
+		}
+		normKey := quality.NormalizedKey(artist, title)
+		existing, err := s.DB.TrackByKey(ctx, normKey)
+		if err != nil {
+			log.Printf("доп. версия «%s — %s»: проверка каталога: %v", artist, title, err)
+			continue
+		}
+		if existing != nil {
+			continue // уже в каталоге (сама песня или прошлый заход)
+		}
+		mime := quality.MimeFromExt(et.FilePath)
+		tier, playable, why := quality.ClassifyAudio(mime, et.BitrateKbps)
+		if !playable {
+			log.Printf("доп. версия «%s — %s» пропущена: %s", artist, title, why)
+			continue
+		}
+		trackID, fileID := "t_"+randID(), "f_"+randID()
+		if err := s.DB.InsertTrackWithFile(ctx,
+			db.NewTrack{
+				ID:            trackID,
+				Artist:        artist,
+				Title:         title,
+				DurationSec:   et.DurationSec,
+				ReleaseKind:   quality.ReleaseKind(title, ""),
+				Explicit:      quality.IsExplicit(title),
+				IsAltVersion:  quality.IsAltVersion(title),
+				NormalizedKey: normKey,
+				CoverURL:      coverURL,
+			},
+			db.NewTrackFile{
+				ID:            fileID,
+				NormalizedKey: normKey,
+				FilePath:      et.FilePath,
+				MimeType:      mime,
+				BitrateKbps:   et.BitrateKbps,
+				SizeBytes:     et.SizeBytes,
+				DurationSec:   et.DurationSec,
+				Source:        "extra",
+				QualityTier:   tier.String(),
+			},
+		); err != nil {
+			log.Printf("доп. версия «%s — %s»: запись в каталог: %v", artist, title, err)
+		}
+	}
 }
 
 // AnalyzeAndStore — посчитать «звуковой отпечаток» трека через сайдкар и
