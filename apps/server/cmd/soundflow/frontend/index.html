@@ -94,6 +94,27 @@
   #phoneStatus:not(.off) .dot, #usb:not(.off) .dot{color:var(--ok)}
   /* адрес и свободное место — в «Настройках» (там они и так есть) */
   .addr, .disk{display:none}
+  /* одна плашка в шапке, подробности — в окошке под ней (Alex TG 20425: пять плашек подряд, все обрезаны) */
+  .swrap{position:relative; flex-shrink:0}
+  button.pill{border:0; font-family:inherit; cursor:pointer}
+  #status .chev{width:14px; height:14px; margin-right:-3px; opacity:.7}
+  .spop{position:absolute; right:0; top:calc(100% + 8px); width:380px; max-width:calc(100vw - 32px); background:var(--card);
+    border:1px solid var(--line); border-radius:var(--r-l); box-shadow:var(--sh-2); padding:var(--s2); display:flex; flex-direction:column; gap:2px; z-index:20}
+  .spop[hidden]{display:none}
+  .spop-h{font-size:var(--fs-caps); font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); padding:var(--s2) var(--s3) var(--s1)}
+  .spop-empty{font-size:var(--fs-callout); color:var(--ink-2); padding:var(--s2) var(--s3)}
+  .spop-empty[hidden]{display:none}
+  .top .spop .pill, .spop #phoneStatus, .spop #usb{height:auto; min-height:36px; padding:var(--s2) var(--s3); border-radius:var(--r-m); white-space:normal;
+    line-height:1.35; font-size:var(--fs-callout); font-weight:500; background:transparent; color:var(--ink); align-items:center}
+  .spop .pill span[id$="Txt"]{overflow:visible; text-overflow:clip}
+  .spop .pill .dot{color:var(--ok)}
+  .spop .pill.busy .dot{color:var(--info)}
+  .spop .pill.off .dot{color:var(--warn)}
+  .spop .pill.off{color:var(--warn)}
+  .spop #rmPill .dot, .spop #msPill .dot, .spop #bfPill .dot{color:var(--warn)}
+  .spop .pill.busy::after, .spop #pcPill::after{content:"›"; margin-left:auto; padding-left:var(--s2); color:var(--ink-3); font-size:var(--fs-head)}
+  .spop .pill.busy:hover, .spop #pcPill:hover{background:var(--fill)}
+  .spop .pill.busy:active, .spop #pcPill:active{transform:scale(.98)}
 
   .body{flex:1; display:flex; min-height:0}
   .nav{width:208px; background:var(--bg-2); border-right:1px solid var(--line); padding:var(--s4) var(--s3); display:flex; flex-direction:column; gap:2px; flex-shrink:0}
@@ -184,6 +205,8 @@
   .sum b{color:var(--ink); font-weight:600}
 
   .tree{flex:1; border:0; border-radius:var(--r-l); overflow:auto; padding:6px 6px var(--s5); margin:0 -6px}
+  /* «‹ все папки» не уезжает при прокрутке папки (Alex TG 20429) */
+  .tree .catbar{position:sticky; top:-6px; z-index:3; background:var(--bg); margin:-6px -6px var(--s2); padding:var(--s2) 6px var(--s3)}
   .row{display:flex; align-items:center; gap:var(--s2); height:44px; padding:0 var(--s4); font-size:var(--fs-callout);
     border-bottom:1px solid var(--line); white-space:nowrap}
   .row:last-child{border-bottom:none}
@@ -408,21 +431,6 @@
   .clu .ex{font-size:var(--fs-foot); color:var(--ink-2); padding:2px 0}
   .taste-h{font-size:var(--fs-caps); text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); font-weight:700; margin:6px 0 var(--s3)}
 
-  /* Итог задачи не исчезает (ревизия 20.09.2026, шаг 2): карточка «Готово / Не вышло» до кнопки «Понятно» */
-  .donestrip{margin:var(--s4) var(--s6) 0; padding:var(--s3) var(--s4); background:var(--ok-bg);
-    border-radius:var(--r-l); display:flex; align-items:flex-start; gap:var(--s4); flex-shrink:0; animation:viewIn var(--dur-3) var(--ease)}
-  .donestrip[hidden]{display:none}
-  .donestrip.bad{background:var(--warn-bg)}
-  .donestrip .dl{flex:1; min-width:0}
-  .donestrip .dh{font-size:var(--fs-callout); font-weight:700; margin-bottom:4px}
-  .donestrip .dr{display:flex; gap:var(--s2); align-items:baseline; font-size:var(--fs-callout); padding:2px 0}
-  .donestrip .dr .ic{width:14px; flex-shrink:0; font-weight:800; color:var(--ok)}
-  .donestrip .dr.fail .ic{color:var(--warn)}
-  .donestrip .dr .tm{color:var(--ink-3); font-variant-numeric:tabular-nums; flex-shrink:0}
-  .donestrip .dr .tx{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .donestrip .dr .nt{color:var(--ink-2)}
-  .donestrip .more{font-size:var(--fs-foot); color:var(--ink-2); padding:2px 0 0 22px}
-
   /* Активность: «Сейчас» и «Сегодня» (шаг 6 ревизии 20.09.2026) */
   .act-h{font-size:var(--fs-caps); text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); font-weight:700; margin:var(--s5) 0 var(--s2)}
   .act-h:first-of-type{margin-top:var(--s2)}
@@ -466,7 +474,6 @@
     .nav a{width:44px; padding:0; justify-content:center}
     .nav a span{display:none}
     .view{padding:var(--s4) var(--s5) var(--s5)}
-    .donestrip{margin:var(--s3) var(--s5) 0}
   }
   /* «меньше движения» в Windows — только проявление */
   @media (prefers-reduced-motion:reduce){
@@ -485,14 +492,20 @@
     <div class="logo">SF</div>
     <div class="brand">SoundFlow</div>
     <div class="sp"></div>
-    <div class="pill" id="status"><span class="dot"></span>Всё в порядке</div>
-    <div class="pill" id="phoneStatus" hidden title="Когда и как в последний раз выходил на связь телефон"><span class="dot"></span><span id="phoneStatusTxt"></span></div>
-    <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
-    <div class="pill busy" id="jobPill" hidden title="Открыть Каталог"><span class="dot"></span><span id="jobPillTxt"></span></div>
-    <div class="pill busy" id="rmPill" hidden title="Показать список убранного на телефоне"><span class="dot"></span><span id="rmPillTxt"></span></div>
-    <div class="pill busy" id="msPill" hidden title="Файлы этих песен пропали с диска — убрать записи из каталога?"><span class="dot"></span><span id="msPillTxt"></span></div>
-    <div class="pill busy" id="bfPill" hidden title="У этих песен стоит «больше не качать», а файлы лежат на диске — стереть?"><span class="dot"></span><span id="bfPillTxt"></span></div>
-    <div class="pill" id="pcPill" hidden title="Сколько песен на телефоне и на компьютере — совпадают или нет"><span class="dot"></span><span id="pcPillTxt"></span></div>
+    <div class="swrap">
+      <button class="pill" id="status" type="button" aria-haspopup="true" aria-expanded="false" title="Подробности"><span class="dot"></span><span id="statusTxt">Всё в порядке</span><svg class="i chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4"/></svg></button>
+      <div class="spop" id="statusPop" hidden>
+        <div class="spop-h">Состояние</div>
+        <div class="pill" id="phoneStatus" hidden title="Когда и как в последний раз выходил на связь телефон"><span class="dot"></span><span id="phoneStatusTxt"></span></div>
+        <div class="pill" id="usb" hidden><span class="dot"></span><span id="usbTxt"></span></div>
+        <div class="pill busy" id="jobPill" hidden title="Открыть «Активность»"><span class="dot"></span><span id="jobPillTxt"></span></div>
+        <div class="pill busy" id="rmPill" hidden title="Показать список убранного на телефоне"><span class="dot"></span><span id="rmPillTxt"></span></div>
+        <div class="pill busy" id="msPill" hidden title="Файлы этих песен пропали с диска — убрать записи из каталога?"><span class="dot"></span><span id="msPillTxt"></span></div>
+        <div class="pill busy" id="bfPill" hidden title="У этих песен стоит «больше не качать», а файлы лежат на диске — стереть?"><span class="dot"></span><span id="bfPillTxt"></span></div>
+        <div class="pill" id="pcPill" hidden title="Сколько песен на телефоне и на компьютере — совпадают или нет"><span class="dot"></span><span id="pcPillTxt"></span></div>
+        <div class="spop-empty" id="statusEmpty">Действий не требуется.</div>
+      </div>
+    </div>
     <div class="addr" id="addr" title="скопировать">—</div>
     <div class="disk" id="disk"></div>
   </div>
@@ -509,12 +522,6 @@
     </nav>
 
     <div class="main">
-      <!-- Итог законченных задач: висит, пока не нажмёшь «Понятно» -->
-      <div class="donestrip" id="doneStrip" hidden>
-        <div class="dl"><div class="dh" id="doneHead"></div><div id="doneRows"></div><div class="more" id="doneMore" hidden></div></div>
-        <button class="btn" id="doneOk">Понятно</button>
-      </div>
-
       <!-- Каталог -->
       <section class="view on" id="v-catalog">
         <h2>Каталог</h2>
@@ -541,7 +548,7 @@
             <input id="fQuery" placeholder="Исполнитель — Название, например: Кино — Пачка сигарет" autocomplete="off" style="min-width:320px">
             <button class="btn primary" id="fGo">Найти и скачать</button>
           </div>
-          <div class="hint" id="fHint">Пиши через тире: «Исполнитель — Название». Ищем по Яндекс&nbsp;Музыке, затем musify и mp3party. Найденное сразу попадает в каталог и на телефон при синхронизации.</div>
+          <div class="hint" id="fHint">Через тире: «Исполнитель — Название». Поиск идёт по Яндекс&nbsp;Музыке, затем musify и mp3party. Найденное сразу попадает в каталог и на телефон при синхронизации.</div>
           <div class="list" id="fLog"></div>
         </div>
 
@@ -550,9 +557,9 @@
             <input id="tArtist" placeholder="Исполнитель" autocomplete="off">
             <button class="btn primary" id="tGo">Показать релизы</button>
           </div>
-          <div class="hint" id="tHint">Опрашиваем трекеры (nnmclub, rutor, tapochek, rustorka). Отметь галочками нужные альбомы и нажми «Скачать выбранное» — качается через qBittorrent, песни идут в каталог.</div>
+          <div class="hint" id="tHint">Опрос трекеров (nnmclub, rutor, tapochek, rustorka). Отметьте галочками нужные альбомы и нажмите «Скачать выбранное» — качается через qBittorrent, песни идут в каталог.</div>
           <div id="tErr" class="hint" style="color:var(--err)"></div>
-          <div id="tQbWarn" class="hint" style="color:var(--warn)" hidden>qBittorrent не найден — он нужен для скачивания через торренты. Установи его и один раз включи Web UI в его настройках, или просто открой программу qBittorrent перед скачиванием.</div>
+          <div id="tQbWarn" class="hint" style="color:var(--warn)" hidden>qBittorrent не найден — он нужен для скачивания через торренты. Установите его и включите Web UI в настройках, или просто откройте программу qBittorrent перед скачиванием.</div>
           <div id="tCands"></div>
           <div id="tActions" hidden><button class="btn primary" id="tDl">Скачать выбранное</button></div>
           <h3 style="margin-top:24px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:800">Закачки</h3>
@@ -576,7 +583,7 @@
             <b>Синхронизация телефона</b>
             <button class="x" id="syncClose"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg></button>
           </div>
-          <div id="syncBody" class="modal-body"><div class="muted">считаю разницу…</div></div>
+          <div id="syncBody" class="modal-body"><div class="muted">Подсчёт разницы…</div></div>
           <div class="modal-foot">
             <span id="syncSummary" class="muted"></span>
             <button class="btn primary" id="syncNext" disabled>Положить в план</button>
@@ -667,12 +674,12 @@
              (например, «Мне нравится» → «Поделиться»), а раздел «Твои лайки из Яндекс.Музыки», который подтягивался сам по
              токену, убран (его ответ «2»). Один плейлист за раз: новая ссылка заменяет прежний. Песни — тем же списком. -->
         <div class="dlink" id="plBar">
-          <input type="text" id="plUrl" placeholder="Вставь ссылку на плейлист Яндекс.Музыки (у плейлиста «Поделиться»)" autocomplete="off" spellcheck="false" aria-label="Ссылка на плейлист Яндекс.Музыки">
+          <input type="text" id="plUrl" placeholder="Ссылка на плейлист Яндекс.Музыки (кнопка «Поделиться» у плейлиста)" autocomplete="off" spellcheck="false" aria-label="Ссылка на плейлист Яндекс.Музыки">
           <button class="btn primary" id="plShow">Показать</button>
         </div>
         <div class="hint" id="plMsg" hidden></div>
         <div class="dsec" id="sec-pl" hidden>
-          <div class="dsec-head" data-sec="pl" role="button" tabindex="0" aria-expanded="false" title="нажми — свернётся или раскроется">
+          <div class="dsec-head" data-sec="pl" role="button" tabindex="0" aria-expanded="false" title="сворачивает и раскрывает список">
             <span class="chev">▸</span>
             <h2 id="plTitle">Плейлист</h2>
             <span class="dsec-sum" id="plSum"></span>
@@ -693,7 +700,7 @@
              себя»). Кандидаты — ещё треки у лайкнутых артистов, похожие жанры, похожие артисты, артисты,
              залайканные на телефоне; отбирает и ранжирует свой вкус-движок, не Яндекс. Раз в день, до 100. -->
         <div class="dsec" id="sec-wave">
-          <div class="dsec-head" data-sec="wave" role="button" tabindex="0" aria-expanded="false" title="нажми — раскроется">
+          <div class="dsec-head" data-sec="wave" role="button" tabindex="0" aria-expanded="false" title="раскрывает список">
             <span class="chev">▸</span>
             <h2>Волна — подборка по твоему вкусу</h2>
             <span class="dsec-sum" id="waveSum"></span>
@@ -742,10 +749,10 @@
 
   <!-- Плеер -->
   <div class="player empty" id="player">
-    <div class="cov" id="pcov">♪</div>
+    <div class="cov" id="pcov"><svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 3v9.5"/><path d="M12 3l4 .9"/><circle cx="9.6" cy="13.3" r="2.3"/></svg></div>
     <div class="now">
       <div class="t1" id="pt1">ничего не играет</div>
-      <div class="t2" id="pt2">выбери песню в каталоге</div>
+      <div class="t2" id="pt2">выберите песню в каталоге</div>
     </div>
     <div class="ctrls">
       <button class="pbtn" id="pPrev" title="предыдущая" aria-label="предыдущая"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 4.2v11.6a.7.7 0 0 1-1.1.6L6.8 10.6a.7.7 0 0 1 0-1.2l7.6-5.8a.7.7 0 0 1 1.1.6z"/><rect x="3.5" y="4" width="2" height="12" rx="1"/></svg></button>
@@ -767,6 +774,8 @@ const ICON_PLAY  = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.8v
 const ICON_PAUSE = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="3.5" width="3.6" height="13" rx="1"/><rect x="11.4" y="3.5" width="3.6" height="13" rx="1"/></svg>';
 const ICON_PHONE = '<svg class="i" viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="2.5" width="8" height="15" rx="2"/><path d="M9 14.8h2"/></svg>';
 const ICON_TRASH = '<svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11M8 6V4.5h4V6M6 6l.7 9.3a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6"/></svg>';
+const ICON_NOTE  = '<svg class="i" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 3v9.5"/><path d="M12 3l4 .9"/><circle cx="9.6" cy="13.3" r="2.3"/></svg>';
+const ICON_DISC  = '<svg class="i" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="1.6"/></svg>';
 const esc = s => (s||"").replace(/[<>&"']/g, x => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&#39;"}[x]));
 // jsArg — строка как аргумент в inline-обработчике (onclick="f(${jsArg(x)})"). esc одной кавычки мало:
 // браузер раскодирует &#39; обратно ещё ДО запуска JS, и название с ' ломало бы (или подменяло) вызов.
@@ -784,21 +793,21 @@ async function jpost(u){ const r = await fetch(u,{method:"POST"}); return r.ok ?
    alert() как есть. Здесь — перевод самых частых на простой язык; то, что
    не распознали, показываем как есть (не прячем), просто такое реже. */
 const ERROR_DICT = [
-  [/connection refused|connectex|dial tcp/i, "Не могу достучаться до вспомогательной программы — похоже, она не запущена или ещё не поднялась."],
-  [/context deadline exceeded|client\.timeout exceeded/i, "Сервис слишком долго не отвечал. Попробуй ещё раз через минуту."],
-  [/no such host/i, "Не нашёл нужный адрес в сети — проверь подключение к интернету."],
-  [/database is locked/i, "База данных сейчас занята другой операцией — попробуй через несколько секунд."],
-  [/no such table|no such column/i, "Внутренняя ошибка базы данных — если повторится, покажи это разработчику."],
+  [/connection refused|connectex|dial tcp/i, "Не удаётся достучаться до вспомогательной программы — похоже, она не запущена или ещё не поднялась."],
+  [/context deadline exceeded|client\.timeout exceeded/i, "Сервис слишком долго не отвечал. Попробуйте ещё раз через минуту."],
+  [/no such host/i, "Не удалось найти нужный адрес в сети — проверьте подключение к интернету."],
+  [/database is locked/i, "База данных сейчас занята другой операцией — попробуйте через несколько секунд."],
+  [/no such table|no such column/i, "Внутренняя ошибка базы данных — если повторится, покажите это разработчику."],
   [/unique constraint failed/i, "Такая запись уже есть."],
   [/cannot find the (file|path)/i, "Файл или папка не найдены на диске."],
   [/access is denied|permission denied/i, "Нет прав на файл или папку."],
-  [/used by another process|sharing violation/i, "Файл сейчас занят другой программой — закрой её и попробуй снова."],
+  [/used by another process|sharing violation/i, "Файл сейчас занят другой программой — закройте её и попробуйте снова."],
   [/unexpected end of json|invalid character/i, "Вспомогательная программа вернула что-то непонятное — возможно, она ещё не до конца запустилась."],
-  [/429|too many requests/i, "Источник просит не торопиться — слишком много запросов подряд, попробуй позже."],
+  [/429|too many requests/i, "Источник просит не торопиться — слишком много запросов подряд, попробуйте позже."],
   [/no space left on device/i, "Кончилось место на диске."],
   [/i\/o timeout/i, "Не дождались ответа по сети — таймаут."],
-  [/failed to fetch|networkerror|econnreset/i, "Порвалась связь с программой — проверь, что она ещё работает, и попробуй снова."],
-  [/^eof$/i, "Соединение оборвалось на середине — попробуй ещё раз."],
+  [/failed to fetch|networkerror|econnreset/i, "Порвалась связь с программой — проверьте, что она ещё работает, и попробуйте снова."],
+  [/^eof$/i, "Соединение оборвалось на середине — попробуйте ещё раз."],
 ];
 function friendlyError(raw){
   const s = String((raw&&raw.message) || raw || "");
@@ -839,9 +848,8 @@ async function loadInfo(){
     const d = await jget("/api/info");
     $("#addr").textContent = d.addr;
     $("#disk").textContent = "свободно " + fmtGB(d.disk_free) + (d.data_drive ? " на "+d.data_drive : "");
-    const st = $("#status");
-    if(d.has_model){ st.className="pill"; st.innerHTML='<span class="dot"></span>Всё в порядке'; }
-    else { st.className="pill off"; st.innerHTML='<span class="dot"></span>без модели отпечатков'; }
+    _baseStatus = d.has_model ? null : "Модель отпечатков не найдена";
+    updateStatusSummary();
     if(_catTracks.length) _catSummary();   // шапку каталога ведёт каталог (иначе перезапись «415 папок» спорила с плитками)
     else $("#sum").innerHTML = `<b>${nfmt(d.tracks)}</b> треков · <b>${nfmt(d.albums)}</b> папок · `+
       `<span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(d.with_vector)}</b></span>`;
@@ -855,8 +863,37 @@ async function loadInfo(){
       $("#usbTxt").textContent = u.up ? "телефон по кабелю" : ("USB: " + (u.text || "нет телефона"));
     } else { usb.hidden = true; }
     window._info = d;
-  }catch(e){ $("#status").className="pill off"; $("#status").innerHTML='<span class="dot"></span>Нет связи с программой'; }
+  }catch(e){ _baseStatus = "Нет связи с программой"; updateStatusSummary(); }
 }
+
+/* Одна плашка в шапке сводит всё, что раньше висело пятью плашками (Alex TG 20425).
+   Сами строки живут в окошке #statusPop и обновляются своим кодом, как раньше; сводка следит за ними. */
+let _baseStatus = null;
+function updateStatusSummary(){
+  const vis = id => { const e = document.getElementById(id); return !!e && !e.hidden; };
+  const off = id => vis(id) && document.getElementById(id).classList.contains("off");
+  const attn = ["rmPill","msPill","bfPill"].filter(vis).length + (off("pcPill") ? 1 : 0) + (off("phoneStatus") ? 1 : 0);
+  const jobs = vis("jobPill") ? Number($("#jobPill").dataset.n || 1) : 0;
+  let kind = "", text = "Всё в порядке";
+  if(_baseStatus){ kind = " off"; text = _baseStatus; }
+  else if(attn){ kind = " off"; text = "Требует внимания: " + attn; }
+  else if(jobs){ kind = " busy"; text = jobs === 1 ? "Выполняется задача" : "Выполняется задач: " + jobs; }
+  const st = $("#status");
+  if(st.className !== "pill" + kind) st.className = "pill" + kind;
+  if($("#statusTxt").textContent !== text) $("#statusTxt").textContent = text;
+  const anyLine = ["phoneStatus","usb","jobPill","rmPill","msPill","bfPill","pcPill"].some(vis);
+  if($("#statusEmpty").hidden !== anyLine) $("#statusEmpty").hidden = anyLine;
+}
+function _statusPopShow(open){
+  $("#statusPop").hidden = !open;
+  $("#status").setAttribute("aria-expanded", open ? "true" : "false");
+}
+$("#status").onclick = e => { e.stopPropagation(); _statusPopShow($("#statusPop").hidden); };
+$("#statusPop").addEventListener("click", e => { if(e.target.closest(".pill")) _statusPopShow(false); });
+document.addEventListener("click", e => { if(!$("#statusPop").hidden && !e.target.closest(".swrap")) _statusPopShow(false); });
+document.addEventListener("keydown", e => { if(e.key === "Escape" && !$("#statusPop").hidden) _statusPopShow(false); });
+new MutationObserver(() => requestAnimationFrame(updateStatusSummary)).observe($("#statusPop"),
+  {subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:["hidden","class","data-n"]});
 
 /* ---------- каталог: папки (Alex TG 20018, 20030) ----------
    14.09.2026 каталог стал плитками-альбомами «как в iTunes»; 19.09.2026 Alex решил вернуться к папкам:
@@ -915,7 +952,7 @@ async function loadCatalog(opts){
     if(!tracks.length){
       box.innerHTML =
         '<div class="empty"><div class="big">Каталог пуст</div>'+
-        '<div class="sub">Укажи папку, где лежит твоя музыка — программа прочитает теги и составит каталог.</div>'+
+        '<div class="sub">Укажите папку с музыкой — программа прочитает теги и составит каталог.</div>'+
         '<button class="btn primary" id="emptyPick">Выбрать папку с музыкой</button></div>';
       const b = $("#emptyPick"); if(b) b.onclick = pickAndScan;
       list = []; _catTracks = []; _catById = new Map(); _fnTop = []; _fnSig = null; _catFolderPath = [];
@@ -1118,7 +1155,7 @@ function _tileHtml(click, name, sub, seed, coverId, isNew, extra, tip){
     `</button>`;
 }
 function _catBar(back, title, count){
-  return `<div class="bar" style="margin:0 0 10px"><button class="btn" onclick="${back}">${title.back}</button>`+
+  return `<div class="bar catbar"><button class="btn" onclick="${back}">${title.back}</button>`+
     `<b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title.text)}</b>`+
     `<span class="sum" style="margin:0">${count}</span></div>`;
 }
@@ -1127,7 +1164,7 @@ function _catBar(back, title, count){
 function _catSummary(){
   const tr = _catTracks.length, withFp = _catTracks.filter(t=>t.has_fp).length;
   $("#sum").innerHTML =
-    `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <span title="Папки верхнего уровня; заходишь — подпапки, ещё раз — песни"><b>${nfmt(_fnTop.length)}</b> ${plural(_fnTop.length,"папка","папки","папок")}</span>`+
+    `<b>${nfmt(tr)}</b> ${_wordTrack(tr)} · <span title="Папки верхнего уровня; переход открывает подпапки, повторный — песни"><b>${nfmt(_fnTop.length)}</b> ${plural(_fnTop.length,"папка","папки","папок")}</span>`+
     ` · <span title="Звуковой отпечаток нужен для умного радио и поиска похожих песен — считается сам по мере добавления музыки">звук распознан у <b>${nfmt(withFp)}</b></span>`;
 }
 
@@ -1238,6 +1275,36 @@ function _ctxBusy(msg){
   return () => ov.remove();
 }
 
+// appAlert/appConfirm — окна программы вместо системных alert()/confirm() (те подписаны браузером
+// «Сообщение с wails.localhost», выглядят чужими; Alex TG 23.09.2026, скрин именно такого окна).
+// title — короткий смысл в одной строке, lines — по одной мысли на строку (не одна длинная с \n\n).
+function appAlert(title, lines){
+  return new Promise(resolve => {
+    const ov = document.createElement("div"); ov.className = "modal";
+    const card = document.createElement("div"); card.className = "modal-card"; card.style.width = "min(460px,92vw)";
+    const head = document.createElement("div"); head.className = "modal-head";
+    const hb = document.createElement("b"); hb.textContent = title; head.appendChild(hb);
+    const body = document.createElement("div"); body.className = "modal-body";
+    for(const l of lines){ const p = document.createElement("p"); p.style.margin = "0 0 9px"; p.textContent = l; body.appendChild(p); }
+    const foot = document.createElement("div"); foot.className = "modal-foot";
+    foot.appendChild(document.createElement("span"));
+    const btns = document.createElement("span");
+    const ok = document.createElement("button"); ok.className = "btn primary"; ok.textContent = "Понятно";
+    btns.appendChild(ok); foot.appendChild(btns);
+    card.append(head, body, foot); ov.appendChild(card);
+    const done = () => { document.removeEventListener("keydown", onKey, true); ov.remove(); resolve(); };
+    const onKey = e => { if(e.key === "Escape" || e.key === "Enter"){ e.preventDefault(); done(); } };
+    document.addEventListener("keydown", onKey, true);
+    ok.onclick = done;
+    ov.addEventListener("mousedown", e => { if(e.target === ov) done(); });
+    document.body.appendChild(ov);
+    ok.focus();
+  });
+}
+// appConfirm — то же самое окно, что и у удаления (_ctxConfirm), просто под именем без "ctx"-префикса
+// для мест, что не про контекстное меню папки/песни.
+const appConfirm = o => _ctxConfirm(o);
+
 // что сейчас на «живом» телефоне; null — телефона нет или сервер не ответил
 async function _ctxPhoneState(){
   try{
@@ -1261,8 +1328,8 @@ async function _ctxPhoneBulk(name, ids, add){
   const ok = await _ctxConfirm({
     title: add ? "Добавить папку на телефон?" : "Убрать папку с телефона?",
     lines: [`«${name}»: ${nfmt(ids.length)} ${_wordTrack(ids.length)}, ${_fmtSize(_ctxBytes(ids))}.`,
-      add ? "Телефон скачает их при следующем заходе. Хватит ли на нём места, программа не проверяет."
-          : "Они пропадут с телефона при его следующем заходе; на компьютере останутся."],
+      add ? "Скачается при следующем заходе. Место на телефоне не проверяется."
+          : "Исчезнет с телефона при следующем заходе. На компьютере останется."],
     okText: add ? "Добавить" : "Убрать", danger: false });
   if(ok) await _ctxPhonePlan(ids, add);
 }
@@ -1273,22 +1340,20 @@ async function _ctxDelete(ids, label, isFolder){
   // Alex TG 20177: песню удаляем целиком, со всеми копиями — окно говорит, сколько их, до подтверждения.
   let copies = 0, copySongs = 0;
   {
-    const closeBusy = _ctxBusy("Ищу копии в других папках…");
+    const closeBusy = _ctxBusy("Поиск копий в других папках…");
     try{ const c = await _ctxPost("/api/tracks/copies", {ids}); copies = c.copies || 0; copySongs = c.songs || 0; }
     catch(e){ /* не вышло посчитать — спросим без этой строки, удаление всё равно уберёт копии */ }
     closeBusy();
   }
   const lines = [isFolder ? `Папка «${label}»: ${nfmt(ids.length)} ${_wordTrack(ids.length)}, ${_fmtSize(_ctxBytes(ids))}.` : `«${label}»`,
-    "Песни уйдут из каталога и с телефона (при его следующем заходе), а в загрузчик попадёт метка «больше не качать».",
-    "Файлы на компьютере будут стёрты насовсем — вернуть их будет нельзя."];
-  if(copies) lines.push(isFolder
-    ? `У ${nfmt(copySongs)} ${_wordTrack(copySongs)} есть ещё ${nfmt(copies)} ${plural(copies,"копия","копии","копий")} в других папках — уберу и их.`
-    : `У этой песни есть ещё ${nfmt(copies)} ${plural(copies,"копия","копии","копий")} в других папках — уберу все.`);
-  if(big) lines.push("Перед удалением программа сама сохранит копию базы.");
+    "Исчезнет из каталога и с телефона. Метка «не качать» останется.",
+    "Файлы на компьютере будут стёрты. Действие нельзя отменить."];
+  if(copies) lines.push(`Плюс ${nfmt(copies)} ${plural(copies,"копия","копии","копий")} в других папках — удалятся вместе.`);
+  if(big) lines.push("Программа сохранит копию базы перед удалением.");
   const ok = await _ctxConfirm({ title: isFolder ? "Удалить папку навсегда?" : "Удалить песню навсегда?",
     lines, okText: "Удалить", danger: true });
   if(!ok) return;
-  const close = _ctxBusy(`Удаляю: ${nfmt(ids.length)} ${_wordTrack(ids.length)}…`);
+  const close = _ctxBusy(`Удаление: ${nfmt(ids.length)} ${_wordTrack(ids.length)}…`);
   try{
     const r = await _ctxPost("/api/tracks/delete-forever", {ids});
     close();
@@ -1403,10 +1468,10 @@ function _playQ(i){
   $("#pt1").textContent = t.title || "—";
   $("#pt2").textContent = t.artist || "";
   const cov = $("#pcov");
-  cov.textContent = "♪";
+  cov.innerHTML = ICON_NOTE;
   const img = new Image();
   img.onload = () => { cov.textContent=""; cov.style.backgroundImage = `url(/api/cover/${encodeURIComponent(t.id)})`; cov.style.backgroundSize="cover"; };
-  img.onerror = () => { cov.style.backgroundImage=""; cov.textContent="♪"; };
+  img.onerror = () => { cov.style.backgroundImage=""; cov.innerHTML=ICON_NOTE; };
   img.src = "/api/cover/" + encodeURIComponent(t.id);
   markPlaying();
 }
@@ -1451,11 +1516,11 @@ async function loadAcqLog(){
     const items = d.items || [];
     $("#fLog").innerHTML = items.length ? items.map(it => {
       const cls = it.state==="done" ? "wire" : (it.state==="fail" ? "" : "wifi");
-      const tag = it.state==="running" ? '<span class="tag wifi">качаю…</span>'
+      const tag = it.state==="running" ? '<span class="tag wifi">скачивается…</span>'
                 : it.state==="done" ? '<span class="tag wire">готово</span>'
                 : it.state==="fail" ? '<span class="tag" style="color:var(--err)">не вышло</span>'
                 : '<span class="tag">'+esc(it.state)+'</span>';
-      return `<div class="item"><div class="ic">🎵</div>`+
+      return `<div class="item"><div class="ic">${ICON_NOTE}</div>`+
         `<div class="grow"><div class="tt">${esc(it.artist)} — ${esc(it.title)}</div>`+
         `<div class="mm">${esc(it.note||"")}</div></div>${tag}</div>`;
     }).join("") : '<div class="muted">пока ничего не искали</div>';
@@ -1474,17 +1539,17 @@ async function runAcquire(){
   if(!q){ $("#fQuery").focus(); return; }
   const at = splitArtistTitle(q);
   if(!at || !at[0] || !at[1]){
-    alert("Напиши через тире: Исполнитель — Название.\nНапример: Кино — Пачка сигарет");
+    await appAlert("Нужно тире между именем и названием", ["Например: Кино — Пачка сигарет."]);
     $("#fQuery").focus(); return;
   }
   const a = at[0], t = at[1];
   $("#fGo").disabled = true;
   try{
     const r = await fetch("/api/acquire?artist="+encodeURIComponent(a)+"&title="+encodeURIComponent(t),{method:"POST"});
-    if(!r.ok){ alert(friendlyError(await r.text())); return; }
+    if(!r.ok){ await appAlert("Не получилось", [friendlyError(await r.text())]); return; }
     $("#fQuery").value = "";
     await loadAcqLog();
-  }catch(e){ alert("Не запустить: "+friendlyError(e)); }
+  }catch(e){ await appAlert("Не получилось запустить поиск", [friendlyError(e)]); }
   finally{ $("#fGo").disabled = false; }
 }
 
@@ -1501,7 +1566,7 @@ async function torSearch(){
   const a = $("#tArtist").value.trim();
   if(!a) return;
   $("#tGo").disabled = true; $("#tErr").textContent = "";
-  $("#tCands").innerHTML = '<div class="muted">опрашиваю трекеры…</div>'; $("#tActions").hidden = true;
+  $("#tCands").innerHTML = '<div class="muted">Опрос трекеров…</div>'; $("#tActions").hidden = true;
   try{
     const r = await fetch("/api/torrent/search?artist="+encodeURIComponent(a),{method:"POST"});
     if(!r.ok){ $("#tCands").innerHTML=""; $("#tErr").textContent = friendlyError(await r.text()); return; }
@@ -1527,11 +1592,11 @@ async function torDownload(){
   try{
     for(const c of picks){
       const r = await fetch("/api/torrent/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(c)});
-      if(!r.ok){ alert(friendlyError(await r.text())); }
+      if(!r.ok){ await appAlert("Не получилось", [friendlyError(await r.text())]); }
     }
     document.querySelectorAll("#tCands input:checked").forEach(cb => cb.checked=false);
     await loadTorLog();
-  }catch(e){ alert("Не запустить: "+friendlyError(e)); }
+  }catch(e){ await appAlert("Не получилось запустить закачку", [friendlyError(e)]); }
   finally{ $("#tDl").disabled = false; }
 }
 async function loadTorLog(){
@@ -1547,7 +1612,7 @@ async function loadTorLog(){
       const tag = it.state==="running" ? '<span class="tag wifi">качаю…</span>'
                 : it.state==="done" ? '<span class="tag wire">готово</span>'
                 : '<span class="tag" style="color:var(--err)">не вышло</span>';
-      return `<div class="item"><div class="ic">💿</div>`+
+      return `<div class="item"><div class="ic">${ICON_DISC}</div>`+
         `<div class="grow"><div class="tt">${esc(it.title)}</div>`+
         `<div class="mm">${esc(it.tracker)} · ${esc(it.note||"")}</div></div>${tag}</div>`;
     }).join("") : '<div class="muted">пока ничего</div>';
@@ -1585,7 +1650,7 @@ async function loadDevices(){
         `${_devTag(d.transport)}`+
         `<button class="dx" title="убрать эту запись из списка" onclick="event.stopPropagation();_devEntryDelete(${jsArg(d.id)},${jsArg(d.name||d.id)})">${ICON_TRASH}</button>`+
         `<span style="color:var(--faint);margin-left:4px">›</span></div>`;
-    }).join("") : '<div class="muted">нет подключённых. Открой SoundFlow на телефоне и впиши адрес этого компа.</div>';
+    }).join("") : '<div class="muted">Нет подключённых. Откройте SoundFlow на телефоне и впишите адрес этого компьютера.</div>';
   }catch(e){ $("#devicesList").innerHTML = '<div class="muted">ошибка загрузки</div>'; }
 }
 
@@ -1594,11 +1659,14 @@ async function loadDevices(){
 // внутренний id каждый раз) — само устройство то же, но список этого не
 // знает. Просто убираем запись из своей базы; музыка на телефоне не трогается.
 async function _devEntryDelete(id, name){
-  if(!confirm(`Убрать «${name}» из списка устройств? Музыку на телефоне это не трогает — просто запись в списке.`)) return;
+  const ok = await appConfirm({ title: `Убрать «${name}» из списка устройств?`,
+    lines: ["Музыка на телефоне не изменится."],
+    okText: "Убрать" });
+  if(!ok) return;
   try{
     await fetch("/api/devices/"+encodeURIComponent(id), {method:"DELETE"});
     loadDevices();
-  }catch(e){ alert("Не вышло: "+friendlyError(e)); }
+  }catch(e){ await appAlert("Не получилось убрать", [friendlyError(e)]); }
 }
 
 /* --- телефон в программе: плитки по исполнителям (Alex 08.09.2026, вариант 4) --- */
@@ -1723,8 +1791,8 @@ function renderPlanCard(p){
   box.innerHTML = '<div class="plancard"><div class="ph"><b>План для телефона</b>'+
       '<button class="btn" onclick="cancelPlan()">Отменить план</button></div>'+
     `<div class="pt">Ждёт телефона: ${esc(_planText(p))}</div>`+
-    `<div class="pn">Сам ничего не отправляется и не стирается: телефон предложит это карточкой «Скачать / Стереть», `+
-      `когда зайдёт, а решаешь ты на телефоне.${at ? " План положен " + esc(at) + "." : ""}${gone}</div>`+
+    `<div class="pn">Ничего не отправляется и не стирается само: телефон предложит карточку «Скачать / Стереть» `+
+      `при следующем заходе, решение — на телефоне.${at ? " План положен " + esc(at) + "." : ""}${gone}</div>`+
     `<a class="pmore" onclick="togglePlanList()">${_planOpen ? "Скрыть песни ▴" : "Что это за песни ▾"}</a>`+
     (_planOpen ? `<div class="plist">${_planRows(p.add, "+")}${more(p.add_count, p.add.length)}${_planRows(p.remove, "−")}${more(p.remove_count, p.remove.length)}</div>` : "")+
     '</div>';
@@ -1735,14 +1803,16 @@ async function loadPlanCard(){
 }
 function togglePlanList(){ _planOpen = !_planOpen; loadPlanCard(); }
 async function cancelPlan(){
-  if(!confirm("Отменить план для телефона?\n\nТелефон ничего не скачает и не сотрёт: песни на телефоне останутся как есть. "+
-              "Список потом можно собрать заново («Изменить состав» или «Выровнять по компьютеру»).")) return;
+  const ok = await appConfirm({ title: "Отменить план для телефона?",
+    lines: ["Телефон ничего не скачает и не сотрёт.", "Список можно собрать заново позже."],
+    okText: "Отменить план" });
+  if(!ok) return;
   try{
     const r = await fetch("/api/phone/plan", {method:"DELETE"});
     if(!r.ok) throw new Error(await r.text());
     const j = await r.json();
-    if(!j.cancelled) alert("Плана уже нет: телефон его забрал или он отменён раньше.");
-  }catch(e){ alert("Не получилось отменить: " + friendlyError(e)); }
+    if(!j.cancelled) await appAlert("Плана уже нет", ["Телефон уже его забрал, или он был отменён раньше."]);
+  }catch(e){ await appAlert("Не получилось отменить план", [friendlyError(e)]); }
   loadPlanCard();
 }
 
@@ -1794,7 +1864,7 @@ function _devBody(){
 function _devSongRow(t){
   const id = esc(t.id||"");
   const on = _devPlayId && _devPlayId === (t.id||"");
-  return `<div class="drow${on?" playing":""}" data-id="${id}" onclick="_devPlay('${id}')" title="нажми — заиграет здесь, в окне">`+
+  return `<div class="drow${on?" playing":""}" data-id="${id}" onclick="_devPlay('${id}')" title="заиграет здесь, в окне">`+
     `<span class="dcv" style="background:${_devColor(t.artist||'')}">`+
     `<span>${esc(_devInitials(t.artist||''))}</span>`+
     (t.id ? `<img src="/api/cover/${encodeURIComponent(t.id)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
@@ -1811,12 +1881,10 @@ function _devSongRow(t){
 async function _devDelete(id){
   const t = _devTrackById(id) || {};
   const nm = (t.artist? t.artist+" — ":"") + (t.title||id);
-  if(!confirm("Удалить полностью:\n\n"+nm+"\n\n"+
-    "— уедет с телефона при следующей синхронизации\n"+
-    "— пропадёт из каталога на ПК\n"+
-    "— файл на диске будет стёрт насовсем\n"+
-    "— программа больше не будет его качать\n\n"+
-    "Вернуть будет нельзя. Продолжить?")) return;
+  const ok = await appConfirm({ title: "Удалить «"+nm+"» полностью?",
+    lines: ["Исчезнет с телефона, из каталога и с диска.", "Программа больше не будет её скачивать.", "Действие нельзя отменить."],
+    okText: "Удалить", danger: true });
+  if(!ok) return;
   const row = document.querySelector('#devBody .drow[data-id="'+CSS.escape(id)+'"]');
   if(row) row.classList.add("busy");
   try{
@@ -1830,7 +1898,7 @@ async function _devDelete(id){
     openDevice(_devCur);   // пересобрать плитки/счётчики из свежих данных
   }catch(e){
     if(row) row.classList.remove("busy");
-    alert("не вышло удалить: "+friendlyError(e));
+    await appAlert("Не получилось удалить", [friendlyError(e)]);
   }
 }
 function _devOpenA(i){ _devOpenArtist = _devArtists[i] && _devArtists[i].key; _devBody(); }
@@ -1852,10 +1920,10 @@ function _devPlay(id){
   $("#pt1").textContent = t.title || "—";
   $("#pt2").textContent = t.artist || "";
   const cov = $("#pcov");
-  cov.textContent = "♪"; cov.style.backgroundImage = "";
+  cov.innerHTML = ICON_NOTE; cov.style.backgroundImage = "";
   const img = new Image();
   img.onload  = () => { cov.textContent=""; cov.style.backgroundImage = `url(/api/cover/${encodeURIComponent(t.id)})`; cov.style.backgroundSize="cover"; };
-  img.onerror = () => { cov.style.backgroundImage=""; cov.textContent="♪"; };
+  img.onerror = () => { cov.style.backgroundImage=""; cov.innerHTML=ICON_NOTE; };
   img.src = "/api/cover/" + encodeURIComponent(t.id);
   _devMarkPlaying();
 }
@@ -1889,7 +1957,7 @@ function _srow(t, cls, opts){
 async function openSync(devId, devName){
   _syncDev = devId; _syncOnDev = [];
   $("#syncModal").hidden = false;
-  $("#syncBody").innerHTML = '<div class="muted">считаю разницу…</div>';
+  $("#syncBody").innerHTML = '<div class="muted">Подсчёт разницы…</div>';
   $("#syncSummary").textContent = "";
   $("#syncNext").disabled = true;
   try{
@@ -1909,7 +1977,7 @@ async function openSync(devId, devName){
       `<div class="slist">${arr.map(t=>_srow(t,cls,opts)).join("")}</div>`;
 
     // Галочки НИГДЕ не стоят по умолчанию — выбирает Alex (docs/RULES.md §8).
-    let html = `<div class="muted" style="padding:0 0 8px">Отметь, что отправить на телефон. Ничего не отмечено — ничего не уйдёт.</div>`;
+    let html = `<div class="muted" style="padding:0 0 8px">Отметьте, что отправить на телефон. Ничего не отмечено — ничего не уйдёт.</div>`;
 
     if(sg.length){
       html += `<div class="sgrp"><div class="sh">Предлагаю по вкусу — ${sg.length}</div>`+
@@ -1972,18 +2040,18 @@ $("#syncNext").onclick = async () => {
   try{
     const r = await fetch("/api/devices/"+encodeURIComponent(_syncDev)+"/sync-plan",
       {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(!r.ok){ alert(friendlyError(await r.text())); $("#syncNext").disabled=false; return; }
+    if(!r.ok){ await appAlert("Не получилось сохранить", [friendlyError(await r.text())]); $("#syncNext").disabled=false; return; }
     const names = [...document.querySelectorAll("#syncBody input.a:checked")]
       .slice(0,10).map(x=>x.closest(".srow").querySelector(".st").textContent);
     $("#syncBody").innerHTML =
-      `<div style="padding:6px 0">План сохранён. Телефон предложит это карточкой «Скачать / Стереть», когда зайдёт, — решаешь ты на телефоне.</div>`+
+      `<div style="padding:6px 0">План сохранён. Телефон предложит карточку «Скачать / Стереть» при следующем заходе, решение — на телефоне.</div>`+
       `<div class="sh" style="margin:8px 0 4px">Закачает — ${body.add.length}${body.remove.length?`, удалит — ${body.remove.length}`:""}</div>`+
       (names.length? `<div class="slist">`+names.map(n=>`<div class="srow"><span class="st">${esc(n)}</span></div>`).join("")+
         (body.add.length>names.length?`<div class="muted">…и ещё ${body.add.length-names.length}</div>`:"")+`</div>` : "");
     $("#syncSummary").textContent = `+${body.add.length}  −${body.remove.length}`;
     $("#syncNext").disabled = true;
     setTimeout(()=>{ $("#syncModal").hidden = true; }, 3200);
-  }catch(e){ alert("Не сохранить: "+friendlyError(e)); $("#syncNext").disabled=false; }
+  }catch(e){ await appAlert("Не получилось сохранить", [friendlyError(e)]); $("#syncNext").disabled=false; }
 };
 
 /* ---------- Задачи ---------- */
@@ -1994,6 +2062,7 @@ function jobPct(j){ return j.total ? Math.min(100, Math.round(j.done*100/j.total
 function updateJobPill(jobs){
   const running = jobs.filter(j=>j.running);
   const pill = $("#jobPill");
+  pill.dataset.n = running.length;
   if(!running.length){ pill.hidden = true; return; }
   const j = running[0];
   const pct = j.total ? jobPct(j)+"%" : "";
@@ -2002,50 +2071,10 @@ function updateJobPill(jobs){
   $("#jobPillTxt").textContent = txt;
   pill.hidden = false;
 }
-// Карточка итога (ревизия 20.09.2026, шаг 2): чем кончились задачи, которые запустил сам Alex — скачать песню/альбом,
-// скан папки, пересчёт. Не исчезает сама, пока не нажмёшь «Понятно» (сервер держит её до этого или сутки).
-const DONE_SHOWN = 3;
-function doneRow(j){
-  const bad = j.outcome === "fail";
-  const rest = String(j.label || "").replace(/^[^:]+:\s*/, ""); // «Скачиваю: A — B» → «A — B»
-  let head, note = String(j.note || "");
-  switch(j.kind){
-    case "acquire": head = (bad ? "Не вышло: " : "Скачано: ") + rest; note = note.replace(/^скачано:\s*/i, ""); break;
-    case "torrent": head = (bad ? "Альбом не скачался: " : "Альбом скачан: ") + rest; break;
-    case "scan": head = (bad ? "Скан не вышел: " : "Скан готов: ") + String(j.label || "").replace(/^Скан папки\s*/, ""); break;
-    case "reindex": head = bad ? "Пересчёт отпечатков не вышел" : "Пересчёт отпечатков готов"; break;
-    default: head = (bad ? "Не вышло: " : "Готово: ") + (j.label || "");
-  }
-  const t = j.finished_at ? new Date(j.finished_at).toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"}) : "";
-  return `<div class="dr ${bad ? "fail" : ""}"><span class="ic">${bad ? "!" : "✓"}</span><span class="tm">${esc(t)}</span>`+
-    `<span class="tx">${esc(head)}${note ? ` <span class="nt">— ${esc(note)}</span>` : ""}</span></div>`;
-}
-function renderDone(jobs){
-  const el = $("#doneStrip");
-  const done = jobs.filter(j => j.keep && !j.running && j.finished_at)
-    .sort((a, b) => String(b.finished_at).localeCompare(String(a.finished_at)));
-  if(!done.length){ el.hidden = true; return; }
-  const bad = done.filter(j => j.outcome === "fail").length;
-  el.classList.toggle("bad", bad > 0);
-  $("#doneHead").textContent = bad
-    ? (bad === done.length ? "Не вышло" : "Готово, но не всё вышло")
-    : "Готово";
-  $("#doneRows").innerHTML = done.slice(0, DONE_SHOWN).map(doneRow).join("");
-  const more = done.length - DONE_SHOWN;
-  $("#doneMore").hidden = more <= 0;
-  if(more > 0) $("#doneMore").textContent = "и ещё " + more + " " + plural(more, "задача", "задачи", "задач");
-  el.hidden = false;
-}
-$("#doneOk").onclick = async () => {
-  try{ await fetch("/api/jobs", {method:"DELETE"}); }catch(e){}
-  $("#doneStrip").hidden = true;
-  loadJobs();
-};
 async function loadJobs(){
   try{
     const jobs = await jget("/api/jobs");
     updateJobPill(jobs);
-    renderDone(jobs);
     const running = jobs.some(j=>j.running);
     $("#btnReindex").disabled = running || $("#btnReindex").disabled;
     // «Отменить пересчёт» — жаргонная красная кнопка читалась как «выключить
@@ -2054,7 +2083,7 @@ async function loadJobs(){
     $("#btnStop").hidden = !running;
   }catch(e){}
 }
-$("#jobPill").onclick = () => showView("catalog");
+$("#jobPill").onclick = () => showView("activity");
 
 /* ---------- Журнал ---------- */
 async function loadLog(){
@@ -2137,7 +2166,7 @@ function guardHtml(g){
     const sample = `Проверено на ${nfmt(s.neg)} «не нравится», ${nfmt(s.pos)} «нравится» и ${nfmt(s.kept)} обычных песнях.`;
     if(s.enabled){
       body = `<b>Фильтр по звуку в «Волне» включён.</b> Точность ${acc === null ? "—" : pct(acc)}: он отсеивает около ${pct(s.catch)} того, `+
-        `что тебе не нравится, и ошибается не чаще чем в ${pct(g.false_reject)} случаев. ${sample}`;
+        `что не нравится, и ошибается не чаще чем в ${pct(g.false_reject)} случаев. ${sample}`;
     }else{
       const why = s.reason ? s.reason.charAt(0).toUpperCase() + s.reason.slice(1) + ". " : "";
       body = `<b>Фильтр по звуку в «Волне» выключен.</b> ${esc(why)}`+
@@ -2166,8 +2195,8 @@ async function loadTaste(){
 
     if((t.events||0) === 0){
       box.innerHTML = sum + guardHtml(guard) +
-        '<div class="muted">Пока мало действий. Послушай музыку в приложении, ставь сердечки, убирай лишнее — '+
-        'потом нажми «Пересобрать», и здесь появится картина вкуса: кого любишь, что не заходит, '+
+        '<div class="muted">Пока мало действий. Слушайте музыку в приложении, ставьте сердечки, убирайте лишнее — '+
+        'затем нажмите «Пересобрать», и здесь появится картина вкуса: что нравится, что не подходит, '+
         'на какие направления по звуку это раскладывается.</div>';
       return;
     }
@@ -2248,7 +2277,7 @@ function _discRow(kind, t, i){
   const k = _discKind[kind];
   const have = !!t.already_have;
   const on = _discPlayKey === _discKey(kind, t);
-  return `<div class="drow${have?" have":""}${on?" playing":""}" data-i="${i}" onclick="_discPlay('${kind}',${i})" title="нажми — заиграет здесь, в окне">`+
+  return `<div class="drow${have?" have":""}${on?" playing":""}" data-i="${i}" onclick="_discPlay('${kind}',${i})" title="заиграет здесь, в окне">`+
     `<span class="dcv" style="background:${_devColor(t.artist)}"><span>${esc(_devInitials(t.artist))}</span>`+
       (t.cover_url ? `<img src="${esc(t.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : "")+
       `<span class="pl">${on && !au.paused ? ICON_PAUSE : ICON_PLAY}</span></span>`+
@@ -2267,20 +2296,20 @@ function _discRender(kind){
   box.innerHTML = items.map((t,i) => _discRow(kind, t, i)).join("");
   if(kind === "wave"){
     const past = _waveDay > 0, name = _waveDayName(_waveDay);
-    const tail = ` Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, или сразу «Скачать выбранные».`;
+    const tail = ` Нажмите на песню — она заиграет здесь, в окне; отметьте галочками, что скачать, или сразу «Скачать выбранные».`;
     $("#waveHint").innerHTML = items.length
       ? (past
           ? `${esc(name)} было подобрано — <b>${nfmt(items.length)}</b> песен, которых ещё нет в каталоге.` + tail
           : `Сегодня подобрано — <b>${nfmt(items.length)}</b> песен.` + tail)
       : (past
           ? "За этот день ничего не осталось: всё уже скачано или убрано из списка."
-          : "Пока нечего показать — полайкай что-нибудь в каталоге, программа подстроится.");
+          : "Пока нечего показать — поставьте лайки в каталоге, программа подстроится.");
     $("#waveSum").textContent = items.length ? (past ? name+" · " : "") + nfmt(items.length)+" песен" : "";
   } else if(kind === "pl"){
     const left = items.filter(t=>!t.already_have).length;
     $("#plHint").innerHTML = items.length
       ? `<b>${nfmt(items.length)}</b> песен в плейлисте, из них уже в каталоге — <b>${nfmt(items.length-left)}</b>, `+
-        `можно докачать — <b>${nfmt(left)}</b>. Нажми на песню — она заиграет здесь, в окне; отметь галочками, что скачать, `+
+        `можно докачать — <b>${nfmt(left)}</b>. Нажмите на песню — она заиграет здесь, в окне; отметьте галочками, что скачать, `+
         `или сразу «Скачать выбранные».`
       : "В этом плейлисте нет песен, которые можно послушать у нас (или все они скрыты кнопкой «Удалить»).";
     $("#plSum").textContent = items.length ? nfmt(items.length)+" песен · докачать "+nfmt(left) : "";
@@ -2296,8 +2325,8 @@ function _plMsg(text, bad){
 // Показать плейлист по ссылке: Alex вставил ссылку (Alex TG 20122). Ошибки — понятным текстом от качалки как есть.
 async function loadPlaylist(){
   const link = $("#plUrl").value.trim(), btn = $("#plShow");
-  if(!link){ _plMsg("Вставь ссылку на плейлист из Яндекс.Музыки: у плейлиста нажми «Поделиться» и скопируй ссылку.", true); return; }
-  btn.disabled = true; _plMsg("Открываю плейлист…", false);
+  if(!link){ _plMsg("Нужна ссылка на плейлист из Яндекс.Музыки: кнопка «Поделиться» у плейлиста, затем скопировать ссылку.", true); return; }
+  btn.disabled = true; _plMsg("Открытие плейлиста…", false);
   let d;
   try{
     d = await jget("/api/yandex/playlist?url=" + encodeURIComponent(link));
@@ -2384,7 +2413,7 @@ function _discPlay(kind, i){
   $("#pt1").textContent = t.title || "—";
   $("#pt2").textContent = t.artist || "";
   const cov = $("#pcov");
-  cov.textContent = "♪"; cov.style.backgroundImage = "";
+  cov.innerHTML = ICON_NOTE; cov.style.backgroundImage = "";
   if(t.cover_url){
     const img = new Image();
     img.onload  = () => { if(_discPlayKey === key){ cov.textContent=""; cov.style.backgroundImage = `url(${JSON.stringify(t.cover_url)})`; cov.style.backgroundSize="cover"; } };
@@ -2461,7 +2490,8 @@ async function _acquireOne(kind, i){
   if(row) row.classList.add("busy");
   try{
     await fetch("/api/acquire?artist="+encodeURIComponent(t.artist)+"&title="+encodeURIComponent(t.title),{method:"POST"});
-  }catch(e){ alert("Не запустить: "+friendlyError(e)); if(row) row.classList.remove("busy"); }
+    if(row) row.classList.remove("busy");
+  }catch(e){ await appAlert("Не получилось запустить", [friendlyError(e)]); if(row) row.classList.remove("busy"); }
 }
 const _plOne = i => _acquireOne("pl", i);
 const _waveOne = i => _acquireOne("wave", i);
@@ -2494,13 +2524,15 @@ async function _discDlPicked(kind, askAll){
   if(kind === "wave" && !picked.length) await loadWave();
   const items = k.items();
   const list = picked.length ? picked : items.map((t,i)=>i).filter(i => !items[i].already_have);
-  if(!list.length){ alert(kind === "pl" ? "Нечего качать — все уже в каталоге." : "Список пуст."); return; }
-  if(!picked.length && !confirm(askAll(list.length))) return;
-  if(picked.length > 50 && !confirm(`Скачать ${nfmt(picked.length)} песен? Это займёт время и место на диске.`)) return;
+  if(!list.length){ await appAlert("Нечего качать", [kind === "pl" ? "Все песни плейлиста уже в каталоге." : "Список пуст."]); return; }
+  if(!picked.length && !await appConfirm(askAll(list.length))) return;
+  if(picked.length > 50 && !await appConfirm({ title: `Скачать ${nfmt(picked.length)} песен?`,
+    lines: ["Займёт время и место на диске."], okText: "Скачать" })) return;
   const btn = $(_discIds[kind].dl);
   btn.disabled = true;
   for(const i of list){ await _acquireOne(kind, i); }
   btn.disabled = false;
+  await _discLoader[kind]();
   _discSelUpdate(kind);
 }
 $("#plShow").onclick = loadPlaylist;
@@ -2509,8 +2541,9 @@ $("#plClose").onclick = _plClose;
 $("#waveRefresh").onclick = () => loadWave(true);
 $("#plSelAll").onclick = () => _discSelAll("pl");
 $("#waveSelAll").onclick = () => _discSelAll("wave");
-$("#plDlAll").onclick = () => _discDlPicked("pl", n => `Скачать все ${n} песен плейлиста, которых ещё нет в каталоге?`);
-$("#waveDlAll").onclick = () => _discDlPicked("wave", n => `Скачать все ${n} песен волны?`);
+$("#plDlAll").onclick = () => _discDlPicked("pl", n => ({ title: `Скачать все ${n} песен плейлиста?`,
+  lines: ["Уже добавленные — пропустит."], okText: "Скачать" }));
+$("#waveDlAll").onclick = () => _discDlPicked("wave", n => ({ title: `Скачать все ${n} песен волны?`, lines: [], okText: "Скачать" }));
 
 async function loadSettings(){
   if(!window._info){ try{ await loadInfo(); }catch(e){} }
@@ -2526,7 +2559,7 @@ async function loadSettings(){
         `<div class="c">${nfmt(r.tracks)} песен · ${nfmt(r.with_fp)} с отпечатком</div>`+
         `<button class="btn" data-rescan="${esc(r.path)}">Пересканировать</button></div>`
       ).join("")
-    : '<div class="hint">Пока ни одной папки. Нажми «Добавить папку».</div>';
+    : '<div class="hint">Пока ни одной папки. Нажмите «Добавить папку».</div>';
 
   $("#set").innerHTML =
     `<h3>Оформление</h3>`+
@@ -2534,7 +2567,7 @@ async function loadSettings(){
     `<h3>Адрес для телефона</h3>`+
     `<div class="addrbig"><span id="setAddr">${esc(d.addr)}</span><span class="sp"></span>`+
     `<button class="btn" id="setCopy">Скопировать</button></div>`+
-    `<div class="hint">Впиши этот адрес в приложении на телефоне: Профиль → Адрес сервера. Не разобрать циферки — наведи камеру телефона на QR-код ниже, он покажет тот же адрес текстом.</div>`+
+    `<div class="hint">Впишите этот адрес в приложении на телефоне: Профиль → Адрес сервера. Если цифры не разобрать — камера телефона на QR-код ниже покажет тот же адрес текстом.</div>`+
     `<div style="margin-top:10px"><img src="/api/qr.png" width="160" height="160" alt="QR с адресом сервера" style="border:1px solid var(--line, #e5e5e5); border-radius:8px"></div>`+
 
     `<h3>Папки с музыкой</h3>`+
@@ -2576,14 +2609,14 @@ async function loadSettings(){
   });
   $("#setAdd") && ($("#setAdd").onclick = pickAndScan);
   $("#setReindex") && ($("#setReindex").onclick = () =>
-    jpost("/api/reindex").then(()=>showView("catalog")).catch(e => alert("Пересчёт похожести: "+friendlyError(e))));
+    jpost("/api/reindex").then(()=>showView("catalog")).catch(e => appAlert("Не получилось пересчитать похожесть", [friendlyError(e)])));
   $("#setReveal") && ($("#setReveal").onclick = () => {
     try{ window.go.main.Service.RevealPath(d.db_path||""); }catch(e){}
   });
   document.querySelectorAll("[data-rescan]").forEach(b => b.onclick = () => {
     fetch("/api/scan?dir="+encodeURIComponent(b.dataset.rescan),{method:"POST"})
       .then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); showView("catalog"); })
-      .catch(e => alert("Не запустить скан: "+friendlyError(e)));
+      .catch(e => appAlert("Не получилось запустить пересканирование", [friendlyError(e)]));
   });
 }
 
@@ -2599,7 +2632,7 @@ async function pickAndScan(){
     watchDir = dir;
     fetch("/api/settings/watch-dir?dir="+encodeURIComponent(dir),{method:"POST"}).catch(()=>{});
     showView("catalog");
-  }catch(e){ alert("Не запустить скан: "+friendlyError(e)); }
+  }catch(e){ await appAlert("Не получилось запустить пересканирование", [friendlyError(e)]); }
 }
 
 /* ---------- папка-источник: сама проверяется при возврате в окно ----------
@@ -2617,7 +2650,7 @@ window.addEventListener("focus", () => {
 /* ---------- кнопки каталога ---------- */
 $("#addr").onclick = () => navigator.clipboard && navigator.clipboard.writeText($("#addr").textContent);
 $("#btnPick").onclick = pickAndScan;
-$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("catalog")).catch(e => alert("Пересчёт похожести: "+friendlyError(e)));
+$("#btnReindex").onclick = () => jpost("/api/reindex").then(()=>showView("catalog")).catch(e => appAlert("Не получилось пересчитать похожесть", [friendlyError(e)]));
 $("#fGo").onclick = runAcquire;
 $("#fQuery").addEventListener("keydown", e => { if(e.key==="Enter") runAcquire(); });
 document.querySelectorAll(".seg").forEach(b => b.onclick = () => setFindMode(b.dataset.fm));
@@ -2628,8 +2661,8 @@ $("#tArtist").addEventListener("keydown", e => { if(e.key==="Enter") torSearch()
 $("#tDl").onclick = torDownload;
 $("#btnStop").onclick = () => jpost("/api/stop");
 $("#tasteRebuild").onclick = () => {
-  const b = $("#tasteRebuild"); b.disabled = true; b.textContent = "Собираю…";
-  jpost("/api/taste/rebuild").then(() => jpost("/api/taste/dislike-guard/check").catch(()=>{})).then(()=>loadTaste()).catch(e => alert("Пересборка вкуса: "+friendlyError(e)))
+  const b = $("#tasteRebuild"); b.disabled = true; b.textContent = "Сборка…";
+  jpost("/api/taste/rebuild").then(() => jpost("/api/taste/dislike-guard/check").catch(()=>{})).then(()=>loadTaste()).catch(e => appAlert("Не получилось пересобрать вкус", [friendlyError(e)]))
     .finally(()=>{ b.disabled = false; b.textContent = "Пересобрать"; });
 };
 
@@ -2691,7 +2724,7 @@ const _rmKey = items => items.map(i => i.track_id).join("|");
 function renderRemovals(){
   const total = _rmItems.reduce((a,i) => a+(i.bytes||0), 0);
   $("#rmBody").innerHTML =
-    `<div class="rnote">Эти песни ты убрал на телефоне. Нажми кнопку — они сотрутся с компьютера навсегда, без корзины. Скачиваться заново они уже не будут.</div>`+
+    `<div class="rnote">Эти песни убраны на телефоне. Кнопка ниже сотрёт их с компьютера навсегда, без корзины. Скачиваться заново они не будут.</div>`+
     `<div class="rlist">`+ _rmItems.map(i => {
       const why = i.reason ? (_rmReason[i.reason] || i.reason) : "";
       return `<div class="rrow"><span class="rt">${esc(i.artist||"")}${i.artist?" — ":""}${esc(i.title||i.track_id)}</span>`+
@@ -2729,18 +2762,18 @@ $("#rmPill").onclick = async () => {
 $("#rmConfirm").onclick = async () => {
   if(_rmBusy || !_rmItems.length) return;
   _rmBusy = true; renderRemovals();
-  $("#rmConfirm").textContent = "стираю…";
-  let msg = "";
+  $("#rmConfirm").textContent = "Стирание…";
+  let alertInfo = null;
   try{
     const r = await fetch("/api/removals/confirm", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({ids: _rmItems.map(i => i.track_id)})});
     if(!r.ok) throw new Error(await r.text());
     const d = await r.json();
-    if(d.failed) msg = "Стёрто: "+d.erased+". Не удалось стереть: "+d.failed+" — эти песни остались в списке.";
-  }catch(e){ msg = "Не получилось стереть: "+(e.message||e); }
+    if(d.failed) alertInfo = { title: "Стёрто не всё", lines: [`Стёрто: ${d.erased}. Осталось в списке: ${d.failed}.`] };
+  }catch(e){ alertInfo = { title: "Не получилось стереть", lines: [friendlyError(e)] }; }
   _rmBusy = false;
   $("#rmConfirm").textContent = "Стереть с компьютера навсегда";
-  if(msg) alert(msg);
+  if(alertInfo) await appAlert(alertInfo.title, alertInfo.lines);
   _rmDismissed = null;
   await checkRemovals();
 };
@@ -2753,7 +2786,7 @@ function renderMissing(){
   $("#msBody").innerHTML =
     `<div class="rnote">У ${nfmt(d.songs)} песен в каталоге больше нет файлов на диске (около ${gb(d.bytes)}): папки удалили или перенесли. `+
     `Такие песни не играют, а «Волна» и скачивание считают их «уже есть». Убрать их из каталога? Музыка на диске, лайки и избранное не трогаются. `+
-    `На телефоне песни сами не сотрутся: в «Плане синхронизации» они будут «нет в каталоге», там решишь сам.</div>`+
+    `На телефоне песни сами не сотрутся: в «Плане синхронизации» они будут «нет в каталоге», решение — там.</div>`+
     `<div class="rlist">`+ d.folders.map(f =>
       `<div class="rrow"><span class="rt">${esc(f.folder)}</span><span class="rm">${nfmt(f.songs)}</span></div>`).join("")+`</div>`;
   $("#msSummary").textContent = "Песен: "+nfmt(d.songs);
@@ -2781,18 +2814,18 @@ $("#msPill").onclick = () => { if(_ms){ renderMissing(); $("#msModal").hidden = 
 $("#msConfirm").onclick = async () => {
   if(_msBusy) return;
   _msBusy = true; renderMissing();
-  $("#msConfirm").textContent = "убираю…";
-  let msg = "";
+  $("#msConfirm").textContent = "Уборка из каталога…";
+  let alertInfo;
   try{
     const r = await fetch("/api/catalog/missing/clean", {method:"POST"});
     if(!r.ok) throw new Error(await r.text());
     const d = await r.json();
-    msg = "Убрано песен: "+nfmt(d.songs)+(d.backup ? ". Копия базы перед уборкой: "+d.backup : "");
-  }catch(e){ msg = "Не получилось убрать: "+(e.message||e); }
+    alertInfo = { title: "Убрано из каталога", lines: [`Песен: ${nfmt(d.songs)}.`].concat(d.backup ? ["Резервная копия базы сохранена."] : []) };
+  }catch(e){ alertInfo = { title: "Не получилось убрать", lines: [friendlyError(e)] }; }
   _msBusy = false;
   $("#msConfirm").textContent = "Убрать из каталога";
   $("#msModal").hidden = true; _msDismissed = null; _msLast = 0;
-  alert(msg);
+  await appAlert(alertInfo.title, alertInfo.lines);
   loadCatalog();
   checkMissing();
 };
@@ -2827,21 +2860,24 @@ $("#bfClose").onclick = () => { $("#bfModal").hidden = true; };
 $("#bfPill").onclick = () => { if(_bf && _bf.songs){ renderBlocked(); $("#bfModal").hidden = false; } };
 $("#bfConfirm").onclick = async () => {
   if(_bfBusy || !_bf || !_bf.songs) return;
-  if(!confirm("Стереть с компьютера файлы "+nfmt(_bf.songs)+" песен насовсем? Вернуть их будет нельзя.")) return;
+  const ok = await appConfirm({ title: `Стереть файлы ${nfmt(_bf.songs)} песен?`,
+    lines: ["Действие нельзя отменить."], okText: "Стереть", danger: true });
+  if(!ok) return;
   _bfBusy = true; renderBlocked();
-  $("#bfConfirm").textContent = "стираю…";
-  let msg = "";
+  $("#bfConfirm").textContent = "Стирание…";
+  let alertInfo;
   try{
     const r = await fetch("/api/catalog/blocked-files/erase", {method:"POST"});
     if(!r.ok) throw new Error(await r.text());
     const d = await r.json();
-    msg = "Стёрто песен: "+nfmt(d.deleted)+", файлов: "+nfmt(d.files_erased)+(d.copies ? ", копий: "+nfmt(d.copies) : "")+
-      (d.failed ? ". Не удалось: "+nfmt(d.failed)+" — они остались" : "")+(d.backup ? ". Копия базы перед стиранием: "+d.backup : "");
-  }catch(e){ msg = "Не получилось стереть: "+(e.message||e); }
+    const lines = [`Стёрто: ${nfmt(d.deleted)} песен, ${nfmt(d.files_erased)} файлов${d.copies ? ", "+nfmt(d.copies)+" копий" : ""}.`];
+    if(d.failed) lines.push(`Осталось: ${nfmt(d.failed)}.`);
+    alertInfo = { title: "Готово", lines };
+  }catch(e){ alertInfo = { title: "Не получилось стереть", lines: [friendlyError(e)] }; }
   _bfBusy = false;
   $("#bfConfirm").textContent = "Стереть с компьютера навсегда";
   $("#bfModal").hidden = true; _bfLast = 0;
-  alert(msg);
+  await appAlert(alertInfo.title, alertInfo.lines);
   loadCatalog();
   checkBlocked();
 };
@@ -2867,14 +2903,14 @@ function renderPhoneSync(){
   h += row("Только на компьютере", "«Выровнять» предложит добавить на телефон",
     nfmt(d.only_pc)+(d.only_pc_bytes ? " · "+gb(d.only_pc_bytes) : ""), d.only_pc ? "warn" : "");
   if(d.arriving) h += row("Едут с телефона на компьютер", "возврат ещё идёт", nfmt(d.arriving));
-  if(d.removed) h += row("Убраны с телефона по твоему решению", "обратно не добавляю", nfmt(d.removed));
+  if(d.removed) h += row("Убраны с телефона по вашему решению", "обратно не возвращаются", nfmt(d.removed));
   h += d.exact
     ? `<div class="rnote">Список песен телефон прислал сам ${esc(pcWhen(d.at))}. Приоритет за компьютером: что у него есть — должно быть на телефоне, чего нет — уйти с телефона.</div>`
     : `<div class="rnote">Телефон ещё не присылал точный список, цифры приблизительные (по журналу событий).</div>`;
   if(d.even) h += `<div class="pcgood">Ровно: на телефоне и на компьютере одни и те же песни.</div>`;
   else if(!d.can_align && d.why) h += `<div class="pcwhy">${esc(d.why)}</div>`;
-  else h += `<div class="rnote">«Выровнять» ничего не стирает сразу: план уходит на телефон, там появится карточка «Скачать / Стереть», и решишь ты сам. `+
-    `Песню, которой нет у компьютера, со стёртого телефона вернуть будет неоткуда.</div>`;
+  else h += `<div class="rnote">«Выровнять» ничего не стирает сразу: план уходит на телефон, там появится карточка «Скачать / Стереть», решение — на телефоне. `+
+    `Песню, которой нет на компьютере, со стёртого телефона будет неоткуда вернуть.</div>`;
   $("#pcBody").innerHTML = h;
   $("#pcSummary").textContent = d.even ? "" : "не хватает: "+nfmt(d.only_pc)+" · лишних: "+nfmt(d.only_phone);
   $("#pcAlign").disabled = _pcBusy || !d.can_align;
@@ -2900,22 +2936,27 @@ $("#pcPill").onclick = () => { if(_pc){ renderPhoneSync(); $("#pcModal").hidden 
 $("#pcAlign").onclick = async () => {
   if(_pcBusy || !_pc || !_pc.can_align) return;
   const d = _pc;
-  if(!confirm("Выровнять телефон по компьютеру?\n\nНа телефон добавить: "+nfmt(d.only_pc)+" песен"+(d.only_pc_bytes ? " ("+gb(d.only_pc_bytes)+")" : "")+
-      ".\nС телефона стереть: "+nfmt(d.only_phone)+" песен"+(d.only_phone_bytes ? " ("+gb(d.only_phone_bytes)+")" : "")+
-      ". Вернуть их будет неоткуда.\n\nНичего не сотрётся, пока ты сам не нажмёшь на телефоне.")) return;
+  const ok = await appConfirm({ title: "Выровнять телефон по компьютеру?",
+    lines: [
+      `Добавить на телефон: ${nfmt(d.only_pc)} песен${d.only_pc_bytes ? " ("+gb(d.only_pc_bytes)+")" : ""}.`,
+      `Удалить с телефона: ${nfmt(d.only_phone)} песен${d.only_phone_bytes ? " ("+gb(d.only_phone_bytes)+")" : ""}.`,
+      "Подтверждение — на телефоне.",
+    ], okText: "Выровнять" });
+  if(!ok) return;
   _pcBusy = true; renderPhoneSync();
-  $("#pcAlign").textContent = "кладу в план…";
-  let msg = "";
+  $("#pcAlign").textContent = "Готовлю план…";
+  let alertInfo;
   try{
     const r = await fetch("/api/phone/align", {method:"POST"});
     if(!r.ok) throw new Error(await r.text());
     const a = await r.json();
-    msg = "План для телефона готов: добавить "+nfmt(a.add)+", стереть "+nfmt(a.remove)+". Открой приложение на телефоне: там появится карточка «Скачать / Стереть».";
-  }catch(e){ msg = "Не получилось выровнять: "+(e.message||e); }
+    alertInfo = { title: "План для телефона готов", lines: [`Добавить: ${nfmt(a.add)}. Удалить: ${nfmt(a.remove)}.`,
+      "На телефоне появится карточка «Скачать / Стереть»."] };
+  }catch(e){ alertInfo = { title: "Не получилось выровнять", lines: [friendlyError(e)] }; }
   _pcBusy = false;
   $("#pcAlign").textContent = "Выровнять по компьютеру";
   $("#pcModal").hidden = true; _pcLast = 0;
-  alert(msg);
+  await appAlert(alertInfo.title, alertInfo.lines);
   checkPhoneSync(true);
 };
 
