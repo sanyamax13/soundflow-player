@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme.dart';
 import 'player_controller.dart';
 
 /// «1:12» — минуты без ведущего нуля, секунды двумя цифрами. Часы не выделяем:
@@ -25,19 +26,23 @@ enum DotMatrixTotal {
   remaining,
 }
 
-/// Полоса перемотки «точечная матрица + цифры» (вариант 19 из подборки
-/// 19.09.2026, «давай 19 попробуем»). Слева крупные цифры — сколько песни
-/// прошло, дальше 5 рядов по 40 квадратиков: пройденные колонки закрашены
-/// цветом [tint] (у обложки свой цвет), остальные тусклые. Тап или ведение
-/// пальцем по точкам перематывает песню.
+/// Полоса перемотки «пляшущий эквалайзер» (Опус-ревью «Поток» 23.09.2026:
+/// вместо точечной матрицы варианта 19 — Alex выбрал вариант 11 из подборки
+/// эскизов, `apps/mobile/test/equalizer_variants_shot.dart`: много тонких
+/// столбиков-«спектроанализатор», каждый сам разбит на 3 цветные зоны по
+/// высоте — лайм внизу («тихо»), синий в середине, красный на самом верху
+/// («громко»), как на старом аппаратном эквалайзере/VU-метре. Слева крупные
+/// цифры — сколько прошло. Тап или ведение пальцем по столбикам перематывает
+/// песню.
 ///
-/// Ничего не берёт с сервера — хватает позиции и длины трека. Раньше здесь
-/// была волна из 64 столбиков: форму громкости приходилось спрашивать у
-/// сервера при каждой смене песни (без связи — 8 секунд пустого ожидания и
-/// «случайная» заглушка); принцип «сервер считает — телефон сам» (см.
-/// docs/SOUNDFLOW_OFFLINE_FIRST_PLAN.md) решили здесь просто убрать
-/// зависимость.
-class DotMatrixSeek extends StatelessWidget {
+/// Столбики «пляшут» непрерывно, пока трек играет (гладкое псевдослучайное
+/// колебание высоты, своя скорость/фаза на столбик, фиксированный seed) —
+/// настоящего звукового анализа в реальном времени нет и не будет (принцип
+/// «сервер считает — телефон сам», см. docs/SOUNDFLOW_OFFLINE_FIRST_PLAN.md),
+/// это имитация, как в `equalizer_animation_shot.dart`. На паузе — замирают.
+/// Ничего не берёт с сервера: только позиция и длина трека, которые и так
+/// есть у телефона.
+class DotMatrixSeek extends StatefulWidget {
   const DotMatrixSeek({
     super.key,
     required this.controller,
@@ -46,31 +51,80 @@ class DotMatrixSeek extends StatelessWidget {
   });
 
   final PlayerController controller;
+
+  /// Цвет крупных цифр «сколько прошло» (обычно цвет обложки) — сами
+  /// столбики эквалайзера в фирменных лайм/синий/красный, независимо от
+  /// обложки (Alex TG 23.09.2026: «лайм — это наш дефолтный цвет»).
   final Color tint;
   final DotMatrixTotal total;
 
-  static const cols = 40;
-  static const rows = 5;
   static const _height = 46.0;
 
   static const _digitStyle = TextStyle(
-    // Было 32 — крупнее названия песни (26 в player_view.dart), глаз
-    // цеплялся не за то (Опус-ревью «Поток» 23.09.2026, пункт 2). Остаются
-    // заметно крупными цифрами (Alex TG 19.09.2026, вариант 19), просто
-    // мельче заголовка.
     fontSize: 24,
     fontWeight: FontWeight.w600,
     height: 1,
     fontFeatures: [FontFeature.tabularFigures()],
   );
 
+  @override
+  State<DotMatrixSeek> createState() => _DotMatrixSeekState();
+}
+
+class _EqBar {
+  const _EqBar(this.envelope, this.speed, this.phase);
+  final double envelope;
+  final double speed;
+  final double phase;
+}
+
+class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProviderStateMixin {
+  static const _cols = 64;
+
+  late final AnimationController _ticker;
+  final Stopwatch _clock = Stopwatch();
+  late final List<_EqBar> _bars;
+
+  @override
+  void initState() {
+    super.initState();
+    // Просто «метроном» перерисовки — само время берём из Stopwatch (его
+    // можно ставить на паузу вместе с треком, не теряя фазу пляски).
+    _ticker = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
+    final rnd = math.Random(5);
+    _bars = List<_EqBar>.generate(_cols, (_) {
+      final env = 0.18 + rnd.nextDouble() * 0.82;
+      final speed = 0.7 + rnd.nextDouble() * 1.6; // циклов в секунду
+      final phase = rnd.nextDouble();
+      return _EqBar(env, speed, phase);
+    });
+    widget.controller.playing.addListener(_syncPlaying);
+    _syncPlaying();
+  }
+
+  void _syncPlaying() {
+    if (widget.controller.playing.value) {
+      if (!_clock.isRunning) _clock.start();
+    } else {
+      _clock.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.playing.removeListener(_syncPlaying);
+    _ticker.dispose();
+    super.dispose();
+  }
+
   /// Ширина под цифры — по самой длинной записи ЭТОГО трека («4:33» → «0:00»),
-  /// чтобы точки не «прыгали», пока секунды и минуты меняются. Все цифры
-  /// табличные (одной ширины), поэтому нули как образец подходят.
+  /// чтобы столбики не «прыгали» по горизонтали, пока секунды и минуты
+  /// меняются. Все цифры табличные (одной ширины), поэтому нули как образец
+  /// подходят.
   double _digitsWidth(BuildContext context, Duration duration) {
     final template = formatMmss(duration).replaceAll(RegExp(r'\d'), '0');
     final painter = TextPainter(
-      text: TextSpan(text: template, style: DefaultTextStyle.of(context).style.merge(_digitStyle)),
+      text: TextSpan(text: template, style: DefaultTextStyle.of(context).style.merge(DotMatrixSeek._digitStyle)),
       textDirection: TextDirection.ltr,
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
@@ -79,19 +133,19 @@ class DotMatrixSeek extends StatelessWidget {
 
   void _seekAt(double dx, double width, int totalMs) {
     if (totalMs <= 0 || width <= 0) return;
-    controller.seek(Duration(milliseconds: (totalMs * (dx / width).clamp(0.0, 1.0)).round()));
+    widget.controller.seek(Duration(milliseconds: (totalMs * (dx / width).clamp(0.0, 1.0)).round()));
   }
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<Duration>(
-      valueListenable: controller.duration,
+      valueListenable: widget.controller.duration,
       builder: (_, dur, _) => ValueListenableBuilder<Duration>(
-        valueListenable: controller.position,
+        valueListenable: widget.controller.position,
         builder: (_, pos, _) {
           final totalMs = dur.inMilliseconds;
           final frac = totalMs <= 0 ? 0.0 : (pos.inMilliseconds / totalMs).clamp(0.0, 1.0);
-          final side = switch (total) {
+          final side = switch (widget.total) {
             DotMatrixTotal.none => null,
             DotMatrixTotal.small => formatMmss(dur),
             DotMatrixTotal.remaining => '−${formatMmss(dur - pos < Duration.zero ? Duration.zero : dur - pos)}',
@@ -99,7 +153,7 @@ class DotMatrixSeek extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: SizedBox(
-              height: _height,
+              height: DotMatrixSeek._height,
               child: Row(children: [
                 SizedBox(
                   width: _digitsWidth(context, dur),
@@ -108,7 +162,7 @@ class DotMatrixSeek extends StatelessWidget {
                     maxLines: 1,
                     softWrap: false,
                     overflow: TextOverflow.visible,
-                    style: _digitStyle.copyWith(color: tint),
+                    style: DotMatrixSeek._digitStyle.copyWith(color: widget.tint),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -119,12 +173,15 @@ class DotMatrixSeek extends StatelessWidget {
                       behavior: HitTestBehavior.opaque,
                       onTapDown: (d) => _seekAt(d.localPosition.dx, c.maxWidth, totalMs),
                       onHorizontalDragUpdate: (d) => _seekAt(d.localPosition.dx, c.maxWidth, totalMs),
-                      child: CustomPaint(
-                        size: Size.infinite,
-                        painter: _MatrixPainter(
-                          progress: frac,
-                          played: tint,
-                          rest: Colors.white.withValues(alpha: 0.16),
+                      child: AnimatedBuilder(
+                        animation: _ticker,
+                        builder: (context, _) => CustomPaint(
+                          size: Size.infinite,
+                          painter: _EqualizerPainter(
+                            bars: _bars,
+                            t: _clock.elapsedMicroseconds / 1e6,
+                            progress: frac,
+                          ),
                         ),
                       ),
                     ),
@@ -143,43 +200,58 @@ class DotMatrixSeek extends StatelessWidget {
   }
 }
 
-class _MatrixPainter extends CustomPainter {
-  const _MatrixPainter({required this.progress, required this.played, required this.rest});
+double _eqBarValue(_EqBar b, double t) {
+  final s = 0.55 + 0.45 * math.sin(2 * math.pi * (t * b.speed + b.phase));
+  return (b.envelope * s).clamp(0.12, 1.0);
+}
 
+class _EqualizerPainter extends CustomPainter {
+  const _EqualizerPainter({required this.bars, required this.t, required this.progress});
+
+  final List<_EqBar> bars;
+  final double t;
   final double progress;
-  final Color played;
-  final Color rest;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-    const cols = DotMatrixSeek.cols;
-    const rows = DotMatrixSeek.rows;
-    final cw = size.width / cols;
-    final rh = size.height / rows;
-    final base = math.min(cw, rh) * 0.64;
-    // Колонка, в которой сейчас «бегунок»: закрашена всегда (на 0:00 горит
-    // первая) и чуть крупнее остальных — видно точное место.
-    final head = (progress * cols).floor().clamp(0, cols - 1);
-    final onPaint = Paint()..color = played;
-    final offPaint = Paint()..color = rest;
-    for (var i = 0; i < cols; i++) {
-      final dot = i == head ? base * 1.2 : base;
-      for (var j = 0; j < rows; j++) {
-        final center = Offset(i * cw + cw / 2, j * rh + rh / 2);
-        // Полностью круглые точки, не скруглённые квадраты — на экране
-        // скруглено всё (кнопки, обложка, плашки), а квадратная сетка была
-        // единственным «чужим» мотивом (Опус-ревью «Поток» 23.09.2026,
-        // пункт 7).
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(Rect.fromCenter(center: center, width: dot, height: dot), Radius.circular(dot / 2)),
-          i <= head ? onPaint : offPaint,
-        );
-      }
+  // Зоны по высоте КАЖДОГО столбика — лайм самая широкая (низ), красная
+  // только на самом верху, как на реальных аппаратных индикаторах.
+  static const _greyFrac = 0.55;
+  static const _blueFrac = 0.35;
+  static const _blue = Color(0xFF4DA3FF);
+  static const _red = Color(0xFFFF4D4D);
+  static final _dim = Colors.white.withValues(alpha: 0.16);
+
+  void _segmentedBar(Canvas c, double x, double width, double barTopY, double baseY, bool played) {
+    if (!played) {
+      c.drawRect(Rect.fromLTWH(x, barTopY, width, baseY - barTopY), Paint()..color = _dim);
+      return;
+    }
+    final h = baseY - barTopY;
+    final greyH = h * _greyFrac;
+    final blueH = h * _blueFrac;
+    c.drawRect(Rect.fromLTWH(x, baseY - greyH, width, greyH), Paint()..color = Afisha.lime);
+    if (h > greyH) {
+      final blueTop = math.max(barTopY, baseY - greyH - blueH);
+      c.drawRect(Rect.fromLTWH(x, blueTop, width, (baseY - greyH) - blueTop), Paint()..color = _blue);
+    }
+    if (h > greyH + blueH) {
+      c.drawRect(Rect.fromLTWH(x, barTopY, width, (baseY - greyH - blueH) - barTopY), Paint()..color = _red);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _MatrixPainter old) =>
-      old.progress != progress || old.played != played || old.rest != rest;
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final n = bars.length;
+    final gap = size.width / n;
+    final w = math.max(1.2, gap * 0.5);
+    for (var i = 0; i < n; i++) {
+      final v = _eqBarValue(bars[i], t);
+      final h = (size.height * v).clamp(3.0, size.height);
+      final x = i * gap + (gap - w) / 2;
+      _segmentedBar(canvas, x, w, size.height - h, size.height, (i + 0.5) / n <= progress);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _EqualizerPainter old) => true;
 }
