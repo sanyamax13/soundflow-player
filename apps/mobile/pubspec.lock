@@ -97,14 +97,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.7"
-  cryptography:
-    dependency: transitive
-    description:
-      name: cryptography
-      sha256: "3eda3029d34ec9095a27a198ac9785630fe525c0eb6a49f3d575272f8e792ef0"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.9.0"
   cupertino_icons:
     dependency: "direct main"
     description:
@@ -288,14 +280,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.4.16"
-  keybay:
-    dependency: transitive
-    description:
-      name: keybay
-      sha256: "90ceb94ea9348965c6702916a4facc5077068a97961393c2b0b8b221ec11a552"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.1"
   leak_tracker:
     dependency: transitive
     description:
@@ -605,14 +589,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.1+2"
-  tailscale:
-    dependency: "direct main"
-    description:
-      name: tailscale
-      sha256: "0a6cf0b781945b69937e7d62d2da85c406c5585295ea9eda1dd3744eed8f7f1e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.9.0"
   term_glyph:
     dependency: transitive
     description:
