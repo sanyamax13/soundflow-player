@@ -279,6 +279,13 @@ func (jr *JobRunner) StartScan(dir string) string {
 		if err != nil {
 			_ = s.db.AddServerLog("error", "", "", "скан: не смог прочитать список известных файлов: "+err.Error(), 0)
 		}
+		// та же песня, уже в каталоге под чуть другим именем — «(Album Version)»,
+		// «(feat. …)», слипшийся/разъехавшийся пробел (quality.FuzzyKey; Alex TG
+		// 24.09.2026: «научи программу, чтобы сама определяла дубли»)
+		fuzzy, ferr := s.db.FuzzyKnownKeys()
+		if ferr != nil {
+			_ = s.db.AddServerLog("error", "", "", "скан: не смог прочитать ключи для проверки дублей: "+ferr.Error(), 0)
+		}
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -306,7 +313,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 				return nil // ещё пишется — заберём на следующем скане
 			}
 			if cuePath, cue, ok := cuesplit.FindFor(path); ok {
-				n, f := splitByCue(s, path, cuePath, cue)
+				n, f := splitByCue(s, path, cuePath, cue, fuzzy)
 				added += n
 				failed += f
 				j.Total += n + f
@@ -337,6 +344,14 @@ func (jr *JobRunner) StartScan(dir string) string {
 				j.Done++
 				return nil
 			}
+			if fzKey := quality.FuzzyKey(ar, ti); fuzzy[fzKey] != "" {
+				// та же песня уже в каталоге под другим написанием («(Album Version)»,
+				// «(feat. …)», «OneRepublic»/«One Republic») — не плодим вторую запись
+				_ = s.db.AddServerLog("info", ar, ti, "похоже на дубль уже добавленной песни — пропущено: "+path, 0)
+				skipped++
+				j.Done++
+				return nil
+			}
 			fi, _ := os.Stat(path)
 			var size int64
 			if fi != nil {
@@ -358,6 +373,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 				j.Done++
 				return nil
 			}
+			fuzzy[quality.FuzzyKey(ar, ti)] = tid
 			added++
 			j.Done++
 			// сразу считаем отпечаток, если модель есть
@@ -389,7 +405,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 // отпечаток/обложка на них не считались, играть невозможно было по
 // отдельной песне). Не трогаем исходный файл, если хоть что-то пошло не
 // так — прячем (переименовываем расширение) только при полном успехе.
-func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue) (added, failed int) {
+func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue, fuzzy map[string]string) (added, failed int) {
 	cover := findCoverImage(filepath.Dir(audioPath))
 	results, err := cuesplit.Split(proc.FFmpeg(), audioPath, cue, cover)
 	if err != nil {
@@ -411,6 +427,10 @@ func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue) (added
 		if exists, _ := s.db.TrackExistsByKey(key); exists {
 			continue
 		}
+		fzKey := quality.FuzzyKey(ar, ti)
+		if fuzzy[fzKey] != "" {
+			continue // та же песня уже в каталоге под другим написанием
+		}
 		fi, _ := os.Stat(r.Path)
 		var size int64
 		if fi != nil {
@@ -430,6 +450,7 @@ func splitByCue(s *Service, audioPath, cuePath string, cue *cuesplit.Cue) (added
 			failed++
 			continue
 		}
+		fuzzy[fzKey] = tid
 		added++
 		if s.eng != nil {
 			if emb, e := s.eng.EmbedFile(r.Path); e == nil {

@@ -7,6 +7,7 @@
 package quality
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -43,4 +44,26 @@ func NormalizeKeyPart(s string) string {
 // NormalizedKey — ключ «артист__название» для дедупа track_files.
 func NormalizedKey(artist, title string) string {
 	return NormalizeKeyPart(artist) + "__" + NormalizeKeyPart(title)
+}
+
+// dropFromTitle — хвосты в названии, которые не делают запись другой песней:
+// та же запись, просто с пометкой релиза или лишним повтором соавтора,
+// уже упомянутого в артисте. Осторожно: не трогаем «(Live)»/«(Remix)»/
+// «(Acoustic)» и т.п. — это правда другая запись звука.
+var dropFromTitle = regexp.MustCompile(`(?i)\s*[\(\[](?:feat|ft|featuring)\.?\s+[^)\]]*[\)\]]|\s*[\(\[](?:album version|radio edit|single version|original mix|clean version|explicit version)[\)\]]`)
+
+// FuzzyKey — ключ для «это, похоже, уже есть» при добавлении в каталог
+// (Alex TG 24.09.2026: «научи программу, чтобы сама определяла дубли»).
+// Шире NormalizedKey: срезает «(feat. …)»/«(Album Version)»/«(Radio Edit)»
+// и т.п. из названия, и не различает записи, где слова разошлись/слиплись
+// пробелом («One Republic» / «OneRepublic», «Dj Shark» / «DjShark»,
+// «In Voice» / «InVoice» внутри названия). НЕ заменяет NormalizedKey —
+// используется только для проверки «уже есть» при скане/импорте, чтобы не
+// расширять поведение чёрного списка/статистики похожести, которые держат
+// NormalizedKey как есть.
+func FuzzyKey(artist, title string) string {
+	t := dropFromTitle.ReplaceAllString(title, "")
+	a := strings.ReplaceAll(NormalizeKeyPart(artist), " ", "")
+	b := strings.ReplaceAll(NormalizeKeyPart(t), " ", "")
+	return a + "__" + b
 }
