@@ -64,7 +64,10 @@ func listenWithFallback(addr string, maxTries int) (net.Listener, string, error)
 //
 // Acquire («Добавить музыку») пока не подключён — до перевода Python-качалки в
 // тонкий сервис; соответствующие ручки честно отвечают 503 (s.Acquire == nil).
-func (s *Service) startPhoneServer() {
+// buildPhoneRouter — полный роутер телефона (/v1/* + /api/* + статика окна):
+// общий и для обычного Wi-Fi-слушателя (ниже), и для Tailscale-слушателя
+// (tailscale.go) — тот же функционал, просто другая сеть доступа.
+func (s *Service) buildPhoneRouter() chi.Router {
 	cfg := config.Load()
 
 	pm := cfg.PathMap
@@ -120,6 +123,11 @@ func (s *Service) startPhoneServer() {
 	// то же окно доступно и в обычном браузере: /api/* + вшитый frontend
 	s.mountAPI(r)
 	r.Handle("/*", s.staticHandler())
+	return r
+}
+
+func (s *Service) startPhoneServer() {
+	r := s.buildPhoneRouter()
 
 	ln, boundAddr, err := listenWithFallback(s.phoneAddr, maxPortFallbackTries)
 	if err != nil {

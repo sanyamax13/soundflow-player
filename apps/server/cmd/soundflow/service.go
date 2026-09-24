@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"tailscale.com/tsnet"
 
 	"soundflow/server/internal/api"
 	"soundflow/server/internal/coverart"
@@ -74,6 +75,11 @@ type Service struct {
 	phoneListening bool
 	phoneBoundAddr string // "" пока не забиндились; напр. "0.0.0.0:8091"
 	phoneListenErr string
+
+	// Удалённый доступ (tailscale.go) — без ключа TS_AUTHKEY тихо выключен,
+	// как и качалка/модель.
+	tailscale    *tsnet.Server
+	tailscaleSrv *http.Server
 }
 
 // staticHandler — отдаёт вшитый frontend/ (index.html в корне).
@@ -151,6 +157,7 @@ func NewService() (*Service, error) {
 	}
 	writeServerLogSafe = func(m string) error { return s.db.AddServerLog("info", "", "", m, 0) }
 	go s.startPhoneServer()
+	go s.startTailscale()
 	s.covers = newCoverKeeper(s)
 	s.covers.Start()
 	s.waveforms = newWaveformKeeper(s)
@@ -184,6 +191,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	if s.phoneSrv != nil {
 		_ = s.phoneSrv.Close()
 	}
+	s.stopTailscale()
 	s.dl.shutdown()
 	s.covers.Stop()
 	s.waveforms.Stop()
