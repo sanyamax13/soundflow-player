@@ -25,6 +25,12 @@ class Shell extends ConsumerStatefulWidget {
 class _ShellState extends ConsumerState<Shell> {
   int _tab = 0;
 
+  // Построенные экраны храним тут и показываем через IndexedStack — вкладка,
+  // на которую уже заходили, не пересоздаётся заново при возврате (не крутит
+  // спиннер повторно, Alex TG 24.09.2026). Слот остаётся null, пока на
+  // вкладку ни разу не зашли — сеть/база на старте всё так же не трогаем.
+  final List<Widget?> _built = List<Widget?>.filled(3, null);
+
   static const _labels = ['Поток', 'Моя музыка', 'Профиль'];
   static const _icons = [
     CupertinoIcons.dot_radiowaves_left_right,
@@ -57,9 +63,15 @@ class _ShellState extends ConsumerState<Shell> {
     // серой полосы и стыка (Alex 06.09.2026). На других вкладках меню
     // обычное, на чёрном фоне.
     final onStream = _tab == 0;
+    _built[_tab] ??= _screen(_tab);
     return Scaffold(
       extendBody: onStream,
-      body: _screen(_tab),
+      body: IndexedStack(
+        index: _tab,
+        children: [
+          for (var i = 0; i < _built.length; i++) _built[i] ?? const SizedBox.shrink(),
+        ],
+      ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
