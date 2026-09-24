@@ -69,6 +69,7 @@ func (s *Service) relayOnce(host, user, keyPath, remoteBind string, srv *http.Se
 	if err != nil {
 		return err
 	}
+	hostKeyCallback, pinned := relayHostKeyCallback()
 	cfg := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
@@ -76,8 +77,15 @@ func (s *Service) relayOnce(host, user, keyPath, remoteBind string, srv *http.Se
 		// без него по умолчанию просто соединяемся: сам SSH-канал видит
 		// содержимое каталога Alex-а, но не пароли/деньги, а адрес VDS
 		// свой собственный, известный заранее.
-		HostKeyCallback: relayHostKeyCallback(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         relayDialTimeout,
+	}
+	if pinned {
+		// Сервер отдаёт несколько типов ключа хоста (rsa/ecdsa/ed25519) —
+		// без этого клиент мог договориться не на тот тип, и FixedHostKey
+		// честно отверг бы соединение как «host key mismatch», хотя VDS
+		// настоящий (поймано вживую 24.09.2026 при первом подключении).
+		cfg.HostKeyAlgorithms = []string{ssh.KeyAlgoED25519}
 	}
 	client, err := ssh.Dial("tcp", host, cfg)
 	if err != nil {
@@ -109,17 +117,21 @@ func (s *Service) stopRelay() {
 // relayHostKeyCallback — SOUNDFLOW_RELAY_HOST_KEY (отпечаток вида
 // "ssh-ed25519 AAAA...", как в ~/.ssh/known_hosts) закрепляет ИМЕННО этот
 // VDS; не задан — соединяемся без проверки (сам VDS известен заранее,
-// адрес не случайный, но проверку лучше включить при настройке).
-func relayHostKeyCallback() ssh.HostKeyCallback {
+// адрес не случайный, но проверку лучше включить при настройке). Второе
+// значение — закреплён ли отпечаток; relayOnce использует его, чтобы
+// заставить клиента запросить у сервера именно ed25519-ключ хоста (сервер
+// отдаёт rsa/ecdsa/ed25519 — без этого можно было бы получить не тот тип
+// и FixedHostKey честно, но неверно отверг бы соединение).
+func relayHostKeyCallback() (cb ssh.HostKeyCallback, pinned bool) {
 	raw := env("SOUNDFLOW_RELAY_HOST_KEY", "")
 	if raw == "" {
-		return ssh.InsecureIgnoreHostKey() //nolint:gosec // см. комментарий выше
+		return ssh.InsecureIgnoreHostKey(), false //nolint:gosec // см. комментарий выше
 	}
 	pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(raw))
 	if err != nil {
-		return ssh.InsecureIgnoreHostKey() //nolint:gosec // отпечаток не разобрался — не роняем канал
+		return ssh.InsecureIgnoreHostKey(), false //nolint:gosec // отпечаток не разобрался — не роняем канал
 	}
-	return ssh.FixedHostKey(pub)
+	return ssh.FixedHostKey(pub), true
 }
 
 // relayAuth — секретный ключ в заголовке (см. комментарий вверху файла):

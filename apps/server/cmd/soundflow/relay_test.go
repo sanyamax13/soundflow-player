@@ -83,10 +83,14 @@ func genSSHPubKey(t *testing.T) ssh.PublicKey {
 }
 
 // SOUNDFLOW_RELAY_HOST_KEY не задан — соединяемся без проверки отпечатка
-// (не роняем канал из-за отсутствия настройки): колбэк принимает любой ключ.
+// (не роняем канал из-за отсутствия настройки): колбэк принимает любой ключ,
+// и pinned=false (relayOnce не должен сужать алгоритм ключа хоста).
 func TestRelayHostKeyCallbackNoEnvAcceptsAnyKey(t *testing.T) {
 	t.Setenv("SOUNDFLOW_RELAY_HOST_KEY", "")
-	cb := relayHostKeyCallback()
+	cb, pinned := relayHostKeyCallback()
+	if pinned {
+		t.Error("pinned должен быть false без настройки отпечатка")
+	}
 	if err := cb("host", nil, genSSHPubKey(t)); err != nil {
 		t.Errorf("без настройки отпечатка колбэк должен пропускать любой ключ, получил: %v", err)
 	}
@@ -100,7 +104,10 @@ func TestRelayHostKeyCallbackWithEnvRejectsWrongKey(t *testing.T) {
 	impostor := genSSHPubKey(t)
 	knownHost := string(ssh.MarshalAuthorizedKey(real))
 	t.Setenv("SOUNDFLOW_RELAY_HOST_KEY", knownHost)
-	cb := relayHostKeyCallback()
+	cb, pinned := relayHostKeyCallback()
+	if !pinned {
+		t.Error("pinned должен быть true с валидным отпечатком в env")
+	}
 
 	if err := cb("host", nil, impostor); err == nil {
 		t.Error("колбэк принял чужой ключ хоста — должен был отклонить")
@@ -114,7 +121,10 @@ func TestRelayHostKeyCallbackWithEnvRejectsWrongKey(t *testing.T) {
 // на «без проверки», как при пустом env.
 func TestRelayHostKeyCallbackGarbageEnvFallsBackToInsecure(t *testing.T) {
 	t.Setenv("SOUNDFLOW_RELAY_HOST_KEY", "не-ssh-ключ-а-мусор")
-	cb := relayHostKeyCallback()
+	cb, pinned := relayHostKeyCallback()
+	if pinned {
+		t.Error("pinned должен быть false при кривом env")
+	}
 	if err := cb("host", nil, genSSHPubKey(t)); err != nil {
 		t.Errorf("при кривом env колбэк должен откатиться на «без проверки», получил: %v", err)
 	}
