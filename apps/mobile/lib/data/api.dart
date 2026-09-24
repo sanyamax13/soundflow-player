@@ -14,6 +14,13 @@ class AcquireException implements Exception {
   String toString() => message;
 }
 
+/// Компьютер прямо сейчас уже собирает «Волну» (см. [Api.wave]) — не ошибка,
+/// просто нужно подождать и попробовать снова.
+class WaveBuildingException implements Exception {
+  @override
+  String toString() => 'волна уже пересобирается — подождите минуту';
+}
+
 /// Слепок вкуса, пришедший с сервера — центры long_term+recent как «сырые»
 /// векторы (little-endian float32, 8192 байта на каждый при VecDim=2048).
 class TasteCentroids {
@@ -502,12 +509,29 @@ class Api {
 
   /// Подборка «Волны» за день (0 — сегодня). [refresh] — «Пересобрать волну»
   /// (только для сегодня, игнорируется для прошлых дней сервером).
+  ///
+  /// Первый заход за сегодня (кэша ещё нет — до 6 утра, когда программа сама
+  /// собирает подборку) реально ищет по Яндексу и торрентам — небыстро
+  /// (поймано вживую 24.09.2026: телефон Alex сдался ждать раньше, чем
+  /// компьютер закончил — «Компьютер недоступен» на пустом месте, хотя
+  /// компьютер всё это время был жив и доделал сам). [WaveBuildingException] —
+  /// компьютер уже собирает волну ПРЯМО СЕЙЧАС (другой заход) — не ошибка,
+  /// подождать и попробовать снова.
   Future<List<Map<String, dynamic>>> wave({int day = 0, bool refresh = false}) async {
-    final res = await _dio.get<List<dynamic>>('/api/yandex/wave', queryParameters: {
-      if (day > 0) 'day': day,
-      if (refresh) 'refresh': '1',
-    });
-    return (res.data ?? const []).cast<Map<String, dynamic>>();
+    try {
+      final res = await _dio.get<List<dynamic>>(
+        '/api/yandex/wave',
+        queryParameters: {
+          if (day > 0) 'day': day,
+          if (refresh) 'refresh': '1',
+        },
+        options: Options(receiveTimeout: const Duration(minutes: 2)),
+      );
+      return (res.data ?? const []).cast<Map<String, dynamic>>();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409) throw WaveBuildingException();
+      rethrow;
+    }
   }
 
   /// Песни по ссылке на плейлист Яндекс.Музыки — бросает с человеческим

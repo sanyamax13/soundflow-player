@@ -23,8 +23,13 @@ class _FakeApi extends Api {
         {'day': 1, 'date': '2026-09-24', 'label': 'Вчера', 'count': 1},
       ];
 
+  int waveCalls = 0;
+  int failBuildingTimes = 0;
+
   @override
   Future<List<Map<String, dynamic>>> wave({int day = 0, bool refresh = false}) async {
+    waveCalls++;
+    if (day == 0 && waveCalls <= failBuildingTimes) throw WaveBuildingException();
     if (day == 1) {
       return [
         {'artist': 'Вчерашний', 'title': 'Хит', 'album': '', 'cover_url': '', 'yandex_id': 'y2'},
@@ -130,5 +135,30 @@ void main() {
     await tester.tap(find.text('Закрыть'));
     await tester.pumpAndSettle();
     expect(find.text('Открытия'), findsOneWidget);
+  });
+
+  // Регрессия 24.09.2026: первый заход за сегодняшнюю волну (кэша ещё нет)
+  // реально собирается на компьютере — до этого фикса телефон Alex сдавался
+  // ждать раньше, чем компьютер заканчивал, и показывал «Компьютер
+  // недоступен» на пустом месте. Теперь — «собирает, подождите» и сама
+  // повторная попытка, без участия Alex.
+  testWidgets('Открытия: «уже собирается» — сама ждёт и повторяет, не ошибка',
+      (tester) async {
+    final api = _FakeApi()..failBuildingTimes = 2;
+    await tester.pumpWidget(_app(api));
+    await tester.pump(); // первый неудачный заход (WaveBuildingException)
+
+    expect(find.textContaining('собирает подборку'), findsOneWidget);
+    expect(find.text('Radiohead — Let Down'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 9)); // вторая попытка (тоже неудачная)
+    expect(find.textContaining('собирает подборку'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 9)); // третья попытка — успех
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('собирает подборку'), findsNothing);
+    expect(find.text('Radiohead — Let Down'), findsOneWidget);
+    expect(api.waveCalls, 3);
   });
 }

@@ -87,18 +87,37 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
   }
 
-  Future<void> _loadWave({bool refresh = false}) async {
-    setState(() {
-      _loadingList = true;
-      _error = null;
-    });
+  /// Первый заход за сегодняшнюю волну (кэша ещё нет — до 6 утра, когда
+  /// программа сама её соберёт) реально ищет по Яндексу и торрентам — не
+  /// мгновенно (поймано вживую 24.09.2026: телефон Alex сдался ждать раньше,
+  /// чем компьютер закончил — «Компьютер недоступен» на пустом месте, хотя
+  /// компьютер всё это время был жив и доделал сам). [attempt] считает
+  /// автопопытки при «уже собираю» (WaveBuildingException) — не более 5,
+  /// чтобы не долбить компьютер бесконечно, если он и правда недоступен.
+  Future<void> _loadWave({bool refresh = false, int attempt = 0}) async {
+    setState(() => _loadingList = true);
     try {
       final items = await _api.wave(day: _day, refresh: refresh);
       if (!mounted) return;
       setState(() {
         _items = items;
         _loadingList = false;
+        _error = null;
       });
+    } on WaveBuildingException {
+      // Компьютер уже собирает волну прямо сейчас — не ошибка, ждём и
+      // пробуем ещё раз сами, не заставляя Alex тыкать «обновить» вручную.
+      if (!mounted) return;
+      if (attempt >= 5) {
+        setState(() {
+          _loadingList = false;
+          _error = 'Подборка долго собирается — попробуйте обновить позже';
+        });
+        return;
+      }
+      setState(() => _error = 'Компьютер собирает подборку — подождите…');
+      await Future.delayed(const Duration(seconds: 8));
+      if (mounted) await _loadWave(attempt: attempt + 1);
     } catch (e) {
       if (!mounted) return;
       setState(() {
