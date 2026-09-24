@@ -91,10 +91,43 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
   // загрузку (поймано тестами).
   bool _loading = false;
 
+  /// Захвачено в initState (не через ref.read в dispose — Riverpod это не
+  /// позволяет после разбора виджета).
+  late final PlayerController _player;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_items == null && !_loading) _load();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Вкладки больше не пересоздают друг друга (Shell — IndexedStack,
+    // 24.09.2026) — «Моя музыка»/избранное могут поставить свою очередь,
+    // пока «Поток» просто ждёт в фоне. Раньше чужую очередь ловил каждый
+    // новый заход на вкладку (didChangeDependencies), теперь экран этого
+    // не видит — слушаем player.now напрямую (Alex TG 24.09.2026, скрин:
+    // «нажал Поток — следующей песни нет»).
+    //
+    // Ссылку на player берём здесь и держим полем — в dispose() нельзя
+    // звать ref.read (Riverpod бросает «Cannot use ref after disposed»).
+    _player = ref.read(playerProvider);
+    _player.now.addListener(_onForeignTakeover);
+  }
+
+  @override
+  void dispose() {
+    _player.now.removeListener(_onForeignTakeover);
+    super.dispose();
+  }
+
+  void _onForeignTakeover() {
+    final items = _items;
+    if (items == null || items.isEmpty) return;
+    if (_player.now.value == null || _player.streamQueueCount >= 0) return; // не чужая очередь
+    unawaited(_fillQueue(ref.read(dbProvider), items));
   }
 
   /// Только на действительно холодном старте (плеер ещё совсем пустой) —
@@ -146,7 +179,23 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     }
   }
 
+  // Гейт от повторного входа: сам _fillQueue меняет player.now (playQueue/
+  // takeOverWithStream/appendNewToQueue), а на это реагирует _onForeignTakeover
+  // выше — без гейта он тут же попытался бы запустить ещё один _fillQueue
+  // поверх уже идущего.
+  bool _reconciling = false;
+
   Future<void> _fillQueue(Db db, List<DownloadedTrack> items) async {
+    if (_reconciling) return;
+    _reconciling = true;
+    try {
+      await _fillQueueInner(db, items);
+    } finally {
+      _reconciling = false;
+    }
+  }
+
+  Future<void> _fillQueueInner(Db db, List<DownloadedTrack> items) async {
     final player = ref.read(playerProvider);
     // Раньше очередь строилась только один раз за всё время работы
     // приложения (player.now.value == null — становится не-null сразу же

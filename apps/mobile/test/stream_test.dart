@@ -253,6 +253,35 @@ void main() {
     });
   });
 
+  // Alex TG 24.09.2026 (скрин «Дальше: больше ничего»): вкладки больше не
+  // пересоздаются (Shell — IndexedStack), поэтому одной подгрузки при первом
+  // открытии «Потока» недостаточно — если чужая очередь встаёт ПОСЛЕ того,
+  // как «Поток» уже построен и молча ждёт в фоне, слушатель player.now
+  // должен сам поймать момент и переподхватить, без повторного захода на
+  // вкладку.
+  testWidgets(
+      'чужая очередь встаёт, пока «Поток» уже открыт в фоне (IndexedStack) — переподхватывает без нового захода',
+      (tester) async {
+    final player = _RecordingPlayer();
+    await _openStream(tester, await _app(player: player, downloaded: _twoTracks()));
+
+    // «Поток» уже заявил свою очередь при первом открытии.
+    expect(player.calls, ['playQueue']);
+    expect(player.streamQueueCount, 2);
+
+    // Имитация «Моя музыка»: другой контроллер запускает свою песню, а экран
+    // «Поток» никуда не уходит (IndexedStack держит его живым в фоне) — то
+    // есть didChangeDependencies заново не сработает.
+    player.calls.clear();
+    player.streamQueueCount = -1;
+    player.now.value = _someoneElse;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(player.calls, ['takeOver']);
+    expect(player.streamQueueCount, 2);
+  });
+
   // Alex TG 24.09.2026: после полного закрытия приложения (Android убил
   // процесс) список должен появиться сразу, а не крутиться колесо, пока
   // настоящая загрузка из базы досчитывается в фоне.
