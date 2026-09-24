@@ -71,6 +71,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   final ValueNotifier<CoverColors> _tint =
       ValueNotifier(CoverColors.fallback);
 
+  // Настоящая громкость играющей песни для пляски столбиков эквалайзера
+  // (Alex TG 24.09.2026: «чтобы под музыку дрыгалась полоса, а не просто
+  // так») — null, пока не досчитана на сервере (см. wavekeeper.go) или
+  // ещё грузится; тогда DotMatrixSeek пляшет как раньше, наугад.
+  final ValueNotifier<List<double>?> _waveform = ValueNotifier(null);
+  String? _waveformTrackId;
+
   // Куда «прилетает» сердечко при лайке — центр кнопки лайка в _transport(),
   // а не центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3: место нажатия
   // и место анимации не совпадали).
@@ -136,6 +143,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _dragX.dispose();
     _queueOpen.dispose();
     _tint.dispose();
+    _waveform.dispose();
     super.dispose();
   }
 
@@ -150,6 +158,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     }
     _syncFav();
     _syncTint();
+    _syncWaveform();
     if (mounted) setState(() {}); // название
   }
 
@@ -162,6 +171,16 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       _favTrackId = cur.id;
       _fav = v;
     });
+  }
+
+  Future<void> _syncWaveform() async {
+    final cur = _p.now.value;
+    if (cur == null || cur.id == _waveformTrackId) return;
+    _waveformTrackId = cur.id;
+    _waveform.value = null; // новая песня — пока пляшем наугад, как раньше
+    final bars = await ref.read(apiProvider).waveform(cur.id);
+    if (!mounted || _p.now.value?.id != cur.id) return; // трек уже сменился — не подмешиваем чужое
+    _waveform.value = bars;
   }
 
   Future<void> _syncTint() async {
@@ -470,7 +489,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     RepaintBoundary(
                       child: DotMatrixSeek(
                           controller: _p,
-                          tint: colors.isFallback ? Afisha.lime : colors.glow),
+                          tint: colors.isFallback ? Afisha.lime : colors.glow,
+                          waveform: _waveform),
                     ),
                     const SizedBox(height: 12),
                     _transport(),

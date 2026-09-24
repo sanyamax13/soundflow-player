@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
@@ -48,6 +49,7 @@ class DotMatrixSeek extends StatefulWidget {
     required this.controller,
     required this.tint,
     this.total = DotMatrixTotal.small,
+    this.waveform,
   });
 
   final PlayerController controller;
@@ -57,6 +59,14 @@ class DotMatrixSeek extends StatefulWidget {
   /// обложки (Alex TG 23.09.2026: «лайм — это наш дефолтный цвет»).
   final Color tint;
   final DotMatrixTotal total;
+
+  /// Настоящий рельеф громкости этой песни, 64 значения 0..1 — потолок
+  /// пляски каждого столбика берётся отсюда, а не наугад (Alex TG
+  /// 24.09.2026: «чтобы под музыку дрыгалась полоса, а не просто так»).
+  /// null, пустой список или не 64 значения — столбики пляшут как раньше,
+  /// случайно (сервер ещё не досчитал форму этой песни — см.
+  /// apps/server/cmd/soundflow/wavekeeper.go).
+  final ValueListenable<List<double>?>? waveform;
 
   static const _height = 46.0;
 
@@ -71,19 +81,14 @@ class DotMatrixSeek extends StatefulWidget {
   State<DotMatrixSeek> createState() => _DotMatrixSeekState();
 }
 
-class _EqBar {
-  const _EqBar(this.envelope, this.speed, this.phase);
-  final double envelope;
-  final double speed;
-  final double phase;
-}
-
 class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProviderStateMixin {
   static const _cols = 64;
 
   late final AnimationController _ticker;
   final Stopwatch _clock = Stopwatch();
-  late final List<_EqBar> _bars;
+  late final List<double> _speeds; // циклов пляски в секунду — свои, не меняются
+  late final List<double> _phases;
+  late List<double> _envelopes; // потолок пляски каждого столбика — меняется, когда придёт настоящая громкость
 
   @override
   void initState() {
@@ -92,14 +97,26 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
     // можно ставить на паузу вместе с треком, не теряя фазу пляски).
     _ticker = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
     final rnd = math.Random(5);
-    _bars = List<_EqBar>.generate(_cols, (_) {
-      final env = 0.18 + rnd.nextDouble() * 0.82;
-      final speed = 0.7 + rnd.nextDouble() * 1.6; // циклов в секунду
-      final phase = rnd.nextDouble();
-      return _EqBar(env, speed, phase);
-    });
+    _envelopes = List<double>.generate(_cols, (_) => 0.18 + rnd.nextDouble() * 0.82);
+    _speeds = List<double>.generate(_cols, (_) => 0.7 + rnd.nextDouble() * 1.6); // циклов в секунду
+    _phases = List<double>.generate(_cols, (_) => rnd.nextDouble());
     widget.controller.playing.addListener(_syncPlaying);
+    widget.waveform?.addListener(_onWaveform);
+    _onWaveform();
     _syncPlaying();
+  }
+
+  // Пришла настоящая громкость этой песни (или сменился трек) — потолок
+  // пляски каждого столбика берём из неё; скорость/фаза свои остаются, чтобы
+  // столбики не застыли неподвижно, а продолжали живо дрожать вокруг
+  // настоящей высоты. Не подошло по длине/нет данных — молча оставляем как
+  // было (случайный потолок).
+  void _onWaveform() {
+    final wf = widget.waveform?.value;
+    if (wf == null || wf.length != _cols) return;
+    setState(() {
+      _envelopes = [for (final v in wf) 0.15 + v.clamp(0.0, 1.0) * 0.85];
+    });
   }
 
   void _syncPlaying() {
@@ -113,6 +130,7 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
   @override
   void dispose() {
     widget.controller.playing.removeListener(_syncPlaying);
+    widget.waveform?.removeListener(_onWaveform);
     _ticker.dispose();
     super.dispose();
   }
@@ -178,7 +196,9 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
                         builder: (context, _) => CustomPaint(
                           size: Size.infinite,
                           painter: _EqualizerPainter(
-                            bars: _bars,
+                            envelopes: _envelopes,
+                            speeds: _speeds,
+                            phases: _phases,
                             t: _clock.elapsedMicroseconds / 1e6,
                             progress: frac,
                           ),
@@ -200,15 +220,23 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
   }
 }
 
-double _eqBarValue(_EqBar b, double t) {
-  final s = 0.55 + 0.45 * math.sin(2 * math.pi * (t * b.speed + b.phase));
-  return (b.envelope * s).clamp(0.12, 1.0);
+double _eqBarValue(double envelope, double speed, double phase, double t) {
+  final s = 0.55 + 0.45 * math.sin(2 * math.pi * (t * speed + phase));
+  return (envelope * s).clamp(0.12, 1.0);
 }
 
 class _EqualizerPainter extends CustomPainter {
-  const _EqualizerPainter({required this.bars, required this.t, required this.progress});
+  const _EqualizerPainter({
+    required this.envelopes,
+    required this.speeds,
+    required this.phases,
+    required this.t,
+    required this.progress,
+  });
 
-  final List<_EqBar> bars;
+  final List<double> envelopes;
+  final List<double> speeds;
+  final List<double> phases;
   final double t;
   final double progress;
 
@@ -241,11 +269,11 @@ class _EqualizerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
-    final n = bars.length;
+    final n = envelopes.length;
     final gap = size.width / n;
     final w = math.max(1.2, gap * 0.5);
     for (var i = 0; i < n; i++) {
-      final v = _eqBarValue(bars[i], t);
+      final v = _eqBarValue(envelopes[i], speeds[i], phases[i], t);
       final h = (size.height * v).clamp(3.0, size.height);
       final x = i * gap + (gap - w) / 2;
       _segmentedBar(canvas, x, w, size.height - h, size.height, (i + 0.5) / n <= progress);
