@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -162,6 +164,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _playingKey = key;
       _playingLoading = true;
     });
+    // Предпрослушка — отдельный плеер (см. класс); если в мини-плеере уже
+    // что-то играет, обе песни звучали бы разом без этой паузы.
+    unawaited(ref.read(playerProvider).pause());
     try {
       final url = _api.discoverPreviewUrl(
         id: '${t['yandex_id'] ?? ''}',
