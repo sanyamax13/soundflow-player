@@ -393,6 +393,7 @@ func (jr *JobRunner) StartScan(dir string) string {
 		if added > 0 {
 			s.covers.Kick()    // новые песни — сразу проверить обложки (coverkeeper.go)
 			s.waveforms.Kick() // и посчитать форму звука для полоски (wavekeeper.go)
+			s.spectrum.Kick()  // и проверить спектр — ловит «поддельный 320» (spectrumkeeper.go)
 		}
 		s.recon.AfterScan() // и заодно сверить каталог с диском: пропавшие файлы убрать (reconcile.go)
 	}()

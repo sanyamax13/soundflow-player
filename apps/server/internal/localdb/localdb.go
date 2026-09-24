@@ -46,6 +46,10 @@ func Open(path string) (*DB, error) {
 	for _, mig := range []string{
 		`ALTER TABLE devices ADD COLUMN transport TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tracks ADD COLUMN waveform BLOB`,
+		// Частота среза спектра (Гц) — сторож по спектру (24.09.2026, Alex TG
+		// «научи программу её смотреть спектр и прогони по всем песням»).
+		// NULL = ещё не проверяли, 0 = проверили, не определили (тишина/ошибка).
+		`ALTER TABLE tracks ADD COLUMN spectral_cutoff_hz INTEGER`,
 		`CREATE TABLE IF NOT EXISTS sync_plans (
 			device_id TEXT PRIMARY KEY, add_ids TEXT NOT NULL DEFAULT '[]',
 			remove_ids TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')`,

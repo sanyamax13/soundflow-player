@@ -34,6 +34,22 @@ func (t Tier) String() string {
 	}
 }
 
+// ParseTier — обратное к String(); неизвестная строка → TierUnknown.
+func ParseTier(s string) Tier {
+	switch s {
+	case "bad":
+		return TierBad
+	case "acceptable":
+		return TierAcceptable
+	case "good":
+		return TierGood
+	case "excellent":
+		return TierExcellent
+	default:
+		return TierUnknown
+	}
+}
+
 // rank для сравнения версий: чем больше — тем лучше.
 func (t Tier) rank() int {
 	switch t {
@@ -51,8 +67,11 @@ func (t Tier) rank() int {
 }
 
 // Нижние границы tier'а в kbps по mime: {bad, acceptable, good}.
+// mp3: порог поднят с 128 до 224 (Alex TG 24.09.2026 «мин 224 максимум 320
+// и флак») — ниже 224 больше не качаем вообще; acceptable-диапазон для mp3
+// фактически пуст (bad==acceptable==224), сразу good/excellent.
 var qualityRules = map[string][3]int{
-	"audio/mpeg": {128, 192, 320}, // mp3
+	"audio/mpeg": {224, 224, 320}, // mp3
 	"audio/mp4":  {96, 128, 256},  // AAC в .m4a
 	"audio/aac":  {96, 128, 256},
 	"audio/opus": {80, 128, 192},

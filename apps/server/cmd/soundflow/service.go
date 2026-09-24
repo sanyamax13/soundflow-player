@@ -46,6 +46,7 @@ type Service struct {
 	store     *litestore.Store   // та же БД для acquire из окна
 	covers    *coverKeeper       // сама ищет обложки песням, у которых их нет (coverkeeper.go)
 	waveforms *waveformKeeper    // сама считает форму звука для полоски-эквалайзера (wavekeeper.go)
+	spectrum  *spectrumKeeper    // сама проверяет спектр — ловит «поддельный 320» (spectrumkeeper.go)
 	recon     *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
 	waveMu    sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
 	waveStop  context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
@@ -153,6 +154,8 @@ func NewService() (*Service, error) {
 	s.covers.Start()
 	s.waveforms = newWaveformKeeper(s)
 	s.waveforms.Start()
+	s.spectrum = newSpectrumKeeper(s)
+	s.spectrum.Start()
 	s.recon = newReconciler(s)
 	s.recon.Start()
 	waveCtx, waveStop := context.WithCancel(context.Background())
@@ -183,6 +186,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	s.dl.shutdown()
 	s.covers.Stop()
 	s.waveforms.Stop()
+	s.spectrum.Stop()
 	s.recon.Stop()
 	if s.waveStop != nil {
 		s.waveStop()

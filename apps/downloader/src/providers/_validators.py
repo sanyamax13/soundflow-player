@@ -191,10 +191,11 @@ def validate_full_track(
     return True
 
 
-# Минимальный bitrate для "качественного" mp3. mp3party иногда отдаёт 128k
+# Минимальный bitrate для "качественного" mp3. Поднято с 192 до 224 (Alex
+# TG 24.09.2026 «мин 224 максимум 320 и флак»). mp3party иногда отдаёт 128k
 # или 96k версии — отсекаем. Для торрентов почти всегда 320, для YouTube Music
 # Opus ~128 (но Opus 128 ≈ mp3 192 на слух, проверка не применяется к нему).
-DEFAULT_MIN_BITRATE_KBPS = 192
+DEFAULT_MIN_BITRATE_KBPS = 224
 
 
 def validate_min_bitrate(

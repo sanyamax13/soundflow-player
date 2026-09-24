@@ -8,6 +8,7 @@ func (s *Service) onTrackAdded(trackID string) {
 	s.autoPlanAdd(trackID)
 	s.covers.Kick()
 	s.waveforms.Kick()
+	s.spectrum.Kick()
 }
 
 // Новая скачанная песня сама ложится в план «живого» телефона (Alex TG 20159:

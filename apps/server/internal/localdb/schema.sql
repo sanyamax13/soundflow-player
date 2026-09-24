@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     valence        REAL,
     feature_vector BLOB,
     waveform       BLOB,          -- N байт 0..255: рельеф громкости для полоски плеера
+    spectral_cutoff_hz INTEGER,   -- частота среза спектра, NULL = не проверяли, 0 = не определили
     cover_url      TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL DEFAULT '',
     -- lower(artist||' '||title||' '||album), Unicode-aware (считает импортёр на
