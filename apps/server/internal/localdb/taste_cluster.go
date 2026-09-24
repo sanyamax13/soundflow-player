@@ -107,6 +107,30 @@ func (d *DB) RecomputeTasteClusters(layer string, since *time.Time) (nClusters, 
 	return len(cents), nTracks, nil
 }
 
+// SetTasteClustersForTest — впрямую кладёт центры слоя, в обход
+// RecomputeTasteClusters (которому нужны настоящие feedback_event+
+// feature_vector). Только для тестов вызывающего кода (rankBySound и т.п.),
+// которым сама кластеризация не важна — важно только «центры есть/нет».
+func (d *DB) SetTasteClustersForTest(layer string, cents [][]float32) error {
+	tx, err := d.sql.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM taste_cluster WHERE layer = ?`, layer); err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, c := range cents {
+		if _, err := tx.Exec(
+			`INSERT INTO taste_cluster (layer, idx, vec, n, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			layer, i, vecToBlob(l2norm(c)), 1, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // tasteCentroidsLayer — центры вкуса одного слоя (нормированы при записи).
 func (d *DB) tasteCentroidsLayer(layer string) ([][]float32, error) {
 	rows, err := d.sql.Query(`SELECT vec FROM taste_cluster WHERE layer = ? ORDER BY idx`, layer)
@@ -147,6 +171,28 @@ func tasteAffinity(cents [][]float32, vec []float32) float64 {
 		return 0
 	}
 	return best
+}
+
+// HasTasteClusters — есть ли вообще центры вкуса для слоя (дешёвая проверка
+// перед тем как тратить время на отпечатки кандидатов «Волны» — если центров
+// нет, TasteAffinityForVector всё равно вернёт 0 для всех, считать нечего).
+func (d *DB) HasTasteClusters(layer string) (bool, error) {
+	var n int
+	err := d.sql.QueryRow(`SELECT COUNT(*) FROM taste_cluster WHERE layer = ?`, layer).Scan(&n)
+	return n > 0, err
+}
+
+// TasteAffinityForVector — близость СЫРОГО (ещё не в каталоге) отпечатка к
+// вкусу (0..1), тот же расчёт, что ScoreTracksByTaste, но без чтения из
+// tracks — для кандидатов «Волны», у которых feature_vector ещё нет (песня
+// не скачана). Нет центров/пустой вектор → 0 (не отбраковываем, просто не
+// поднимаем при сортировке).
+func (d *DB) TasteAffinityForVector(vec []float32) (float64, error) {
+	cents, err := d.tasteCentroidsLayer("long_term")
+	if err != nil || len(cents) == 0 {
+		return 0, err
+	}
+	return tasteAffinity(cents, vec), nil
 }
 
 // ScoreTracksByTaste — для набора id каталога: близость к вкусу (0..1) по

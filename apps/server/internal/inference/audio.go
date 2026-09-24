@@ -98,6 +98,21 @@ func stripID3BeforeRIFF(data []byte) []byte {
 	return data
 }
 
+// MiddleWindow — вырезает representative кусок ~seconds секунд из середины
+// pcm (32кГц моно). Используется для отпечатка кандидатов «Волны» (Alex TG
+// 24.09.2026, по советам ChatGPT/Gemini): начало трека часто тишина/вступление/
+// джингл — не показательно, середина обычно содержит основную часть песни.
+// pcm короче окна целиком — возвращает как есть (padMin в Embed сам добьёт
+// минимум).
+func MiddleWindow(pcm []float32, seconds int) []float32 {
+	want := seconds * SampleRate
+	if want <= 0 || len(pcm) <= want {
+		return pcm
+	}
+	start := (len(pcm) - want) / 2
+	return pcm[start : start+want]
+}
+
 func padMin(pcm []float32) []float32 {
 	if len(pcm) >= minSamples {
 		return pcm

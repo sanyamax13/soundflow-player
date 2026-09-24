@@ -184,11 +184,7 @@ func (s *Service) buildWave(ctx context.Context) (out []yandexWaveOut, code int,
 		return nil, http.StatusBadGateway, err
 	}
 
-	type scored struct {
-		item  sidecar.YandexWaveItem
-		score float64
-	}
-	var kept []scored
+	var kept []scoredWaveItem
 	dismissed, _ := s.db.DismissedDiscover()
 	for _, it := range raw {
 		key := quality.NormalizedKey(it.Artist, it.Title)
@@ -201,12 +197,21 @@ func (s *Service) buildWave(ctx context.Context) (out []yandexWaveOut, code int,
 		if blocked, _ := s.db.IsBlocked(key); blocked {
 			continue
 		}
-		kept = append(kept, scored{item: it, score: artScore[it.Artist]})
+		kept = append(kept, scoredWaveItem{item: it, score: artScore[it.Artist]})
 	}
-	// сначала то, что по артисту уже хорошо себя показало (лайки/недавние
-	// прослушивания), внутри равного счёта — как пришло от сайдкара
-	// (артист → жанр → похожие артисты, уже расставлено по важности).
+	// Дешёвый первый отбор — по артисту (лайки/недавние прослушивания);
+	// внутри равного счёта — как пришло от сайдкара (артист → жанр → похожие
+	// артисты, уже расставлено по важности). Это же задаёт порядок, в котором
+	// берём кандидатов в дорогой звуковой разбор ниже (лучшие по артисту —
+	// первые).
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].score > kept[j].score })
+
+	// Дорогой отбор по звуку (Alex TG 24.09.2026, после совета ChatGPT/Gemini:
+	// дешёвый прификс → звук только на верхушке, не на всём списке): среди
+	// первых waveSoundPool по артисту пересортировываем ближе к тому, что
+	// ЗВУЧИТ похоже на понравившееся — не по имени артиста/песни. Артист
+	// остаётся лёгким довеском (0.3), звук — основной сигнал (0.7).
+	kept = s.rankBySound(parent, kept)
 
 	// сторож по звуку (dislikeguard.go): включён, только когда точность на оценках Alex дошла до 80 %; тогда берём запас
 	// кандидатов, отсеиваем похожие по звуку на «не нравится» и оставляем первые waveMaxShown
@@ -233,6 +238,80 @@ func (s *Service) buildWave(ctx context.Context) (out []yandexWaveOut, code int,
 		}
 	}
 	return out, 0, nil
+}
+
+// scoredWaveItem — кандидат «Волны» + его текущий счёт (артист, потом
+// пересчитывается rankBySound-ом с учётом звука).
+type scoredWaveItem struct {
+	item  sidecar.YandexWaveItem
+	score float64
+}
+
+// rankBySound — пересортировывает верхушку (waveSoundPool) кандидатов ближе
+// к звуку понравившегося: 0.3×место-по-артисту (нормировано в 0..1 по
+// позиции — сырые очки артиста несравнимы по шкале со звуком) + 0.7×похожесть
+// звука на кластеры вкуса (internal/localdb.TasteAffinityForVector, тот же
+// отпечаток CNN14, что у каталога). Нет центров вкуса (мало лайков ещё) —
+// пропускаем разбор совсем, звук не даст ничего кроме нулей. Отпечаток —
+// из кэша (wave_vectors) или считается заново по кандидату; не разобрался —
+// кандидат остаётся на своём артист-месте, не выбрасываем.
+func (s *Service) rankBySound(ctx context.Context, kept []scoredWaveItem) []scoredWaveItem {
+	if s.db == nil {
+		return kept
+	}
+	if has, err := s.db.HasTasteClusters("long_term"); err != nil || !has {
+		return kept // ещё нечего показывать вкусом — звук не расставит ничего осмысленно
+	}
+	embed := s.waveEmbed
+	if embed == nil {
+		if s.eng == nil {
+			return kept
+		}
+		embed = s.embedCandidate
+	}
+	pool, rest := kept, kept[:0:0]
+	if len(pool) > waveSoundPool {
+		pool, rest = kept[:waveSoundPool], kept[waveSoundPool:]
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, waveSoundBudget)
+	defer cancel()
+	type ranked struct {
+		k     scoredWaveItem
+		final float64
+	}
+	out := make([]ranked, len(pool))
+	n := len(pool)
+	for i, k := range pool {
+		artistPct := 1.0
+		if n > 1 {
+			artistPct = 1 - float64(i)/float64(n-1)
+		}
+		soundScore := 0.0
+		if k.item.YandexID != "" && cctx.Err() == nil {
+			vec, ok, _ := s.db.WaveVector(k.item.YandexID)
+			if !ok {
+				if v, err := embed(cctx, yandexWaveOut{YandexID: k.item.YandexID, Artist: k.item.Artist, Title: k.item.Title}); err == nil && len(v) > 0 {
+					vec = v
+					_ = s.db.SetWaveVector(k.item.YandexID, vec)
+					ok = true
+				}
+			}
+			if ok {
+				if a, err := s.db.TasteAffinityForVector(vec); err == nil {
+					soundScore = a
+				}
+			}
+		}
+		out[i] = ranked{k: k, final: 0.3*artistPct + 0.7*soundScore}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].final > out[j].final })
+
+	merged := make([]scoredWaveItem, 0, len(kept))
+	for _, r := range out {
+		merged = append(merged, r.k)
+	}
+	return append(merged, rest...)
 }
 
 // hYandexWave — GET /api/yandex/wave: до 100 кандидатов на сегодня. С ?refresh=1 («Пересобрать волну»,
