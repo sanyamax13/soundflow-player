@@ -59,6 +59,19 @@ class _FakeApi extends Api {
 
   @override
   Future<void> discoverAcquire(String artist, String title) async => acquired = true;
+
+  // Прогресс «Скачать» (Alex TG 24.09.2026) — очередь ответов /api/acquire/log,
+  // каждый следующий опрос забирает следующий элемент (последний повторяется).
+  List<List<Map<String, dynamic>>> acquireLogSequence = const [];
+  int _acquireLogCalls = 0;
+
+  @override
+  Future<List<Map<String, dynamic>>> acquireLog() async {
+    if (acquireLogSequence.isEmpty) return const [];
+    final i = _acquireLogCalls < acquireLogSequence.length ? _acquireLogCalls : acquireLogSequence.length - 1;
+    _acquireLogCalls++;
+    return acquireLogSequence[i];
+  }
 }
 
 Widget _app(_FakeApi api) => ProviderScope(
@@ -107,16 +120,37 @@ void main() {
     expect(api.undismissed, isTrue);
   });
 
-  testWidgets('Открытия: «Скачать» запускает заказ на компьютере', (tester) async {
-    final api = _FakeApi();
+  testWidgets('Открытия: «Скачать» показывает прогресс, а не просто уходит в тишину',
+      (tester) async {
+    // Alex TG 24.09.2026: «нет прогресс бара, качается ли, что делает» —
+    // сразу спиннер вместо иконки, опрос лога догоняет статус компьютера.
+    final api = _FakeApi()
+      ..acquireLogSequence = [
+        [
+          {'artist': 'Radiohead', 'title': 'Let Down', 'state': 'running', 'note': 'качаю…'},
+        ],
+        [
+          {'artist': 'Radiohead', 'title': 'Let Down', 'state': 'done', 'note': 'скачано'},
+        ],
+      ];
     await tester.pumpWidget(_app(api));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Скачать').first);
-    await tester.pumpAndSettle();
+    await tester.pump(); // мгновенный оптимистичный спиннер, без ожидания сети
 
     expect(api.acquired, isTrue);
-    expect(find.textContaining('Скачивание запущено'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(find.byTooltip('Скачать'), findsOneWidget); // остался только у второй песни
+
+    await tester.pump(const Duration(seconds: 4)); // первый опрос лога — всё ещё «качаю»
+    expect(find.text('качаю…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 4)); // второй опрос — «done»
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.text('качаю…'), findsNothing);
   });
 
   testWidgets('Открытия: ссылка на плейлист показывает его песни вместо волны', (tester) async {

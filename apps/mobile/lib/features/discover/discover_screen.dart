@@ -45,6 +45,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String? _playingKey; // artist|title того, что сейчас звучит/грузится
   bool _playingLoading = false;
 
+  // Прогресс «Скачать» (Alex TG 24.09.2026: «нет прогресс бара, качается ли,
+  // что делает») — artist|title → состояние из /api/acquire/log. Опрашивается,
+  // пока в этом словаре есть хоть одна «running» запись.
+  final Map<String, ({String state, String note})> _acquireStatus = {};
+  Timer? _pollTimer;
+
   Api get _api => ref.read(apiProvider);
 
   @override
@@ -67,7 +73,34 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void dispose() {
     _urlCtrl.dispose();
     _player.dispose();
+    _pollTimer?.cancel();
     super.dispose();
+  }
+
+  void _ensurePolling() {
+    _pollTimer ??= Timer.periodic(const Duration(seconds: 3), (_) => _pollAcquireLog());
+  }
+
+  Future<void> _pollAcquireLog() async {
+    List<Map<String, dynamic>> log;
+    try {
+      log = await _api.acquireLog();
+    } catch (_) {
+      return; // сеть моргнула — попробуем на следующем тике
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final e in log) {
+        final key = '${e['artist']}|${e['title']}';
+        if (!_acquireStatus.containsKey(key)) continue; // не наша заявка — не мешаем
+        _acquireStatus[key] = (state: '${e['state']}', note: '${e['note'] ?? ''}');
+      }
+    });
+    // Ничего не качается — опрос больше не нужен, до следующего «Скачать».
+    if (_acquireStatus.values.every((v) => v.state != 'running')) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+    }
   }
 
   String _key(Map<String, dynamic> t) => '${t['artist']}|${t['title']}';
@@ -244,11 +277,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final t = _items[index];
     final artist = '${t['artist'] ?? ''}';
     final title = '${t['title'] ?? ''}';
+    final key = _key(t);
+    setState(() => _acquireStatus[key] = (state: 'running', note: 'ищу…'));
+    _ensurePolling();
     try {
       await _api.discoverAcquire(artist, title);
-      Notice.show('Скачивание запущено', subtitle: '$artist — $title', kind: NoticeKind.done);
     } catch (_) {
-      Notice.show('Не получилось запустить скачивание', kind: NoticeKind.warn);
+      if (!mounted) return;
+      setState(() => _acquireStatus[key] = (state: 'fail', note: 'не получилось запустить'));
     }
   }
 
@@ -329,6 +365,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                           track: _items[i],
                           playing: _playingKey == _key(_items[i]) && !_playingLoading,
                           loading: _playingKey == _key(_items[i]) && _playingLoading,
+                          status: _acquireStatus[_key(_items[i])],
                           onPlay: () => _togglePlay(_items[i]),
                           onAcquire: () => _acquire(i),
                           onDismiss: () => _dismiss(i),
@@ -346,6 +383,7 @@ class _DiscoverRow extends StatelessWidget {
     required this.track,
     required this.playing,
     required this.loading,
+    required this.status,
     required this.onPlay,
     required this.onAcquire,
     required this.onDismiss,
@@ -354,6 +392,10 @@ class _DiscoverRow extends StatelessWidget {
   final Map<String, dynamic> track;
   final bool playing;
   final bool loading;
+
+  /// Прогресс «Скачать» для этой строки (null — ничего не запускали).
+  final ({String state, String note})? status;
+
   final VoidCallback onPlay;
   final VoidCallback onAcquire;
   final VoidCallback onDismiss;
@@ -363,11 +405,24 @@ class _DiscoverRow extends StatelessWidget {
     final artist = '${track['artist'] ?? ''}';
     final title = '${track['title'] ?? ''}';
     final album = '${track['album'] ?? ''}';
-    final haveIt = track['already_have'] == true;
+    final haveIt = track['already_have'] == true || status?.state == 'done';
+    final s = status;
     return ListTile(
       leading: CoverThumb(url: '${track['cover_url'] ?? ''}', label: artist),
       title: Text('$artist — $title', maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: album.isEmpty ? null : Text(album, maxLines: 1, overflow: TextOverflow.ellipsis),
+      // Пока качается/если не вышло — показываем что именно происходит, а не
+      // альбом (Alex TG 24.09.2026: «нет прогресс бара, качается ли, что
+      // делает и т.д.»).
+      subtitle: s != null && s.state != 'done'
+          ? Text(
+              s.note.isEmpty ? (s.state == 'running' ? 'качаю…' : 'не вышло') : s.note,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: s.state == 'fail' ? Colors.redAccent : Afisha.lime),
+            )
+          : album.isEmpty
+              ? null
+              : Text(album, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -382,11 +437,19 @@ class _DiscoverRow extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: Icon(Icons.check_circle, color: Afisha.lime, size: 22),
             )
+          else if (s?.state == 'running')
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
           else
             IconButton(
               onPressed: onAcquire,
-              icon: const Icon(CupertinoIcons.cloud_download),
-              tooltip: 'Скачать',
+              icon: Icon(
+                s?.state == 'fail' ? CupertinoIcons.arrow_clockwise : CupertinoIcons.cloud_download,
+                color: s?.state == 'fail' ? Colors.redAccent : null,
+              ),
+              tooltip: s?.state == 'fail' ? 'Попробовать снова' : 'Скачать',
             ),
           IconButton(
             onPressed: onDismiss,

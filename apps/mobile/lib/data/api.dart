@@ -561,10 +561,18 @@ class Api {
 
   /// «Скачать» в «Открытиях» — запускает поиск и скачивание на компьютере
   /// (Яндекс → торренты, как и обычный заказ). Не ждёт результата — сервер
-  /// качает в фоне; узнать, получилось ли, можно по тому, что песня станет
-  /// already_have при следующей загрузке списка.
+  /// качает в фоне; прогресс — см. [acquireLog].
   Future<void> discoverAcquire(String artist, String title) async {
     await _dio.post<void>('/api/acquire', queryParameters: {'artist': artist, 'title': title});
+  }
+
+  /// Последние попытки «Скачать» (свои и чужие — общий список на компьютере,
+  /// последние 20) — artist/title/state (running|done|fail)/note. Alex TG
+  /// 24.09.2026: «нет прогресс бара, качается ли, что делает» — опрашивается
+  /// с экрана «Открытия», пока там что-то качается.
+  Future<List<Map<String, dynamic>>> acquireLog() async {
+    final res = await _dio.get<Map<String, dynamic>>('/api/acquire/log');
+    return ((res.data?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
   }
 
   /// Прямая ссылка на предпрослушку песни из «Открытий» (полная песня из
