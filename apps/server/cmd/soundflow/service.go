@@ -45,6 +45,7 @@ type Service struct {
 	dl        *downloaderProc    // дочерний Python «качалка» (Найти трек / торренты)
 	store     *litestore.Store   // та же БД для acquire из окна
 	covers    *coverKeeper       // сама ищет обложки песням, у которых их нет (coverkeeper.go)
+	waveforms *waveformKeeper    // сама считает форму звука для полоски-эквалайзера (wavekeeper.go)
 	recon     *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
 	waveMu    sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
 	waveStop  context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
@@ -150,6 +151,8 @@ func NewService() (*Service, error) {
 	go s.startPhoneServer()
 	s.covers = newCoverKeeper(s)
 	s.covers.Start()
+	s.waveforms = newWaveformKeeper(s)
+	s.waveforms.Start()
 	s.recon = newReconciler(s)
 	s.recon.Start()
 	waveCtx, waveStop := context.WithCancel(context.Background())
@@ -179,6 +182,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	}
 	s.dl.shutdown()
 	s.covers.Stop()
+	s.waveforms.Stop()
 	s.recon.Stop()
 	if s.waveStop != nil {
 		s.waveStop()

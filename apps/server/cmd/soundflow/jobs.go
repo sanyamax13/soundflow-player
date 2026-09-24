@@ -391,7 +391,8 @@ func (jr *JobRunner) StartScan(dir string) string {
 		_ = s.db.AddServerLog("info", "", "", "скан завершён: "+note, 0)
 		jr.finish(note)
 		if added > 0 {
-			s.covers.Kick() // новые песни — сразу проверить обложки (coverkeeper.go)
+			s.covers.Kick()    // новые песни — сразу проверить обложки (coverkeeper.go)
+			s.waveforms.Kick() // и посчитать форму звука для полоски (wavekeeper.go)
 		}
 		s.recon.AfterScan() // и заодно сверить каталог с диском: пропавшие файлы убрать (reconcile.go)
 	}()
