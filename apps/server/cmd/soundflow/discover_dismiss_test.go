@@ -42,7 +42,11 @@ func TestDiscoverDismissHandlers(t *testing.T) {
 	}
 }
 
-// Ручки-команды — только с этого компьютера (как остальные, что меняют состояние).
+// Проверяет саму функцию localOnly (что чужой адрес получает 403), а НЕ то,
+// что hDiscoverDismiss реально обёрнута ею в mountAPI — с 24.09.2026 это уже
+// не так (см. service.go: «Открытия» на телефоне, коммит после vds-relay) —
+// имя теста осталось прежним, потому что localOnly как функция по-прежнему
+// нужна и проверяется ею же для других ручек (pairing/open и т.п.).
 func TestDiscoverRoutesAreLocalOnly(t *testing.T) {
 	e := ctxFixture(t)
 	h := localOnly(e.s.hDiscoverDismiss)
@@ -55,6 +59,22 @@ func TestDiscoverRoutesAreLocalOnly(t *testing.T) {
 	}
 	if got, _ := e.s.db.DismissedDiscover(); len(got) != 0 {
 		t.Fatal("с чужого адреса ничего не должно скрываться")
+	}
+}
+
+// «Открытия» на телефоне (Alex TG 24.09.2026): в реальном роутере телефона
+// dismiss/undismiss/preview открыты — не 403 с обычного (не 127.0.0.1) адреса.
+// Раньше это было ровно наоборот (см. комментарий у теста выше) — этот тест
+// защищает от случайного возврата localOnly на эти три ручки в mountAPI.
+func TestDiscoverRoutesReachableFromPhone(t *testing.T) {
+	e := ctxFixture(t)
+	r := e.s.buildPhoneRouter()
+	req := httptest.NewRequest("POST", "/api/discover/dismiss", strings.NewReader(`{"artist":"A","title":"B"}`))
+	req.RemoteAddr = "192.168.1.50:5555"
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("/api/discover/dismiss отвечает 403 телефону — localOnly вернулась в mountAPI?")
 	}
 }
 

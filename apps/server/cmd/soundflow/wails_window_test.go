@@ -78,11 +78,13 @@ func viaWails(t *testing.T, handler http.Handler, method, uri, body string) int 
 	return req.rw.Code
 }
 
+// Проба — /api/pairing/open (не /api/discover/dismiss, как было до 24.09.2026 — «Открытия» открыты
+// телефону, см. TestDiscoverRoutesReachableFromPhone в discover_dismiss_test.go). pairing/open обязан
+// остаться localOnly навсегда, годится в пробу этому тесту постоянно.
 func TestLocalOnlyThroughRealWailsAssetServer(t *testing.T) {
 	e := ctxFixture(t)
-	const body = `{"artist":"A","title":"B"}`
 
-	if c := viaWails(t, e.s.APIRouter(), "POST", "/api/discover/dismiss", body); c != http.StatusOK {
+	if c := viaWails(t, e.s.APIRouter(), "POST", "/api/pairing/open", ""); c != http.StatusOK {
 		t.Errorf("окно (через настоящий AssetServer Wails) → «только с этого компьютера»: ждали 200, получили %d", c)
 	}
 	if c := viaWails(t, e.s.APIRouter(), "GET", "/api/yandex/preview?id=1", ""); c == http.StatusForbidden {
@@ -93,7 +95,7 @@ func TestLocalOnlyThroughRealWailsAssetServer(t *testing.T) {
 	// Без этого тест не доказывал бы, что решает именно метка, а не что-то другое.
 	phone := chi.NewRouter()
 	e.s.mountAPI(phone)
-	if c := viaWails(t, phone, "POST", "/api/discover/dismiss", body); c != http.StatusForbidden {
+	if c := viaWails(t, phone, "POST", "/api/pairing/open", ""); c != http.StatusForbidden {
 		t.Errorf("роутер без метки окна пустил заглушку 192.0.2.1: ждали 403, получили %d", c)
 	}
 }

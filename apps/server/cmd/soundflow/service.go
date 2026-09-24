@@ -238,9 +238,17 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/yandex/wave/days", s.hYandexWaveDays)
 	r.Post("/api/phone/favorites", s.hPhoneFavoritesReport)
 	r.Get("/api/phone/missing-favorites", s.hPhoneFavoritesMissing)
-	r.Post("/api/discover/dismiss", localOnly(s.hDiscoverDismiss))
-	r.Post("/api/discover/undismiss", localOnly(s.hDiscoverUndismiss))
-	r.Get("/api/yandex/preview", localOnly(s.hYandexPreview))
+	// «Открытия» на телефоне (Alex TG 24.09.2026 «сделай пункт меню открытия»,
+	// после уже готового удалённого доступа через VDS): раньше эти три ручки
+	// были localOnly — «Открытия» существовали только в окне на компьютере.
+	// Открыты телефону/каналу VDS — они лишь читают/пишут состояние показа
+	// (dismiss/undismiss) и проксируют предпрослушку своим же токеном
+	// Яндекса (preview.go уже объясняет исходную причину localOnly — «чтобы
+	// не слушал кто угодно в домашней сети»; телефон/канал VDS — это тот же
+	// Alex, не посторонний в Wi-Fi).
+	r.Post("/api/discover/dismiss", s.hDiscoverDismiss)
+	r.Post("/api/discover/undismiss", s.hDiscoverUndismiss)
+	r.Get("/api/yandex/preview", s.hYandexPreview)
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
 	// первое подключение телефона с подтверждением (pairing.go, Alex TG 24.09.2026):

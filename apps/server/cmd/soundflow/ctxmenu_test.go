@@ -341,6 +341,11 @@ func TestLocalOnlyAllowsOwnLANAddress(t *testing.T) {
 // Настоящая причина ошибки у Alex (TG 20090): окно Wails подписывает КАЖДЫЙ свой запрос заглушкой
 // 192.0.2.1:1234 (pkg/assetserver/assetserver_webview.go). Окно (APIRouter) должно проходить, а тот же
 // адрес по настоящей сети (телефонный сервер, тот же mountAPI) — нет.
+//
+// Проба — /api/pairing/open (не /api/discover/dismiss, как было до 24.09.2026: «Открытия» открыты
+// телефону, см. TestDiscoverRoutesReachableFromPhone, и больше не годятся для проверки ИМЕННО
+// localOnly). pairing/open — окно «Подключить телефон» — обязан остаться localOnly навсегда: иначе
+// кто угодно с телефона мог бы сам открыть себе окно подключения.
 func TestLocalOnlyWindowVersusNetwork(t *testing.T) {
 	e := ctxFixture(t)
 	window := e.s.APIRouter()
@@ -355,20 +360,19 @@ func TestLocalOnlyWindowVersusNetwork(t *testing.T) {
 		return rec.Code
 	}
 	const wailsAddr = "192.0.2.1:1234"
-	const body = `{"artist":"A","title":"B"}`
-	if c := do(window, "POST", "/api/discover/dismiss", wailsAddr, body); c != http.StatusOK {
+	if c := do(window, "POST", "/api/pairing/open", wailsAddr, ""); c != http.StatusOK {
 		t.Errorf("окно Wails (192.0.2.1) должно проходить, получили %d", c)
 	}
 	if c := do(window, "GET", "/api/yandex/preview?id=1", wailsAddr, ""); c == http.StatusForbidden {
 		t.Errorf("слушание из окна не должно отбиваться защитой, получили %d", c)
 	}
-	if c := do(phone, "POST", "/api/discover/dismiss", wailsAddr, body); c != http.StatusForbidden {
+	if c := do(phone, "POST", "/api/pairing/open", wailsAddr, ""); c != http.StatusForbidden {
 		t.Errorf("тот же адрес 192.0.2.1 по настоящей сети пускать нельзя, получили %d", c)
 	}
-	if c := do(phone, "POST", "/api/discover/dismiss", "192.168.1.50:5555", body); c != http.StatusForbidden {
+	if c := do(phone, "POST", "/api/pairing/open", "192.168.1.50:5555", ""); c != http.StatusForbidden {
 		t.Errorf("чужое устройство домашней сети: ждали 403, получили %d", c)
 	}
-	if c := do(phone, "POST", "/api/discover/dismiss", "127.0.0.1:5555", body); c != http.StatusOK {
+	if c := do(phone, "POST", "/api/pairing/open", "127.0.0.1:5555", ""); c != http.StatusOK {
 		t.Errorf("браузер на этом же ПК (127.0.0.1) должен проходить, получили %d", c)
 	}
 }
