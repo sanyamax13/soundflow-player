@@ -55,6 +55,7 @@ type Service struct {
 	pcSet     map[string]int64
 	guardMu   sync.Mutex // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
 	guardStop context.CancelFunc
+	pairing   pairingState // окно «Подключить телефон» (pairing.go)
 	waveEmbed func(ctx context.Context, it yandexWaveOut) ([]float32, error) // отпечаток кандидата «Волны»; nil — настоящий (в тестах подменяют)
 	pm        pathmap.Mapper                                                 // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
@@ -234,6 +235,13 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Get("/api/yandex/preview", localOnly(s.hYandexPreview))
 	r.Get("/api/roots", s.hRoots)
 	r.Get("/api/search", s.hSearch)
+	// первое подключение телефона с подтверждением (pairing.go, Alex TG 24.09.2026):
+	// open/close/status — только с этого компьютера; check/confirm — телефон зовёт по Wi-Fi
+	r.Post("/api/pairing/open", localOnly(s.hPairingOpen))
+	r.Post("/api/pairing/close", localOnly(s.hPairingClose))
+	r.Get("/api/pairing/status", localOnly(s.hPairingStatus))
+	r.Get("/api/pairing/check", s.hPairingCheck)
+	r.Post("/api/pairing/confirm", s.hPairingConfirm)
 	r.Get("/api/devices", s.hDevices)
 	r.Delete("/api/devices/{id}", s.hDeviceDelete)
 	r.Get("/api/devices/{id}/sync-preview", s.hSyncPreview)

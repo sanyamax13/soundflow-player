@@ -75,12 +75,54 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     _ctrl.text = found;
     await _check();
     if (!mounted || _reachable != true) return;
-    // Нашёл и подтвердил сам — запоминаем сразу, без отдельного «Сохранить»
-    // (Опус-ревью телефона 14.09.2026, пункт 5: раньше найденный адрес
-    // терялся, если забыл нажать «Сохранить»).
+    await _confirmAndPersist(found);
+  }
+
+  /// Первое подключение — с подтверждением на компьютере (Alex TG
+  /// 24.09.2026): раньше первый ответивший адрес сохранялся молча — для
+  /// чужого компьютера/человека это неочевидно и небезопасно. Теперь спрашиваем
+  /// компьютер, открыто ли окно «Подключить телефон», и, если да, показываем
+  /// подтверждение здесь тоже, прежде чем сохранять адрес навсегда.
+  /// Сервер не умеет отвечать на эту ручку (старая версия программы) —
+  /// ведём себя как раньше, молча сохраняем: не ломаем то, что уже работало.
+  Future<void> _confirmAndPersist(String found) async {
+    final info = await Api.pairingCheck(found);
+    if (!mounted) return;
+    if (info == null) {
+      await _persist(found);
+      if (!mounted) return;
+      Notice.show('Нашёл и сохранил', subtitle: found, kind: NoticeKind.done);
+      return;
+    }
+    if (!info.open) {
+      Notice.show(
+        'Компьютер найден, но не готов',
+        subtitle: 'На компьютере нажмите «Подключить телефон» и попробуйте снова',
+        kind: NoticeKind.warn,
+      );
+      return;
+    }
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Найден компьютер'),
+        content: Text('${info.name.isEmpty ? found : info.name}. Подключиться?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Подключиться')),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    final ok = await Api.pairingConfirm(found);
+    if (!mounted) return;
+    if (!ok) {
+      Notice.show('Не успели', subtitle: 'Окно на компьютере закрылось — попробуйте снова', kind: NoticeKind.warn);
+      return;
+    }
     await _persist(found);
     if (!mounted) return;
-    Notice.show('Нашёл и сохранил', subtitle: found, kind: NoticeKind.done);
+    Notice.show('Подключено', subtitle: found, kind: NoticeKind.done);
   }
 
   Future<void> _persist(String raw) async {

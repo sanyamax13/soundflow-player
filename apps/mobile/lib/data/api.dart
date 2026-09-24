@@ -65,6 +65,44 @@ class Api {
     }
   }
 
+  /// Готов ли компьютер к первому подключению (Alex TG 24.09.2026): «Найти
+  /// сервер самому» нашёл ответивший адрес, но подключаться молча больше
+  /// нельзя — на компьютере должны нажать «Подключить телефон». `null` —
+  /// сервер не ответил на эту ручку вообще (например, старая версия
+  /// программы без этой функции) — тогда вызывающий сам решает, как быть
+  /// (обычно — как раньше, без подтверждения).
+  static Future<({bool open, String name})?> pairingCheck(String raw) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: normalizeServerUrl(raw),
+        connectTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ));
+      final r = await dio.get<Map<String, dynamic>>('/api/pairing/check');
+      final d = r.data;
+      if (d == null) return null;
+      return (open: d['open'] == true, name: (d['name'] as String?) ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Подтвердить первое подключение — компьютер ещё должен быть в открытом
+  /// окне («Подключить телефон»), иначе false (окно истекло/закрыли).
+  static Future<bool> pairingConfirm(String raw) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: normalizeServerUrl(raw),
+        connectTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ));
+      final r = await dio.post<Map<String, dynamic>>('/api/pairing/confirm');
+      return r.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Список треков с сервера.
   Future<List<Map<String, dynamic>>> tracks({int? limit}) async {
     final res = await _dio.get<Map<String, dynamic>>(

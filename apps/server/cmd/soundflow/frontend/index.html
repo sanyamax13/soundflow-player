@@ -2573,10 +2573,18 @@ async function loadSettings(){
   $("#set").innerHTML =
     `<h3>Оформление</h3>`+
     `<div class="themeseg" id="themeSeg"><button data-t="auto">Как в Windows</button><button data-t="light">Светлое</button><button data-t="dark">Тёмное</button></div>`+
-    `<h3>Адрес для телефона</h3>`+
+    `<h3>Подключить телефон</h3>`+
+    `<div class="hint">На телефоне уже стоит приложение SoundFlow? Нажмите кнопку — компьютер на 2 минуты `+
+    `станет виден для подключения. На телефоне: Профиль → Адрес сервера → «Найти сервер самому» — `+
+    `появится «Найден компьютер: подключиться?», нажмите «Да». Дальше подключается само, без вопросов.</div>`+
+    `<div style="margin-top:10px"><button class="btn primary" id="pairBtn">Подключить телефон</button>`+
+    `<span class="sp"></span><span id="pairStatusTxt" class="hint" style="margin:0"></span></div>`+
+
+    `<h3>Адрес для телефона (вручную)</h3>`+
     `<div class="addrbig"><span id="setAddr">${esc(d.addr)}</span><span class="sp"></span>`+
     `<button class="btn" id="setCopy">Скопировать</button></div>`+
-    `<div class="hint">Впишите этот адрес в приложении на телефоне: Профиль → Адрес сервера. Если цифры не разобрать — камера телефона на QR-код ниже покажет тот же адрес текстом.</div>`+
+    `<div class="hint">Если автоматически не нашёл — впишите этот адрес в приложении на телефоне вручную: `+
+    `Профиль → Адрес сервера. Или наведите камеру телефона на QR-код ниже.</div>`+
     `<div style="margin-top:10px"><img src="/api/qr.png" width="160" height="160" alt="QR с адресом сервера" style="border:1px solid var(--line, #e5e5e5); border-radius:8px"></div>`+
 
     `<h3>Папки с музыкой</h3>`+
@@ -2617,6 +2625,8 @@ async function loadSettings(){
     $("#setCopy").textContent = "Скопировано"; setTimeout(()=>{ if($("#setCopy")) $("#setCopy").textContent="Скопировать"; }, 1500);
   });
   $("#setAdd") && ($("#setAdd").onclick = pickAndScan);
+  $("#pairBtn") && ($("#pairBtn").onclick = pairStart);
+  _pairRefreshBtn();
   $("#setReindex") && ($("#setReindex").onclick = () =>
     jpost("/api/reindex").then(()=>showView("catalog")).catch(e => appAlert("Не получилось пересчитать похожесть", [friendlyError(e)])));
   $("#setReveal") && ($("#setReveal").onclick = () => {
@@ -2627,6 +2637,68 @@ async function loadSettings(){
       .then(r=>{ if(!r.ok) return r.text().then(t=>Promise.reject(t)); showView("catalog"); })
       .catch(e => appAlert("Не получилось запустить пересканирование", [friendlyError(e)]));
   });
+}
+
+/* ---------- «Подключить телефон» — окно на 2 минуты, ждём подтверждения (pairing.go, Alex TG 24.09.2026) ---------- */
+let _pairTimer = null;
+let _pairBaseConfirmed = 0;
+
+async function pairStart(){
+  const btn = $("#pairBtn");
+  if(btn) btn.disabled = true;
+  try{
+    await jpost("/api/pairing/open");
+  }catch(e){
+    if(btn) btn.disabled = false;
+    await appAlert("Не получилось открыть окно подключения", [friendlyError(e)]);
+    return;
+  }
+  try{ const st = await jget("/api/pairing/status"); _pairBaseConfirmed = st.confirmed||0; }catch(e){ _pairBaseConfirmed = 0; }
+  if(_pairTimer) clearInterval(_pairTimer);
+  _pairTimer = setInterval(_pairPoll, 1000);
+  _pairPoll();
+}
+
+async function _pairPoll(){
+  const v = document.getElementById("v-settings");
+  if(!v || !v.classList.contains("on")){ _pairStop(); return; }
+  let st;
+  try{ st = await jget("/api/pairing/status"); }catch(e){ return; }
+  const txt = $("#pairStatusTxt");
+  // рост именно ЭТОГО числа — «подключился только что», не «кто-то подключился раньше»
+  if(st.confirmed > _pairBaseConfirmed){
+    if(txt) txt.textContent = "Телефон подключился!";
+    _pairStop();
+    setTimeout(() => { if(txt && txt.textContent === "Телефон подключился!") txt.textContent = ""; }, 4000);
+    return;
+  }
+  if(!st.open){
+    if(txt) txt.textContent = "";
+    _pairStop();
+    return;
+  }
+  const m = Math.floor(st.seconds_left/60), s = String(st.seconds_left%60).padStart(2,"0");
+  if(txt) txt.textContent = `Ждём телефон… ${m}:${s}`;
+  const btn = $("#pairBtn"); if(btn) btn.disabled = true;
+}
+
+function _pairStop(){
+  if(_pairTimer){ clearInterval(_pairTimer); _pairTimer = null; }
+  const btn = $("#pairBtn"); if(btn) btn.disabled = false;
+}
+
+// При заходе в «Настройки» — тихо спросить состояние (окно могло остаться
+// открытым с прошлого раза, если ушли со вкладки не дождавшись) и продолжить
+// отсчёт, а не сбрасывать кнопку в неверный вид.
+function _pairRefreshBtn(){
+  jget("/api/pairing/status").then(st => {
+    if(st.open){
+      _pairBaseConfirmed = st.confirmed||0;
+      if(_pairTimer) clearInterval(_pairTimer);
+      _pairTimer = setInterval(_pairPoll, 1000);
+      _pairPoll();
+    }
+  }).catch(()=>{});
 }
 
 // Выбрать папку нативным диалогом и запустить скан (общее для «Каталога» и «Настроек»).
