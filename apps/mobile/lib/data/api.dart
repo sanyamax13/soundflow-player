@@ -68,6 +68,15 @@ class Api {
     setBaseUrl(localUrl);
   }
 
+  /// Заголовок с секретным ключом удалённого доступа (пусто — доступ не
+  /// включён) — для запросов В ОБХОД Dio (плеер играет по прямой ссылке,
+  /// см. [discoverPreviewUrl]), которые иначе не понесли бы этот заголовок
+  /// сами и получили бы 403 от relayAuth на компьютере.
+  Map<String, String> get relayHeaders {
+    final v = _dio.options.headers[_kRelayKeyHeader];
+    return v == null ? const {} : {_kRelayKeyHeader: '$v'};
+  }
+
   /// Проверить сервер по адресу, НЕ переключаясь на него (кнопка «Проверить»
   /// в настройке адреса). true — ответил на /v1/health.
   static Future<bool> ping(String raw) async {
@@ -478,5 +487,72 @@ class Api {
     final res = await _dio.get<Map<String, dynamic>>('/v1/admin/log',
         queryParameters: {'limit': limit});
     return ((res.data?['log'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  // ---- «Открытия» (Alex TG 24.09.2026): то же, что было только в окне на
+  // компьютере (Яндекс-волна, плейлист по ссылке), теперь и на телефоне,
+  // теми же ручками (см. discover_screen.dart). ----
+
+  /// За какие дни есть подборка «Волны» — 0 (сегодня) и до 3 дней назад,
+  /// только те, где что-то есть.
+  Future<List<Map<String, dynamic>>> waveDays() async {
+    final res = await _dio.get<List<dynamic>>('/api/yandex/wave/days');
+    return (res.data ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Подборка «Волны» за день (0 — сегодня). [refresh] — «Пересобрать волну»
+  /// (только для сегодня, игнорируется для прошлых дней сервером).
+  Future<List<Map<String, dynamic>>> wave({int day = 0, bool refresh = false}) async {
+    final res = await _dio.get<List<dynamic>>('/api/yandex/wave', queryParameters: {
+      if (day > 0) 'day': day,
+      if (refresh) 'refresh': '1',
+    });
+    return (res.data ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Песни по ссылке на плейлист Яндекс.Музыки — бросает с человеческим
+  /// текстом, если ссылка не подошла (не та ссылка / плейлист закрыт).
+  Future<({String title, List<Map<String, dynamic>> items})> yandexPlaylist(String url) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/api/yandex/playlist',
+          queryParameters: {'url': url});
+      final items = ((res.data?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      return (title: '${res.data?['title'] ?? ''}', items: items);
+    } on DioException catch (e) {
+      final msg = e.response?.data;
+      throw AcquireException(msg is String && msg.isNotEmpty ? msg : 'Не получилось открыть плейлист');
+    }
+  }
+
+  /// «Удалить» в «Открытиях» — скрыть песню из волны/плейлиста (не трогает
+  /// лайки/каталог, можно вернуть — см. [discoverUndismiss]).
+  Future<void> discoverDismiss(String artist, String title) async {
+    await _dio.post<void>('/api/discover/dismiss', data: {'artist': artist, 'title': title});
+  }
+
+  /// «Вернуть» после «Удалить».
+  Future<void> discoverUndismiss(String artist, String title) async {
+    await _dio.post<void>('/api/discover/undismiss', data: {'artist': artist, 'title': title});
+  }
+
+  /// «Скачать» в «Открытиях» — запускает поиск и скачивание на компьютере
+  /// (Яндекс → торренты, как и обычный заказ). Не ждёт результата — сервер
+  /// качает в фоне; узнать, получилось ли, можно по тому, что песня станет
+  /// already_have при следующей загрузке списка.
+  Future<void> discoverAcquire(String artist, String title) async {
+    await _dio.post<void>('/api/acquire', queryParameters: {'artist': artist, 'title': title});
+  }
+
+  /// Прямая ссылка на предпрослушку песни из «Открытий» (полная песня из
+  /// Яндекса, отдаётся через компьютер) — используется как обычный audio-URL,
+  /// без отдельного Dio-запроса.
+  String discoverPreviewUrl({String? id, String? artist, String? title}) {
+    final q = <String, String>{
+      if (id != null && id.isNotEmpty) 'id': id,
+      if (artist != null && artist.isNotEmpty) 'artist': artist,
+      if (title != null && title.isNotEmpty) 'title': title,
+    };
+    final qs = q.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&');
+    return '$baseUrl/api/yandex/preview?$qs';
   }
 }

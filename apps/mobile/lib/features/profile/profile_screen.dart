@@ -12,6 +12,7 @@ import '../../core/theme.dart';
 import '../../core/update_check.dart';
 import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
+import '../discover/discover_screen.dart';
 import '../sync/sync_offer_card.dart';
 import '../settings/settings_screen.dart';
 
@@ -38,6 +39,16 @@ class ProfileScreen extends StatelessWidget {
             AppleSection(
               dividerInset: 58,
               children: [
+                AppleRow(
+                  icon: CupertinoIcons.wand_stars,
+                  iconBg: Afisha.lime,
+                  title: 'Открытия',
+                  subtitle: 'волна по вкусу, плейлист по ссылке — Яндекс и торренты',
+                  chevron: true,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const DiscoverScreen()),
+                  ),
+                ),
                 AppleRow(
                   icon: CupertinoIcons.desktopcomputer,
                   iconBg: Afisha.blue,
