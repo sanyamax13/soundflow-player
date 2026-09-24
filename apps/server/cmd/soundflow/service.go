@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -55,7 +56,7 @@ type Service struct {
 	pcSet     map[string]int64
 	guardMu   sync.Mutex // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
 	guardStop context.CancelFunc
-	pairing   pairingState // окно «Подключить телефон» (pairing.go)
+	pairing   pairingState                                                   // окно «Подключить телефон» (pairing.go)
 	waveEmbed func(ctx context.Context, it yandexWaveOut) ([]float32, error) // отпечаток кандидата «Волны»; nil — настоящий (в тестах подменяют)
 	pm        pathmap.Mapper                                                 // канон→локальный путь для acquire/отпечатка
 	acqOnce   sync.Once
@@ -74,6 +75,11 @@ type Service struct {
 	phoneListening bool
 	phoneBoundAddr string // "" пока не забиндились; напр. "0.0.0.0:8091"
 	phoneListenErr string
+
+	// Удалённый доступ через VDS (relay.go) — без настройки (env пустой)
+	// тихо выключено, как качалка/модель.
+	relaySrv  *http.Server
+	relayStop atomic.Bool
 }
 
 // staticHandler — отдаёт вшитый frontend/ (index.html в корне).
@@ -151,6 +157,7 @@ func NewService() (*Service, error) {
 	}
 	writeServerLogSafe = func(m string) error { return s.db.AddServerLog("info", "", "", m, 0) }
 	go s.startPhoneServer()
+	go s.startRelay()
 	s.covers = newCoverKeeper(s)
 	s.covers.Start()
 	s.waveforms = newWaveformKeeper(s)
@@ -184,6 +191,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	if s.phoneSrv != nil {
 		_ = s.phoneSrv.Close()
 	}
+	s.stopRelay()
 	s.dl.shutdown()
 	s.covers.Stop()
 	s.waveforms.Stop()
