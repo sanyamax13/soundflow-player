@@ -51,6 +51,12 @@ class CoverArt extends StatelessWidget {
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 errorBuilder: (_, _, _) => fallback,
+                // Пока грузится (или НАВСЕГДА нет обложки — сервер честно
+                // отвечает 404, errorBuilder сработает не сразу) — заглушка
+                // сразу, не пустой квадрат (Alex TG 24.09.2026, скриншот:
+                // «Серые глаза» без обложки — квадрат был пустым, не нота).
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : fallback,
               ),
       ),
     );
