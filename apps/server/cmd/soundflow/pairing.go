@@ -97,5 +97,17 @@ func (s *Service) hPairingConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.db.AddServerLog("info", "", "", "телефон подключился (первое подключение, подтверждено)", 0)
-	writeJSON(w, map[string]any{"ok": true, "name": hostLabel()})
+	resp := map[string]any{"ok": true, "name": hostLabel()}
+	// Удалённый доступ через VDS (relay.go, Alex TG 24.09.2026) — если у
+	// компьютера настроен канал, телефон узнаёт адрес и секретный ключ
+	// сразу здесь, в момент, который Alex подтвердил своими руками, а не
+	// вписывает их отдельно вручную. Не настроено — просто пустые поля,
+	// телефон это уже умеет понимать (см. Api.pairingConfirm).
+	if url := env("SOUNDFLOW_RELAY_PUBLIC_URL", ""); url != "" {
+		if key := env("SOUNDFLOW_RELAY_SECRET", ""); key != "" {
+			resp["relay_url"] = url
+			resp["relay_key"] = key
+		}
+	}
+	writeJSON(w, resp)
 }
