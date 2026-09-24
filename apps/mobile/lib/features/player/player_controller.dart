@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/notice.dart';
 import '../../core/player_issue_log.dart';
 
 /// [tracks] переставленные так: сперва элемент с индексом [startIndex],
@@ -200,6 +201,15 @@ class PlayerController {
       if (p == null) return;
       if (_consecutiveErrors > 5) {
         // Похоже, беда не в одном файле — не долбим дальше, просто встаём.
+        // Молча — Alex не понял бы, почему плеер вдруг замер (Опус-ревью
+        // 24.09.2026, критик, пункт 1) — плашка объясняет словами.
+        if (_consecutiveErrors == 6) {
+          Notice.show(
+            'Плеер остановился',
+            subtitle: 'Несколько песен подряд не удалось сыграть — похоже, файлы повреждены. Попробуй другую песню.',
+            kind: NoticeKind.error,
+          );
+        }
         p.pause().catchError((_) {});
         return;
       }
