@@ -49,6 +49,11 @@ apps/server/build/_lastbuild.log
 apps/server/soundflow-apidiff
 apps/server/soundflow-apidiff.exe
 
+# apps/server/installer — установщик для другого ПК (24.09.2026): скрипт
+# soundflow.iss в git, собранные файлы (exe + ffmpeg + модель, сотни МБ) — нет
+apps/server/installer/build/
+apps/server/installer/dist/
+
 # apps/downloader — Python-качалка: окружение и сборка
 apps/downloader/.venv/
 apps/downloader/dist/
