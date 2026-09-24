@@ -1471,7 +1471,7 @@ function _playQ(i){
   cur = i;
   _devPlayId = "";           // ушли в список каталога — снять подсветку в «Устройствах»
   _discPlayKey = "";         // и в «Открытиях»
-  au.src = src;
+  au.src = _audioBase() + src;   // в окне (WebView2) — по настоящему адресу, см. _audioBase()
   au.play().catch(()=>{});
   $("#player").classList.remove("empty");
   $("#pt1").textContent = t.title || "—";
@@ -1923,7 +1923,7 @@ function _devPlay(id){
   _devPlayId = t.id;
   _discPlayKey = "";                          // прослушивание из «Открытий» — закончено
   cur = -1;                                   // выйти из «списка каталога», чтобы ▶▶ не прыгал по нему
-  au.src = "/audio/" + encodeURIComponent(t.id);
+  au.src = _audioBase() + "/audio/" + encodeURIComponent(t.id);   // в окне (WebView2) — по настоящему адресу, см. _audioBase()
   au.play().catch(()=>{});
   $("#player").classList.remove("empty");
   $("#pt1").textContent = t.title || "—";
