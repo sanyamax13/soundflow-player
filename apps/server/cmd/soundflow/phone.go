@@ -65,8 +65,10 @@ func listenWithFallback(addr string, maxTries int) (net.Listener, string, error)
 // Acquire («Добавить музыку») пока не подключён — до перевода Python-качалки в
 // тонкий сервис; соответствующие ручки честно отвечают 503 (s.Acquire == nil).
 // buildPhoneRouter — полный роутер телефона (/v1/* + /api/* + статика окна):
-// общий и для обычного Wi-Fi-слушателя (ниже), и для Tailscale-слушателя
-// (tailscale.go) — тот же функционал, просто другая сеть доступа.
+// общий и для обычного Wi-Fi-слушателя (ниже), и для будущего удалённого
+// канала через VDS (Alex TG 24.09.2026 — вместо Tailscale, см.
+// docs/TAILSCALE-REMOTE-ACCESS-PLAN.md) — тот же функционал, просто другой
+// путь доступа.
 func (s *Service) buildPhoneRouter() chi.Router {
 	cfg := config.Load()
 
