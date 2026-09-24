@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"time"
 
+	"soundflow/server/internal/acquire"
 	"soundflow/server/internal/quality"
 	"soundflow/server/internal/sidecar"
 )
@@ -419,4 +420,55 @@ func (s *Service) waveDailyOnce(ctx context.Context, now time.Time) {
 	}
 	s.saveWave(today, out)
 	_ = s.db.AddServerLog("info", "", "", fmt.Sprintf("волна на сегодня собрана сама: %d песен", len(out)), 0)
+	s.autoAcquireFromWave(ctx, out)
+}
+
+// waveAutoAcquireN — сколько лучших по звуку кандидатов дня докачивать
+// сама, без нажатий Alex (TG 24.09.2026: «в открытии, чтобы все песни,
+// которые ты рекомендуешь... всё скачивалось» — подтвердил, что имел в
+// виду автодокачку по вкусу). Немного, штучно — не весь список разом.
+const waveAutoAcquireN = 5
+
+// autoAcquireFromWave — докачивает первые waveAutoAcquireN кандидатов дня
+// (items уже отсортирован rankBySound — лучшие по звуку впереди, когда есть
+// центры вкуса). Попадают в каталог и дальше в план телефона тем же путём,
+// что «Найти трек» из окна (onTrackAdded → план телефона → предложение
+// «Скачать» — сам на телефон ничего не лезет, см. [[phone-sync-offer]]).
+// Нет центров вкуса ещё — молча ничего не делаем: список отсортирован по
+// артисту, это не «по звучанию», рано автоматически докачивать по нему.
+// Ошибка одного кандидата не мешает остальным — это подбор по вкусу, не
+// обязательная операция.
+func (s *Service) autoAcquireFromWave(ctx context.Context, items []yandexWaveOut) {
+	if has, err := s.db.HasTasteClusters("long_term"); err != nil || !has {
+		return
+	}
+	svc := s.acquireService()
+	if svc == nil {
+		return
+	}
+	n := waveAutoAcquireN
+	if n > len(items) {
+		n = len(items)
+	}
+	for _, it := range items[:n] {
+		if ctx.Err() != nil {
+			return
+		}
+		actx, cancel := context.WithTimeout(ctx, 2*time.Hour)
+		res, err := svc.Acquire(actx, acquire.Request{Artist: it.Artist, Title: it.Title, ExpectedDurationSec: it.DurationSec})
+		cancel()
+		if err == nil && res.Created {
+			_ = s.db.AddServerLog("added", it.Artist, it.Title, "докачано само по вкусу (Открытия)", 0)
+			s.onTrackAdded(res.TrackID)
+			go func(id, artist, title string) {
+				bg, c := context.WithTimeout(context.Background(), 6*time.Minute)
+				defer c()
+				if e := svc.AnalyzeAndStore(bg, id); e != nil {
+					_ = s.db.AddServerLog("info", artist, title, "отпечаток не посчитан: "+e.Error(), 0)
+				}
+			}(res.TrackID, it.Artist, it.Title)
+		}
+		// уже в каталоге / не нашли / не подошло по качеству — молча пропускаем,
+		// это подбор по вкусу, не обязаловка.
+	}
 }

@@ -65,3 +65,22 @@ func TestWaveSkipsSoundWithoutClusters(t *testing.T) {
 		t.Errorf("без центров вкуса звук считать не должны, разборов: %d", calls)
 	}
 }
+
+// Нет центров вкуса — автодокачка вообще не пытается (список отсортирован
+// по артисту, это не «по звучанию»).
+func TestAutoAcquireSkipsWithoutClusters(t *testing.T) {
+	e := ctxFixture(t)
+	items := []yandexWaveOut{{Artist: "A", Title: "B"}}
+	e.s.autoAcquireFromWave(context.Background(), items) // не должно паниковать/зависать
+}
+
+// Центры есть, но качалка не готова (acquireService() == nil, т.к. sidecarURL
+// пуст в тесте) — тоже тихо ничего не делает, не паникует.
+func TestAutoAcquireNoopsWithoutSidecar(t *testing.T) {
+	e := ctxFixture(t)
+	if err := e.s.db.SetTasteClustersForTest("long_term", [][]float32{clipVec(10)}); err != nil {
+		t.Fatal(err)
+	}
+	items := []yandexWaveOut{{Artist: "A", Title: "B"}}
+	e.s.autoAcquireFromWave(context.Background(), items)
+}
