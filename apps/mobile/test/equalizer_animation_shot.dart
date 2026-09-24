@@ -31,7 +31,9 @@ const _digitStyle = TextStyle(
   fontFeatures: [FontFeature.tabularFigures()],
 );
 
-const _segGrey = Color(0xFF7A7A85);
+// Было серым — Alex TG 23.09.2026 (голосовое): «вместо серого лаймовый,
+// это наш дефолтный цвет».
+const _segGrey = Afisha.lime;
 const _segBlue = Color(0xFF4DA3FF);
 const _segRed = Color(0xFFFF4D4D);
 const _segGreyFrac = 0.55;
