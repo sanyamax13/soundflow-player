@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -73,6 +74,32 @@ class _RecordingPlayer extends PlayerController {
   Future<void> appendNewToQueue(List<NowPlaying> all) async => calls.add('append');
 }
 
+/// Плеер для проверки кэша холодного старта: зарядка из кэша (playQueue)
+/// проходит сразу, а «настоящее» переключение (takeOverWithStream) зависает
+/// на [hangTakeOver] — имитирует медленную реальную загрузку из базы.
+class _PrimeThenHangPlayer extends PlayerController {
+  final calls = <String>[];
+  final hangTakeOver = Completer<void>();
+  @override
+  Future<void> playQueue(
+    List<NowPlaying> tracks, {
+    int startIndex = 0,
+    bool shuffle = false,
+    bool loop = true,
+    bool autoplay = true,
+  }) async {
+    streamQueueCount = -1;
+    calls.add('playQueue');
+    now.value = tracks[startIndex];
+  }
+
+  @override
+  Future<void> takeOverWithStream(List<NowPlaying> stream) async {
+    calls.add('takeOver');
+    await hangTakeOver.future;
+  }
+}
+
 const _someoneElse =
     NowPlaying(id: 'fav1', title: 'Из избранного', artist: 'Кто-то', path: '/tmp/fav1');
 
@@ -100,6 +127,11 @@ Future<Widget> _app({
     path: inMemoryDatabasePath,
     factory: databaseFactoryFfiNoIsolate,
   );
+  // sqflite кэширует открытые соединения по пути (singleInstance по
+  // умолчанию) — без закрытия все тесты в файле делили бы один и тот же
+  // ":memory:" и видели kv-записи друг друга (поймано тестом «Поток» после
+  // добавления кэша последней очереди, stream_screen.dart).
+  addTearDown(db.close);
   for (final t in downloaded) {
     await db.upsertDownloaded(t);
   }
@@ -219,5 +251,50 @@ void main() {
       expect(player.calls, ['playQueue']);
       expect(player.streamQueueCount, 2); // playQueue сбросил в -1, Поток заявил свою уже после
     });
+  });
+
+  // Alex TG 24.09.2026: после полного закрытия приложения (Android убил
+  // процесс) список должен появиться сразу, а не крутиться колесо, пока
+  // настоящая загрузка из базы досчитывается в фоне.
+  testWidgets('холодный старт с кэшем от прошлого раза — список сразу, без колеса',
+      (tester) async {
+    final player = _PrimeThenHangPlayer();
+    final api = _FakeApi();
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+    addTearDown(db.close);
+    for (final t in _twoTracks()) {
+      await db.upsertDownloaded(t);
+    }
+    await db.kvSet(
+      'stream_cache_queue',
+      jsonEncode([
+        {'id': 'a', 'title': 'Песня А', 'artist': 'Кто-то', 'path': '/tmp/a', 'cover': null},
+      ]),
+    );
+    final sync = SyncRepo(api, db);
+    final app = ProviderScope(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        dbProvider.overrideWithValue(db),
+        downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
+        playerProvider.overrideWithValue(player),
+        syncProvider.overrideWithValue(sync),
+        syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
+      ],
+      child: const SoundFlowApp(),
+    );
+    await _openStream(tester, app);
+
+    // Кэш сработал почти сразу — список уже виден, колеса нет, хотя
+    // «настоящая» подгрузка (takeOver) ещё зависла.
+    expect(find.byType(PlayerView), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(player.calls, ['playQueue', 'takeOver']);
+
+    player.hangTakeOver.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(player.calls, ['playQueue', 'takeOver']);
+    expect(player.streamQueueCount, 2);
   });
 }

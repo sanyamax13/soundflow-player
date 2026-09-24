@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -73,14 +74,62 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
   /// колесо, а текст остаётся только если очередь так и не собралась.
   bool _building = true;
 
+  /// Кэш сработал: заряжен прошлый список ДО того, как настоящая загрузка из
+  /// базы досчиталась. Нужно на случай, когда Android полностью убил процесс
+  /// приложения (смахнули из списка последних) — тогда даже переключение
+  /// вкладок изнутри (см. `Shell`) не спасает, список грузится с нуля.
+  /// Здесь вместо колеса сразу показываем прошлый список, пока настоящий
+  /// тихо досчитывается в фоне (Alex TG 24.09.2026).
+  bool _primed = false;
+
+  static const _cacheKey = 'stream_cache_queue';
+  static const _cacheCap = 60;
+
+  // `_items` остаётся null, пока не отработает первый await внутри `_load()`
+  // (теперь их на один больше — приоритет кэшу) — без отдельного флага
+  // повторный `didChangeDependencies` в это окно запускал вторую параллельную
+  // загрузку (поймано тестами).
+  bool _loading = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_items == null) _load();
+    if (_items == null && !_loading) _load();
+  }
+
+  /// Только на действительно холодном старте (плеер ещё совсем пустой) —
+  /// если что-то уже играет (например, за это время открыли «Мою музыку» и
+  /// нажали play), кэш ничего не трогает.
+  Future<void> _primeFromCache(Db db, PlayerController player) async {
+    if (player.now.value != null || player.streamQueueCount != -1) return;
+    final raw = await db.kvGet(_cacheKey);
+    if (raw == null || raw.isEmpty || !mounted) return;
+    List<dynamic> decoded;
+    try {
+      decoded = jsonDecode(raw) as List<dynamic>;
+    } catch (_) {
+      return;
+    }
+    final queue = [
+      for (final e in decoded)
+        if (e is Map<String, dynamic>)
+          NowPlaying(
+            id: e['id'] as String,
+            title: e['title'] as String,
+            artist: e['artist'] as String,
+            path: e['path'] as String,
+            coverPath: e['cover'] as String?,
+          ),
+    ];
+    if (queue.isEmpty || !mounted) return;
+    await player.playQueue(queue, startIndex: 0, shuffle: false, autoplay: false);
+    if (mounted) setState(() => _primed = true);
   }
 
   Future<void> _load() async {
+    _loading = true;
     final db = ref.read(dbProvider);
+    await _primeFromCache(db, ref.read(playerProvider));
     final hidden = await db.hiddenArtists();
     final all = await ref.read(downloadsProvider).list();
     // Скрытые исполнители (долгое нажатие → «скрыть исполнителя») реально
@@ -121,6 +170,15 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
     // перетасовку, отдельного «если вкуса нет» пути тут не нужно.
     final ordered = await orderByTaste(db, items);
     final orderMs = sw.elapsedMilliseconds;
+    // Сохраняем для следующего холодного старта (см. _primeFromCache) —
+    // не ждём, пишем в фоне.
+    unawaited(db.kvSet(
+      _cacheKey,
+      jsonEncode([
+        for (final t in ordered.take(_cacheCap))
+          {'id': t.id, 'title': t.title, 'artist': t.artist, 'path': t.path, 'cover': t.coverPath},
+      ]),
+    ));
     final queue = [
       for (final t in ordered)
         NowPlaying(
@@ -156,14 +214,15 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
   @override
   Widget build(BuildContext context) {
     final items = _items;
+    final ready = items != null || _primed;
     return Scaffold(
       backgroundColor: Afisha.bg,
-      body: items == null
+      body: !ready
           ? const Center(child: CircularProgressIndicator())
-          : items.isEmpty
+          : (items != null && items.isEmpty)
               ? _empty()
               : PlayerView(
-                  emptyState: _building
+                  emptyState: (_building && !_primed)
                       ? const Center(child: CircularProgressIndicator())
                       : null,
                 ),
