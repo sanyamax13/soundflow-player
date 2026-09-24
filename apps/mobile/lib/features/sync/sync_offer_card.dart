@@ -162,7 +162,7 @@ class SyncOfferCard extends ConsumerWidget {
   }
 
   Widget _running(SyncOffer o) {
-    final word = o.removingNow ? 'Стираю' : 'Скачиваю';
+    final word = o.removingNow ? 'Стирание' : 'Скачивание';
     final of = o.total == 0 ? '' : ': ${fmtInt(o.done)} из ${fmtInt(o.total)}';
     return Column(
       mainAxisSize: MainAxisSize.min,

@@ -141,7 +141,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
                   ? const SizedBox(
                       height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.wifi_find),
-              label: Text(_scanning ? 'Ищу в сети…' : 'Найти сервер самому'),
+              label: Text(_scanning ? 'Поиск в сети…' : 'Найти сервер самому'),
             ),
           ),
           const SizedBox(height: 16),
