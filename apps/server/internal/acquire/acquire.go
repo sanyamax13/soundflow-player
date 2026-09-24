@@ -167,6 +167,19 @@ func (s *Service) Acquire(ctx context.Context, req Request) (Result, error) {
 		return Result{Reason: why}, ErrLowQuality
 	}
 
+	// 6а. Спектр — битрейт/контейнер можно подделать («поддельный 320» /
+	//     фейк-lossless, транскод плохого источника в высокий tier),
+	//     реальный звук не обманешь: срезанные верха выдают транскод. Не
+	//     отклоняем (эвристика, ложные срабатывания возможны на тихой
+	//     мастеринге) — понижаем tier на ступень и пишем в лог. Alex TG
+	//     24.09.2026 «по спектру тоже будем проверять».
+	if cutoff, cerr := quality.CutoffFromFile(res.FilePath); cerr == nil && quality.SuspiciousCutoff(tier, cutoff) {
+		was := tier
+		tier = tier.Downgrade()
+		log.Printf("acquire: %s — %s: спектр обрезан на %.0fГц при tier=%s — похоже на транскод, понижено до %s",
+			req.Artist, req.Title, cutoff, was, tier)
+	}
+
 	// 6б. Обрезок: эталона нет, а файл совсем короткий (< 40 с) — почти
 	//     наверняка превью или битая закачка (пункт 4б).
 	if req.ExpectedDurationSec == 0 && res.DurationSec > 0 && res.DurationSec < 40 {
