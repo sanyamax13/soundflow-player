@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 
 import '../../core/app_log.dart';
+import '../../core/crash_log.dart';
 import 'player_controller.dart';
 
 /// Мост между [PlayerController] и системой Android — чтобы кнопки play/
@@ -108,9 +110,22 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
   /// Пользователь смахнул приложение из «недавних». По умолчанию Android
   /// оставляет музыку играть в фоне — Alex этого не ждёт (06.09.2026:
   /// «выгружаю плеер, а он всё равно играет»). Глушим и гасим сессию.
+  ///
+  /// 24.09.2026: Alex сообщил случай, когда после смахивания музыка НЕ
+  /// остановилась (и уведомление плеера пропало, осталось только системное
+  /// «подключено по блютуз») — без падения в «Последнем сбое», значит либо
+  /// Android вообще не позвал этот метод, либо позвал, но что-то внутри
+  /// тихо не выполнилось. Метки в журнале — чтобы при повторе увидеть,
+  /// какой из двух случаев это был, без USB-кабеля и логов Android.
   @override
   Future<void> onTaskRemoved() async {
-    await stop();
+    unawaited(AppLog.event('task_removed_start'));
+    try {
+      await stop();
+    } catch (e, st) {
+      await CrashLog.write(e, st, where: 'onTaskRemoved');
+    }
     await super.onTaskRemoved();
+    unawaited(AppLog.event('task_removed_done'));
   }
 }
