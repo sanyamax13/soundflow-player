@@ -114,13 +114,14 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
       ),
     );
     if (yes != true || !mounted) return;
-    final ok = await Api.pairingConfirm(found);
+    final confirm = await Api.pairingConfirm(found);
     if (!mounted) return;
-    if (!ok) {
+    if (!confirm.ok) {
       Notice.show('Не успели', subtitle: 'Окно на компьютере закрылось — попробуйте снова', kind: NoticeKind.warn);
       return;
     }
     await _persist(found);
+    await _persistRelay(confirm.relayUrl, confirm.relayKey);
     if (!mounted) return;
     Notice.show('Подключено', subtitle: found, kind: NoticeKind.done);
   }
@@ -131,6 +132,18 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     api.setBaseUrl(raw);
     await db.kvSet('server_url', api.baseUrl);
     await db.kvSet(_kLastGoodUrl, api.baseUrl);
+  }
+
+  /// Адрес и ключ удалённого доступа через VDS — компьютер отдаёт их сразу
+  /// при подтверждении подключения по Wi-Fi (Alex TG 24.09.2026), если у
+  /// него это настроено. Читает их «Настройки → Удалённый доступ»
+  /// (remote_access_screen.dart). Не пришли — не трогаем, что уже сохранено
+  /// (могло быть подключение к другому компьютеру без этой настройки).
+  Future<void> _persistRelay(String? relayUrl, String? relayKey) async {
+    if (relayUrl == null || relayUrl.isEmpty || relayKey == null || relayKey.isEmpty) return;
+    final db = ref.read(dbProvider);
+    await db.kvSet('relay_url', relayUrl);
+    await db.kvSet('relay_key', relayKey);
   }
 
   Future<void> _save() async {

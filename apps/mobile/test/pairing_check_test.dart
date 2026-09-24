@@ -58,7 +58,7 @@ void main() {
     expect(r, isNull);
   });
 
-  test('pairingConfirm: компьютер подтвердил — true', () async {
+  test('pairingConfirm: компьютер подтвердил — ok:true, без релея', () async {
     final server = await HttpServer.bind('127.0.0.1', 0);
     addTearDown(() => server.close(force: true));
     String? method, path;
@@ -70,11 +70,34 @@ void main() {
       await req.response.close();
     });
 
-    expect(await Api.pairingConfirm('http://127.0.0.1:${server.port}'), isTrue);
+    final r = await Api.pairingConfirm('http://127.0.0.1:${server.port}');
+    expect(r.ok, isTrue);
+    expect(r.relayUrl, isNull);
+    expect(r.relayKey, isNull);
     expect((method, path), ('POST', '/api/pairing/confirm'));
   });
 
-  test('pairingConfirm: окно уже закрылось (409) — false', () async {
+  test('pairingConfirm: компьютер подтвердил и отдал удалённый доступ через VDS', () async {
+    final server = await HttpServer.bind('127.0.0.1', 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((req) async {
+      req.response.headers.contentType = ContentType.json;
+      req.response.write(jsonEncode({
+        'ok': true,
+        'name': 'sanyamax',
+        'relay_url': 'https://vdsmusic.ru/soundflow-remote',
+        'relay_key': 'секрет123',
+      }));
+      await req.response.close();
+    });
+
+    final r = await Api.pairingConfirm('http://127.0.0.1:${server.port}');
+    expect(r.ok, isTrue);
+    expect(r.relayUrl, 'https://vdsmusic.ru/soundflow-remote');
+    expect(r.relayKey, 'секрет123');
+  });
+
+  test('pairingConfirm: окно уже закрылось (409) — ok:false', () async {
     final server = await HttpServer.bind('127.0.0.1', 0);
     addTearDown(() => server.close(force: true));
     server.listen((req) async {
@@ -83,6 +106,7 @@ void main() {
       await req.response.close();
     });
 
-    expect(await Api.pairingConfirm('http://127.0.0.1:${server.port}'), isFalse);
+    final r = await Api.pairingConfirm('http://127.0.0.1:${server.port}');
+    expect(r.ok, isFalse);
   });
 }

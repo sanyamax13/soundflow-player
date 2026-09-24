@@ -67,6 +67,17 @@ Future<void> _boot() async {
     }
   }
   final api = Api(baseUrl: apiBase);
+  // Удалённый доступ через VDS («Настройки → Удалённый доступ», Alex TG
+  // 24.09.2026) — если в прошлый раз был включён вручную, поднимаем его
+  // снова при каждом запуске (переключатель не «на сегодня», а до тех пор,
+  // пока сами не выключат).
+  if (await db.kvGet('relay_enabled') == '1') {
+    final relayUrl = await db.kvGet('relay_url');
+    final relayKey = await db.kvGet('relay_key');
+    if (relayUrl != null && relayUrl.isNotEmpty && relayKey != null && relayKey.isNotEmpty) {
+      api.setRelayTransport(relayUrl, relayKey);
+    }
+  }
   final sync = SyncRepo(api, db);
   final downloads = DownloadsRepo(api, db, sync);
   // late — onMissingFile ссылается на player, чтобы вернуть трек в очередь

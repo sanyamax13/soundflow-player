@@ -49,6 +49,25 @@ class Api {
     apiBase = v;
   }
 
+  static const _kRelayKeyHeader = 'X-Soundflow-Relay-Key';
+
+  /// Включить удалённый доступ через VDS («Настройки → Удалённый доступ»,
+  /// Alex TG 24.09.2026): адрес с путём (`.../soundflow-remote`), поэтому
+  /// НЕ через [setBaseUrl]/normalizeServerUrl — та ждёт вид «хост:порт» и
+  /// обрежет путь. Секретный ключ уходит на каждый запрос отдельным
+  /// заголовком, как ждёт relayAuth на сервере.
+  void setRelayTransport(String relayUrl, String relayKey) {
+    _dio.options.baseUrl = relayUrl;
+    _dio.options.headers[_kRelayKeyHeader] = relayKey;
+    apiBase = relayUrl;
+  }
+
+  /// Вернуться с удалённого доступа на обычный (домашний Wi-Fi/USB) адрес.
+  void disableRelay(String localUrl) {
+    _dio.options.headers.remove(_kRelayKeyHeader);
+    setBaseUrl(localUrl);
+  }
+
   /// Проверить сервер по адресу, НЕ переключаясь на него (кнопка «Проверить»
   /// в настройке адреса). true — ответил на /v1/health.
   static Future<bool> ping(String raw) async {
@@ -88,8 +107,12 @@ class Api {
   }
 
   /// Подтвердить первое подключение — компьютер ещё должен быть в открытом
-  /// окне («Подключить телефон»), иначе false (окно истекло/закрыли).
-  static Future<bool> pairingConfirm(String raw) async {
+  /// окне («Подключить телефон»), иначе ok:false (окно истекло/закрыли).
+  /// Заодно компьютер может сразу отдать адрес и ключ удалённого доступа
+  /// через VDS (relay_url/relay_key), если он у него настроен (Alex TG
+  /// 24.09.2026, вместо ручного ввода секрета) — их нет, если удалённый
+  /// доступ на компьютере не включён; вызывающий сохраняет, что пришло.
+  static Future<({bool ok, String? relayUrl, String? relayKey})> pairingConfirm(String raw) async {
     try {
       final dio = Dio(BaseOptions(
         baseUrl: normalizeServerUrl(raw),
@@ -97,9 +120,14 @@ class Api {
         receiveTimeout: const Duration(seconds: 5),
       ));
       final r = await dio.post<Map<String, dynamic>>('/api/pairing/confirm');
-      return r.statusCode == 200;
+      if (r.statusCode != 200) return (ok: false, relayUrl: null, relayKey: null);
+      return (
+        ok: true,
+        relayUrl: r.data?['relay_url'] as String?,
+        relayKey: r.data?['relay_key'] as String?,
+      );
     } catch (_) {
-      return false;
+      return (ok: false, relayUrl: null, relayKey: null);
     }
   }
 

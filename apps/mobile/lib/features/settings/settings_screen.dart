@@ -6,6 +6,7 @@ import '../../core/apple.dart';
 import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../profile/server_url_screen.dart';
+import 'remote_access_screen.dart';
 
 /// Настройки — вынесено из Профиля (Alex TG 14.09.2026: «в профиле только
 /// статистику, а всё что настройки касается — в настройки»). Пока минимально:
@@ -35,6 +36,15 @@ class SettingsScreen extends StatelessWidget {
                 chevron: true,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
+                ),
+              ),
+              AppleRow(
+                icon: CupertinoIcons.globe,
+                iconBg: Afisha.green,
+                title: 'Удалённый доступ',
+                chevron: true,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const RemoteAccessScreen()),
                 ),
               ),
               const _LogCard(),
