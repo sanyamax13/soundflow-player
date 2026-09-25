@@ -269,35 +269,35 @@ class _EqualizerPainter extends CustomPainter {
   final double t;
   final double progress;
 
-  // Зоны по высоте КАЖДОГО столбика — лайм самая широкая (низ), красная
-  // только на самом верху, как на реальных аппаратных индикаторах.
-  static const _greyFrac = 0.55;
-  static const _blueFrac = 0.35;
+  static const _greyFrac = 0.55; // где по высоте столбика лайм переходит в синий
   static const _blue = Color(0xFF4DA3FF);
   static const _red = Color(0xFFFF4D4D);
   static final _dim = Colors.white.withValues(alpha: 0.16);
 
   // 25.09.2026 (Alex TG, «полосу прогресса оставь как есть, но дизайн чуть
-  // переделай под iOS/Samsung»): сами прямоугольники стали скруглённые
-  // сверху и снизу — округлые «таблетки» вместо острых углов, поведение и
-  // цветные зоны не тронуты, только форма.
+  // переделай под iOS/Samsung»): скруглённые сверху и снизу «таблетки»
+  // вместо острых углов.
+  // 25.09.2026, разбор от трёх ИИ-дизайнеров по промту Alex (DeepSeek/
+  // Gemini/GPT, независимо сошлись в одном): жёсткие цветные зоны (лайм/
+  // синий/красный сплошными блоками со видимой границей) читаются как
+  // «дешёвый VU-метр из 2005-го» — заменено на один плавный градиент по
+  // высоте столбика (тот же лайм→синий→красный, но переход непрерывный,
+  // без ступенек). Пропорции те же (_greyFrac), форма/пляска/пиковая
+  // плашка не тронуты.
   void _segmentedBar(Canvas c, double x, double width, double barTopY, double baseY, bool played) {
     final r = Radius.circular(width / 2);
+    final rect = Rect.fromLTWH(x, barTopY, width, baseY - barTopY);
     if (!played) {
-      c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, barTopY, width, baseY - barTopY), r), Paint()..color = _dim);
+      c.drawRRect(RRect.fromRectAndRadius(rect, r), Paint()..color = _dim);
       return;
     }
-    final h = baseY - barTopY;
-    final greyH = h * _greyFrac;
-    final blueH = h * _blueFrac;
-    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, baseY - greyH, width, greyH), r), Paint()..color = Afisha.lime);
-    if (h > greyH) {
-      final blueTop = math.max(barTopY, baseY - greyH - blueH);
-      c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, blueTop, width, (baseY - greyH) - blueTop), r), Paint()..color = _blue);
-    }
-    if (h > greyH + blueH) {
-      c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, barTopY, width, (baseY - greyH - blueH) - barTopY), r), Paint()..color = _red);
-    }
+    final gradient = const LinearGradient(
+      begin: Alignment.bottomCenter,
+      end: Alignment.topCenter,
+      colors: [Afisha.lime, _blue, _red],
+      stops: [0.0, _greyFrac, 1.0],
+    );
+    c.drawRRect(RRect.fromRectAndRadius(rect, r), Paint()..shader = gradient.createShader(rect));
   }
 
   // Пиковая «плашечка» — короткая красная чёрточка над самим столбиком,
