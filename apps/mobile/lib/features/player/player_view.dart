@@ -721,38 +721,70 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             final height = _queuePeek + dragRange * t;
             return ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              child: Container(
-                width: double.infinity,
-                height: height,
-                color: Afisha.surface.withValues(alpha: 0.6 + 0.4 * t),
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _animateQueueTo(t > 0.5 ? 0 : 1),
-                      onVerticalDragUpdate: (d) {
-                        _queueOpen.value =
-                            (_queueOpen.value - d.delta.dy / dragRange).clamp(0.0, 1.0);
-                      },
-                      onVerticalDragEnd: (d) {
-                        final v = d.primaryVelocity ?? 0;
-                        if (v < -300) return _animateQueueTo(1);
-                        if (v > 300) return _animateQueueTo(0);
-                        _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0);
-                      },
-                      child: _queueHandleRow(now),
-                    ),
-                    if (t > 0.01)
-                      Expanded(
-                        child: Opacity(
-                          opacity: t.clamp(0.0, 1.0),
-                          child: IgnorePointer(
-                            ignoring: t < 0.6,
-                            child: _queueBody(now),
+              // 25.09.2026 (Alex TG, «начни с 1» — плеер, стекло на карточках):
+              // панель «Дальше» была сплошной Afisha.surface — теперь размытый
+              // фон + лёгкий блик сверху-слева, тёмная подложка (Afisha.surface)
+              // осталась ПОД бликом отдельным слоем — иначе на пёстрой обложке
+              // текст очереди было бы не прочитать (тут не плоский чёрный фон,
+              // как в apple.dart, а живая картинка).
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: height,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ColoredBox(color: Afisha.surface.withValues(alpha: 0.55 + 0.35 * t)),
+                      ),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white.withValues(alpha: 0.14),
+                                Colors.white.withValues(alpha: 0.05),
+                                Colors.transparent,
+                              ],
+                              stops: const [0, 0.4, 1],
+                            ),
+                            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.16))),
                           ),
                         ),
                       ),
-                  ],
+                      Column(
+                        children: [
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _animateQueueTo(t > 0.5 ? 0 : 1),
+                            onVerticalDragUpdate: (d) {
+                              _queueOpen.value =
+                                  (_queueOpen.value - d.delta.dy / dragRange).clamp(0.0, 1.0);
+                            },
+                            onVerticalDragEnd: (d) {
+                              final v = d.primaryVelocity ?? 0;
+                              if (v < -300) return _animateQueueTo(1);
+                              if (v > 300) return _animateQueueTo(0);
+                              _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0);
+                            },
+                            child: _queueHandleRow(now),
+                          ),
+                          if (t > 0.01)
+                            Expanded(
+                              child: Opacity(
+                                opacity: t.clamp(0.0, 1.0),
+                                child: IgnorePointer(
+                                  ignoring: t < 0.6,
+                                  child: _queueBody(now),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

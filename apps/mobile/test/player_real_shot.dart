@@ -8,6 +8,7 @@
 
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -90,7 +91,10 @@ void main() {
     await t.binding.setSurfaceSize(const Size(400, 860));
     await t.pumpWidget(await _app());
     await t.pump(const Duration(milliseconds: 300));
-    await t.tap(find.byIcon(Icons.help_outline));
+    // Значок сменился на CupertinoIcons.question_circle (Опус-ревью «Поток»
+    // 23.09.2026, пункт 5) — тест по Icons.help_outline с тех пор не находил
+    // кнопку молча падал; поправлено попутно с правкой панели «Дальше».
+    await t.tap(find.byIcon(CupertinoIcons.question_circle));
     await t.pump(const Duration(milliseconds: 200));
     await expectLater(find.byType(MaterialApp),
         matchesGoldenFile('goldens/player_real_help.png'));
