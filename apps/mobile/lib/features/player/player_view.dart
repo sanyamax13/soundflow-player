@@ -828,16 +828,23 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       );
   }
 
+  // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай, сам расположишь как
+  // надо»): видимый размер иконок тот же — растёт только зона нажатия
+  // вокруг; зазоры между кнопками увеличены (14/10 → 20), чтобы увеличенные
+  // невидимые зоны соседних кнопок не перекрывали друг друга.
+  static const _tapZone = BoxConstraints(minWidth: 64, minHeight: 64);
+
   Widget _transport() => Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
             iconSize: 34,
             color: Colors.white,
+            constraints: _tapZone,
             icon: const Icon(CupertinoIcons.backward_fill),
             onPressed: _swipePrev,
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 20),
           ValueListenableBuilder<bool>(
             valueListenable: _p.playing,
             builder: (_, pl, _) => GestureDetector(
@@ -854,28 +861,32 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 20),
           IconButton(
             iconSize: 34,
             color: Colors.white,
+            constraints: _tapZone,
             icon: const Icon(CupertinoIcons.forward_fill),
             onPressed: _swipeNext,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 16),
           // Цель для сердечка-анимации (_heartPop) — оно прилетает СЮДА, а не
           // в центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3).
           CompositedTransformTarget(
             link: _favLink,
             child: IconButton(
               iconSize: 26,
+              constraints: _tapZone,
               icon: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
                   color: _fav ? Afisha.lime : Colors.white70),
               onPressed: _toggleFavButton,
             ),
           ),
+          const SizedBox(width: 4),
           Builder(
             builder: (context) => IconButton(
               iconSize: 24,
+              constraints: _tapZone,
               icon: const Icon(CupertinoIcons.trash, color: Colors.white70),
               onPressed: () {
                 final now = _p.now.value;

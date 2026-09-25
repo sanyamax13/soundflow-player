@@ -106,6 +106,13 @@ void main() {
         break;
       }
     }
+    final cupertino = File(
+        r'C:\Users\brain\AppData\Local\Pub\Cache\hosted\pub.dev\cupertino_icons-1.0.9\assets\CupertinoIcons.ttf');
+    if (cupertino.existsSync()) {
+      await (FontLoader('packages/cupertino_icons/CupertinoIcons')
+            ..addFont(Future.value(ByteData.view(cupertino.readAsBytesSync().buffer))))
+          .load();
+    }
   });
 
   testWidgets('полка: список исполнителей + песни одного', (tester) async {

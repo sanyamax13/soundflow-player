@@ -429,9 +429,12 @@ class _DiscoverRow extends StatelessWidget {
               : Text(album, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
+        // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай»): видимый
+        // размер иконок тот же — растёт только зона нажатия вокруг.
         children: [
           IconButton(
             onPressed: loading ? null : onPlay,
+            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
             icon: loading
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : Icon(playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill),
@@ -449,6 +452,7 @@ class _DiscoverRow extends StatelessWidget {
           else
             IconButton(
               onPressed: onAcquire,
+              constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
               icon: Icon(
                 s?.state == 'fail' ? CupertinoIcons.arrow_clockwise : CupertinoIcons.cloud_download,
                 color: s?.state == 'fail' ? Colors.redAccent : null,
@@ -457,6 +461,7 @@ class _DiscoverRow extends StatelessWidget {
             ),
           IconButton(
             onPressed: onDismiss,
+            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
             icon: const Icon(CupertinoIcons.xmark, size: 18),
             tooltip: 'Убрать',
           ),

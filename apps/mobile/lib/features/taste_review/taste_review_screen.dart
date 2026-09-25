@@ -329,9 +329,15 @@ class _ReviewRow extends StatelessWidget {
     final artist = '${track['artist'] ?? ''}';
     final title = '${track['title'] ?? ''}';
     final album = '${track['album'] ?? ''}';
+    // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай»): видимый размер
+    // иконки тот же — растёт только невидимая зона нажатия вокруг (через
+    // constraints, не iconSize), чтобы было проще попасть на ходу в машине.
+    const tap = BoxConstraints(minWidth: 64, minHeight: 64);
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: IconButton(
         onPressed: loading ? null : onPlay,
+        constraints: tap,
         icon: loading
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
             : Icon(playing ? CupertinoIcons.pause_circle_fill : CupertinoIcons.play_circle_fill, size: 30),
@@ -343,11 +349,13 @@ class _ReviewRow extends StatelessWidget {
         children: [
           IconButton(
             onPressed: onKeep,
+            constraints: tap,
             icon: const Icon(CupertinoIcons.heart, color: Afisha.lime),
             tooltip: 'Оставить',
           ),
           IconButton(
             onPressed: onDelete,
+            constraints: tap,
             icon: const Icon(CupertinoIcons.trash, color: Colors.redAccent),
             tooltip: 'Удалить навсегда',
           ),

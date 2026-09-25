@@ -835,11 +835,14 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     );
   }
 
+  // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай, сам расположишь как
+  // надо»): было VisualDensity.compact — тап ещё меньше стандарта. Строка
+  // высотой 76 (_kRowH) — 64 помещается, задел под соседние строки есть.
   Widget _songActions(DownloadedTrack t) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
       IconButton(
-        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
         onPressed: () => _toggleFav(t),
         icon: Icon(
           t.favorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
@@ -848,10 +851,17 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
         ),
       ),
       PopupMenuButton<String>(
-        icon: const Icon(
-          CupertinoIcons.ellipsis,
-          color: Afisha.inkDim,
-          size: 22,
+        padding: EdgeInsets.zero,
+        icon: SizedBox(
+          width: 64,
+          height: 64,
+          child: Center(
+            child: Icon(
+              CupertinoIcons.ellipsis,
+              color: Afisha.inkDim,
+              size: 22,
+            ),
+          ),
         ),
         onSelected: (v) {
           switch (v) {
@@ -1032,7 +1042,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                   child: const Text('Исправить имя'),
                 ),
                 IconButton(
-                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
                   onPressed: () {
                     Navigator.pop(sheet);
                     _deleteBroken(t);
