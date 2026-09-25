@@ -23,6 +23,10 @@ Color tileColorFor(String name) {
 
 /// Плитка вместо серой ноты, когда у песни/исполнителя нет обложки (Alex
 /// 20.09.2026, «Моя музыка»: «серая нота у большинства — некрасиво»).
+/// 25.09.2026 (по разбору Gemini, Alex «да меняй»): была сплошная заливка —
+/// перетягивала внимание в длинном списке. Теперь фон — лёгкая дымка того
+/// же цвета (26% непрозрачности), сама буква — яркая, того же тона, и форма
+/// мягче (суперэллипс-«сквирк» вместо обычного скругления).
 class LetterTile extends StatelessWidget {
   const LetterTile({super.key, required this.name, this.size = 48, this.radius = 12});
 
@@ -30,22 +34,26 @@ class LetterTile extends StatelessWidget {
   final double size;
   final double radius;
 
+  // Форма плитки (сквирк) задаёт CoverThumb снаружи (ClipPath на весь
+  // размер) — сюда только цвет, свой borderRadius не применяем, чтобы не
+  // клипать дважды.
   @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: tileColorFor(name),
-          borderRadius: BorderRadius.circular(radius),
+  Widget build(BuildContext context) {
+    final base = tileColorFor(name);
+    final letterColor = HSLColor.fromColor(base).withLightness(0.62).withSaturation(0.55).toColor();
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      color: base.withValues(alpha: 0.26),
+      child: Text(
+        initialsOf(name),
+        style: TextStyle(
+          color: letterColor,
+          fontWeight: FontWeight.w700,
+          fontSize: size * 0.34,
         ),
-        child: Text(
-          initialsOf(name),
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.95),
-            fontWeight: FontWeight.w700,
-            fontSize: size * 0.34,
-          ),
-        ),
-      );
+      ),
+    );
+  }
 }

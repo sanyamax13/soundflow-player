@@ -47,8 +47,11 @@ class CoverThumb extends StatelessWidget {
     } else {
       child = _placeholder();
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
+    // 25.09.2026 (по разбору Gemini, Alex «да меняй»): было ClipRRect —
+    // обычное скругление. «Сквирк» (суперэллипс) через ContinuousRectangleBorder
+    // выглядит мягче, ближе к iOS-иконкам.
+    return ClipPath(
+      clipper: ShapeBorderClipper(shape: ContinuousRectangleBorder(borderRadius: BorderRadius.circular(radius))),
       child: SizedBox(width: size, height: size, child: child),
     );
   }

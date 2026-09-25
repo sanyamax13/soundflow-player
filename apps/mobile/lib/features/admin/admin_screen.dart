@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
-import '../../core/apple.dart';
 import '../../core/net_hint.dart';
 import '../../core/notice.dart';
+import '../../core/pulsing_dot.dart';
 import '../../core/theme.dart';
 
 /// «Сервер» — упрощено до того, что реально нужно Alex на ЭТОМ экране
@@ -82,13 +82,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     );
   }
 
-  Widget _connectivityRow() => AppleRow(
-    icon: CupertinoIcons.desktopcomputer,
-    iconBg: _reachable ? Afisha.green : Afisha.red,
-    title: _reachable ? 'Компьютер на связи' : 'Компьютер недоступен',
-    subtitle: _reachable ? null : kServerUnreachableHint,
-  );
-
   String _syncTitle() {
     final pending = _pending;
     return pending == null
@@ -109,60 +102,72 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     return 'Последняя синхронизация: ${fmt(_lastSync)}';
   }
 
+  // 25.09.2026 (по разбору Gemini, Alex «да меняй всё»): экран был списком
+  // серых карточек «как Настройки на iPhone» — заменён на «живую панель»:
+  // пульсирующая точка + крупный статус вместо строки с иконкой, подписи
+  // вместо заголовков секций, переключателей тут пока нет (нечего
+  // переключать на этом экране — они появятся, если такое понадобится).
   Widget _body() {
     return ListView(
-      padding: const EdgeInsets.only(top: 8, bottom: 24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       children: [
-        AppleSection(
-          header: 'Связь с компьютером',
-          dividerInset: 58,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _connectivityRow(),
-            if (!_reachable) AppleRow(title: 'Проверить связь', onTap: _load),
-          ],
-        ),
-        const SizedBox(height: 24),
-        AppleSection(
-          header: 'Что уходит на компьютер',
-          footer:
-              'Лайки, удаления и что слушал копятся на телефоне и работают без '
-              'сети. Уходят на компьютер сами, как только появляется связь.',
-          children: [AppleRow(title: _syncTitle(), subtitle: _lastSyncText())],
-        ),
-        const SizedBox(height: 24),
-        // «Полный сброс» лежал рядом с обычной синхронизацией, в два тапа от «стереть всю музыку» (ревизия 20.09.2026,
-        // пункт «убрать вглубь»): теперь спрятан за «Показать опасное», случайно не нажмёшь.
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Material(
-            color: Afisha.groupBg,
-            borderRadius: BorderRadius.circular(12),
-            clipBehavior: Clip.antiAlias,
-            child: Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                key: const Key('danger-zone'),
-                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                iconColor: Afisha.inkDim,
-                collapsedIconColor: Afisha.inkDim,
-                title: const Text(
-                  'Показать опасное',
-                  style: TextStyle(
-                    color: Afisha.inkDim,
-                    fontSize: 17,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                children: [_resetBlock()],
+            PulsingStatusDot(color: _reachable ? Afisha.green : Afisha.red),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                _reachable ? 'На связи' : 'Недоступен',
+                style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: -1),
               ),
             ),
+            if (!_reachable)
+              TextButton(onPressed: _load, child: const Text('Проверить')),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _reachable ? _lastSyncText() : kServerUnreachableHint,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+        ),
+        const SizedBox(height: 48),
+        _dashboardItem('Что уходит на компьютер', _syncTitle()),
+        const SizedBox(height: 12),
+        Text(
+          'Лайки, удаления и что слушал копятся на телефоне и работают без '
+          'сети. Уходят на компьютер сами, как только появляется связь.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13, height: 1.4),
+        ),
+        const SizedBox(height: 48),
+        // «Полный сброс» лежал рядом с обычной синхронизацией, в два тапа от «стереть всю музыку» (ревизия 20.09.2026,
+        // пункт «убрать вглубь»): теперь спрятан за «Показать опасное», случайно не нажмёшь.
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            key: const Key('danger-zone'),
+            tilePadding: EdgeInsets.zero,
+            iconColor: Afisha.inkDim,
+            collapsedIconColor: Afisha.inkDim,
+            title: const Text(
+              'Показать опасное',
+              style: TextStyle(color: Afisha.inkDim, fontSize: 17, letterSpacing: -0.4),
+            ),
+            children: [_resetBlock()],
           ),
         ),
       ],
     );
   }
+
+  Widget _dashboardItem(String title, String value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+          const SizedBox(height: 4),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500)),
+        ],
+      );
 
   // Alex TG 15.09.2026: «сделай кнопку полный сброс, что бы как первый раз
   // установил и без музыки». Стирает музыку/лайки/историю на ЭТОМ телефоне;
@@ -172,7 +177,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
   Widget _resetBlock() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

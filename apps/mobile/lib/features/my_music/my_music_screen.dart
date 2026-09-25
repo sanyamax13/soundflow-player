@@ -575,7 +575,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
             ],
           ),
         ),
-        Positioned(right: 0, top: 4, bottom: 4, width: _kRailW, child: _rail()),
+        // 25.09.2026 (Gemini): было right:0 — палец при скролле перекрывал
+        // половину алфавита у самого края экрана. Небольшой отступ от края.
+        Positioned(right: 5, top: 4, bottom: 4, width: _kRailW, child: _rail()),
         // Крупная буква посреди экрана, пока ведёшь пальцем по полоске.
         Center(
           child: ValueListenableBuilder<String?>(
@@ -695,6 +697,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     );
   }
 
+  // 25.09.2026 (по разбору Gemini, Alex «да меняй»): буквы-разделители были
+  // ярко-лаймовые — «кричали» на весь список. Приглушены до почти-белого,
+  // помельче, но с большим трекингом — работают как структурная сетка, а
+  // не как акцент.
   Widget _letterHeader(String l) => Container(
     height: _kHeaderH,
     alignment: Alignment.centerLeft,
@@ -703,10 +709,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     child: Text(
       l,
       style: const TextStyle(
-        color: Afisha.lime,
-        fontSize: 13,
+        color: Colors.white54,
+        fontSize: 12,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.5,
+        letterSpacing: 2.0,
       ),
     ),
   );
@@ -747,8 +753,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      // 25.09.2026 (Gemini): было 16 — чуть крупнее для
+                      // контраста с подписью под именем.
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         fontWeight: FontWeight.w600,
                         height: 1.2,
                       ),

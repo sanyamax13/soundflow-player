@@ -140,7 +140,9 @@ void main() {
   testWidgets('экран «Сервер» — синхронизация свёрнута сверху', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 1560));
     await tester.pumpWidget(await _app());
-    await tester.pumpAndSettle();
+    // pumpAndSettle не годится — экран теперь с бесконечно пульсирующей
+    // точкой (PulsingStatusDot), она никогда не «устаканится» сама.
+    await tester.pump(const Duration(milliseconds: 300));
 
     await expectLater(find.byType(MaterialApp),
         matchesGoldenFile('goldens/server_screen.png'));

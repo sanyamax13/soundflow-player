@@ -2,7 +2,6 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../../core/app_log.dart';
-import '../../core/apple.dart';
 import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../profile/server_url_screen.dart';
@@ -20,41 +19,76 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 25.09.2026 (по разбору Gemini, Alex «да меняй всё»): было в серых
+    // карточках-плашках («как Настройки iPhone») — строки лежат прямо на
+    // фоне, разделены только отступом и тонкой линией, покрупнее шрифт.
     return Scaffold(
       appBar: AppBar(title: const Text('Настройки')),
       body: ListView(
-        padding: const EdgeInsets.only(top: 8, bottom: 24),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          AppleSection(
-            dividerInset: 58,
-            children: [
-              AppleRow(
-                icon: CupertinoIcons.wifi,
-                iconBg: Afisha.blue,
-                title: 'Адрес сервера',
-                subtitle: apiBase.replaceFirst('http://', ''),
-                chevron: true,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
-                ),
-              ),
-              AppleRow(
-                icon: CupertinoIcons.globe,
-                iconBg: Afisha.green,
-                title: 'Удалённый доступ',
-                chevron: true,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const RemoteAccessScreen()),
-                ),
-              ),
-              const _LogCard(),
-            ],
+          _row(
+            icon: CupertinoIcons.wifi,
+            iconColor: Afisha.blue,
+            title: 'Адрес сервера',
+            subtitle: apiBase.replaceFirst('http://', ''),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
+            ),
           ),
+          _divider(),
+          _row(
+            icon: CupertinoIcons.globe,
+            iconColor: Afisha.green,
+            title: 'Удалённый доступ',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const RemoteAccessScreen()),
+            ),
+          ),
+          _divider(),
+          const _LogCard(),
         ],
       ),
     );
   }
+
+  Widget _divider() => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+      );
 }
+
+Widget _row({
+  required IconData icon,
+  required Color iconColor,
+  required String title,
+  String? subtitle,
+  required VoidCallback onTap,
+}) => InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 3),
+                    Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13)),
+                  ],
+                ],
+              ),
+            ),
+            Icon(CupertinoIcons.chevron_forward, color: Colors.white.withValues(alpha: 0.3), size: 16),
+          ],
+        ),
+      ),
+    );
 
 /// Журнал реальных задержек на этом телефоне (радио и т.д.) — Alex TG
 /// 14.09.2026: «делай полное логирование... какая реальность задержка идёт у
@@ -114,12 +148,11 @@ class _LogCardState extends State<_LogCard> {
 
   @override
   Widget build(BuildContext context) {
-    return AppleRow(
+    return _row(
       icon: CupertinoIcons.doc_text,
-      iconBg: Afisha.gray,
+      iconColor: Afisha.gray,
       title: 'Журнал',
       subtitle: _text == null ? 'пока пусто' : 'есть записи за последние часы — нажмите, чтобы посмотреть',
-      chevron: true,
       onTap: _open,
     );
   }

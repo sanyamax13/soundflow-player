@@ -139,11 +139,13 @@ void main() {
   testWidgets('экран «Сервер» — опасное спрятано, потом открыто', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 640));
     await tester.pumpWidget(await _app());
-    await tester.pumpAndSettle();
+    // pumpAndSettle не годится — экран теперь с бесконечно пульсирующей
+    // точкой (PulsingStatusDot), она никогда не «устаканится» сама.
+    await tester.pump(const Duration(milliseconds: 300));
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/admin_danger_1_closed.png'));
 
     await tester.tap(find.text('Показать опасное'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/admin_danger_2_open.png'));
   });
 }
