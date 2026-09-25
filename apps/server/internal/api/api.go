@@ -83,6 +83,7 @@ func (s *Server) Router() http.Handler {
 			r.Use(middleware.Timeout(15 * time.Second))
 			r.Get("/health", s.health)
 			r.Get("/tracks", s.tracks)
+			r.Get("/taste/review", s.tasteReview)
 			r.Get("/search", s.search)
 			r.Post("/library/next-batch", s.libraryNextBatch)
 			r.Get("/trash", s.trashList)
@@ -161,6 +162,23 @@ func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tracks": s.Music.List()})
+}
+
+// tasteReview — GET /v1/taste/review?limit= — очередь «разбор коллекции»
+// (Alex TG 25.09.2026): нерешённые треки от «меньше похоже на вкус» к
+// «больше», телефон показывает их списком для прослушивания/чистки. Мало
+// данных для кластеров вкуса → пустой список, не ошибка — рано ещё.
+func (s *Server) tasteReview(w http.ResponseWriter, r *http.Request) {
+	limit := 20000
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 20000 {
+		limit = v
+	}
+	list, err := s.DB.TasteReviewQueue(r.Context(), limit)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tracks": list})
 }
 
 func (s *Server) musicFile(w http.ResponseWriter, r *http.Request) {

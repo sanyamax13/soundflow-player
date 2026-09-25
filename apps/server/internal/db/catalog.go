@@ -30,6 +30,18 @@ type CatalogTrack struct {
 	Energy float64 `json:"energy"`
 }
 
+// TasteReviewTrack — трек в очереди «разбор коллекции» (Alex TG 25.09.2026),
+// отсортирован от «меньше всего похоже на вкус» к «больше всего» — см.
+// Store.TasteReviewQueue и localdb.TasteReviewQueue для сути решения (жёсткая
+// метка «не моё» на реальных данных ненадёжна, поэтому только порядок).
+type TasteReviewTrack struct {
+	ID     string  `json:"id"`
+	Artist string  `json:"artist"`
+	Title  string  `json:"title"`
+	Album  string  `json:"album"`
+	Score  float64 `json:"score"`
+}
+
 // NewTrack + NewTrackFile — что вставляем после успешного скачивания.
 type NewTrack struct {
 	ID            string
@@ -559,6 +571,10 @@ func (d *Pool) TrackWaveform(ctx context.Context, id string) (bars []byte, found
 // не хранит, считать среднюю громкость не из чего. Пустая карта — фильтр
 // «Настроение» на телефоне просто не увидит энергию ни у одного трека.
 func (d *Pool) TrackEnergies(ctx context.Context) (map[string]float64, error) {
+	return nil, nil
+}
+
+func (d *Pool) TasteReviewQueue(ctx context.Context, limit int) ([]TasteReviewTrack, error) {
 	return nil, nil
 }
 

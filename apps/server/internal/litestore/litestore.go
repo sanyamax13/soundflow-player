@@ -115,6 +115,15 @@ func (s *Store) TrackEnergies(ctx context.Context) (map[string]float64, error) {
 	return s.d.TrackEnergies()
 }
 
+func (s *Store) TasteReviewQueue(ctx context.Context, limit int) ([]db.TasteReviewTrack, error) {
+	list, err := s.d.TasteReviewQueue(limit)
+	out := make([]db.TasteReviewTrack, len(list))
+	for i, t := range list {
+		out[i] = db.TasteReviewTrack{ID: t.ID, Artist: t.Artist, Title: t.Title, Album: t.Album, Score: t.Score}
+	}
+	return out, err
+}
+
 func (s *Store) OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) ([]string, bool, error) {
 	// «Умное радио» (TASTE-PLAN §7): OrderRadio учитывает вкус поверх
 	// близости звука; нет сигналов вкуса — он сам падает на чистый косинус.

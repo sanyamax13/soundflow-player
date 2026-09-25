@@ -24,6 +24,10 @@ type Store interface {
 	// TrackEnergies — средняя громкость 0..1 по треку (из waveform), для
 	// фильтра «Настроение» на телефоне. Пустая карта на Postgres-пути.
 	TrackEnergies(ctx context.Context) (map[string]float64, error)
+	// TasteReviewQueue — очередь «разбор коллекции» (Alex TG 25.09.2026):
+	// нерешённые треки от «меньше похоже на вкус» к «больше». Пустой список
+	// на Postgres-пути.
+	TasteReviewQueue(ctx context.Context, limit int) ([]db.TasteReviewTrack, error)
 	OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) (ordered []string, reordered bool, err error)
 
 	TrackFilePath(ctx context.Context, trackID string) (string, bool, error)
