@@ -36,11 +36,16 @@ enum DotMatrixTotal {
 /// цифры — сколько прошло. Тап или ведение пальцем по столбикам перематывает
 /// песню.
 ///
-/// Столбики «пляшут» непрерывно, пока трек играет (гладкое псевдослучайное
-/// колебание высоты, своя скорость/фаза на столбик, фиксированный seed) —
-/// настоящего звукового анализа в реальном времени нет и не будет (принцип
-/// «сервер считает — телефон сам», см. docs/SOUNDFLOW_OFFLINE_FIRST_PLAN.md),
-/// это имитация, как в `equalizer_animation_shot.dart`. На паузе — замирают.
+/// Столбики впереди играющей точки стоят неподвижно (показывают тихую/громкую
+/// форму трека без движения) — начинают «плясать», как только точка до них
+/// доходит, и дальше уже не останавливаются (Alex TG 25.09.2026: «столбики
+/// могут двигаться только когда доходит до них» — вариант «А» из двух
+/// предложенных). Пляска — гладкое псевдослучайное колебание высоты, своя
+/// скорость/фаза на столбик, фиксированный seed — настоящего звукового
+/// анализа в реальном времени нет и не будет (принцип «сервер считает —
+/// телефон сам», см. docs/SOUNDFLOW_OFFLINE_FIRST_PLAN.md), это имитация, как
+/// в `equalizer_animation_shot.dart`. На паузе — замирают (в т.ч. уже
+/// пляшущие).
 /// Ничего не берёт с сервера: только позиция и длина трека, которые и так
 /// есть у телефона.
 class DotMatrixSeek extends StatefulWidget {
@@ -248,21 +253,26 @@ class _EqualizerPainter extends CustomPainter {
   static const _red = Color(0xFFFF4D4D);
   static final _dim = Colors.white.withValues(alpha: 0.16);
 
+  // 25.09.2026 (Alex TG, «полосу прогресса оставь как есть, но дизайн чуть
+  // переделай под iOS/Samsung»): сами прямоугольники стали скруглённые
+  // сверху и снизу — округлые «таблетки» вместо острых углов, поведение и
+  // цветные зоны не тронуты, только форма.
   void _segmentedBar(Canvas c, double x, double width, double barTopY, double baseY, bool played) {
+    final r = Radius.circular(width / 2);
     if (!played) {
-      c.drawRect(Rect.fromLTWH(x, barTopY, width, baseY - barTopY), Paint()..color = _dim);
+      c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, barTopY, width, baseY - barTopY), r), Paint()..color = _dim);
       return;
     }
     final h = baseY - barTopY;
     final greyH = h * _greyFrac;
     final blueH = h * _blueFrac;
-    c.drawRect(Rect.fromLTWH(x, baseY - greyH, width, greyH), Paint()..color = Afisha.lime);
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, baseY - greyH, width, greyH), r), Paint()..color = Afisha.lime);
     if (h > greyH) {
       final blueTop = math.max(barTopY, baseY - greyH - blueH);
-      c.drawRect(Rect.fromLTWH(x, blueTop, width, (baseY - greyH) - blueTop), Paint()..color = _blue);
+      c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, blueTop, width, (baseY - greyH) - blueTop), r), Paint()..color = _blue);
     }
     if (h > greyH + blueH) {
-      c.drawRect(Rect.fromLTWH(x, barTopY, width, (baseY - greyH - blueH) - barTopY), Paint()..color = _red);
+      c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, barTopY, width, (baseY - greyH - blueH) - barTopY), r), Paint()..color = _red);
     }
   }
 
@@ -273,10 +283,13 @@ class _EqualizerPainter extends CustomPainter {
     final gap = size.width / n;
     final w = math.max(1.2, gap * 0.5);
     for (var i = 0; i < n; i++) {
-      final v = _eqBarValue(envelopes[i], speeds[i], phases[i], t);
+      final played = (i + 0.5) / n <= progress;
+      // Впереди играющей точки — тихая неподвижная форма (сам envelope, без
+      // пляски); плясать столбик начинает, только когда точка до него дошла.
+      final v = played ? _eqBarValue(envelopes[i], speeds[i], phases[i], t) : envelopes[i].clamp(0.12, 1.0);
       final h = (size.height * v).clamp(3.0, size.height);
       final x = i * gap + (gap - w) / 2;
-      _segmentedBar(canvas, x, w, size.height - h, size.height, (i + 0.5) / n <= progress);
+      _segmentedBar(canvas, x, w, size.height - h, size.height, played);
     }
   }
 
