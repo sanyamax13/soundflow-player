@@ -22,7 +22,7 @@ func insertReviewTrack(t *testing.T, d *DB, id string, vec []float32) {
 	}
 }
 
-func TestTasteReviewQueueExcludesDecidedAndSortsAscending(t *testing.T) {
+func TestTasteReviewQueueExcludesDecidedAndSortsDescending(t *testing.T) {
 	d := open(t)
 	const dim = VecDim
 	rng := rand.New(rand.NewSource(11))
@@ -102,10 +102,11 @@ func TestTasteReviewQueueExcludesDecidedAndSortsAscending(t *testing.T) {
 		t.Errorf("near score %.3f should be higher than far score %.3f (near is close to taste)", rNear.Score, rFar.Score)
 	}
 
-	// отсортировано по возрастанию score
+	// отсортировано по убыванию score — вероятнее понравившееся сверху
+	// (Alex TG 25.09.2026, второй заход)
 	for i := 1; i < len(list); i++ {
-		if list[i].Score < list[i-1].Score {
-			t.Fatalf("queue not sorted ascending at %d: %.4f then %.4f", i, list[i-1].Score, list[i].Score)
+		if list[i].Score > list[i-1].Score {
+			t.Fatalf("queue not sorted descending at %d: %.4f then %.4f", i, list[i-1].Score, list[i].Score)
 		}
 	}
 }
