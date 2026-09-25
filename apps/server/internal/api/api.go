@@ -136,10 +136,14 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
-	// ?limit= — по умолчанию 500, до 10000 (телефон так тянет характеристики
-	// файлов для уже скачанного, см. backfillMeta).
+	// ?limit= — по умолчанию 500, до 30000 (телефон так тянет характеристики
+	// файлов для уже скачанного, см. backfillMeta). Было 10000 — каталог
+	// 25.09.2026 дорос до 11671, часть уже скачанного на телефоне (созданного
+	// раньше остальных, ORDER BY created_at DESC отрезал именно старое)
+	// переставала попадать в ответ и не получала новые поля (например energy
+	// для фильтра «Настроение») — сообщил Alex TG.
 	limit := 500
-	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 10000 {
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 30000 {
 		limit = v
 	}
 	// Есть каталог — отдаём его; пусто — тестовые тоны (для демо до наполнения).
