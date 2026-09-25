@@ -44,6 +44,7 @@ Future<Widget> _app() async {
   return ProviderScope(
     overrides: [
       apiProvider.overrideWithValue(api),
+      dbProvider.overrideWithValue(db),
       downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
       playerProvider.overrideWithValue(player),
       syncProvider.overrideWithValue(sync),
@@ -117,5 +118,23 @@ void main() {
     await t.pump(const Duration(milliseconds: 400));
     await expectLater(find.byType(MaterialApp),
         matchesGoldenFile('goldens/player_radio_filter.png'));
+  });
+
+  testWidgets('плеер 4.2 — лист «Настроение» (Играть дальше → Настроение)', (t) async {
+    await t.binding.setSurfaceSize(const Size(400, 860));
+    await t.pumpWidget(await _app());
+    await t.pump(const Duration(milliseconds: 300));
+    await t.longPress(find.byKey(const ValueKey('radio_button')));
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.text('Настроение'));
+    // Цепочка await'ов до открытия второго листа (dbProvider →
+    // downloadsProvider.list() → showModalBottomSheet) длиннее одного кадра —
+    // несколько отдельных pump вместо одного большого, чтобы каждый шаг
+    // цепочки успел пройти микротаском.
+    for (var i = 0; i < 5; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
+    await expectLater(find.byType(MaterialApp),
+        matchesGoldenFile('goldens/player_radio_mood.png'));
   });
 }

@@ -352,6 +352,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     iconBg: const Color(0xFF4DA3FF),
                     onTap: () => Navigator.pop(ctx, 'artist'),
                   ),
+                  AppleRow(
+                    title: 'Настроение',
+                    icon: CupertinoIcons.waveform,
+                    iconBg: const Color(0xFFFF9F4D),
+                    onTap: () => Navigator.pop(ctx, 'mood'),
+                  ),
                   // 25.09.2026 (Alex TG: «добавь по жанрам заранее, напиши
                   // скоро будет») — место под жанр показываем уже сейчас,
                   // сама функция ждёт отдельной работы (программу ещё надо
@@ -410,7 +416,90 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 .where((t) => t.artist == now.artist),
             now,
             'Дальше — ${now.artist}');
+      case 'mood':
+        if (!mounted) return;
+        final mood = await _pickMood();
+        if (mood == null || !mounted) return;
+        final withEnergy = (await ref.read(downloadsProvider).list())
+            .where((t) => t.energy != null && !hidden.contains(t.artist))
+            .toList()
+          ..sort((a, b) => a.energy!.compareTo(b.energy!));
+        final half = (withEnergy.length / 2).ceil();
+        final pool = mood == 'calm' ? withEnergy.take(half) : withEnergy.reversed.take(half);
+        await _startFilteredRadio(
+            pool, now, mood == 'calm' ? 'Дальше — спокойное' : 'Дальше — энергичное');
     }
+  }
+
+  /// Второй лист — спокойное/энергичное, поверх сортировки по [DownloadedTrack.energy]
+  /// (сервер считает среднюю громкость из waveform, Alex TG 25.09.2026).
+  Future<String?> _pickMood() {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Настроение',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: Afisha.ink)),
+                ),
+              ),
+              AppleSection(
+                dividerInset: 58,
+                children: [
+                  AppleRow(
+                    title: 'Спокойное',
+                    icon: CupertinoIcons.moon_fill,
+                    iconBg: const Color(0xFF6C7BFF),
+                    onTap: () => Navigator.pop(ctx, 'calm'),
+                  ),
+                  AppleRow(
+                    title: 'Энергичное',
+                    icon: CupertinoIcons.bolt_fill,
+                    iconBg: const Color(0xFFFF6B4D),
+                    onTap: () => Navigator.pop(ctx, 'energetic'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: Material(
+                  color: Afisha.lime,
+                  borderRadius: BorderRadius.circular(24),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () => Navigator.pop(ctx, null),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text('Отмена',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black,
+                              letterSpacing: -0.2)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _startFilteredRadio(

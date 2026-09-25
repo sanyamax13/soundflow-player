@@ -133,6 +133,7 @@ class DownloadsRepo {
       bitrateKbps: (track['bitrate_kbps'] as num?)?.toInt(),
       format: formatFromMime(track['mime_type'] as String?),
       durationSec: (track['duration_sec'] as num?)?.toInt(),
+      energy: (track['energy'] as num?)?.toDouble(),
     ));
     await _sync?.record('download', trackId: id);
     // Был в избранном старого плеера — ставим сердечко (только добавляем).
@@ -295,8 +296,9 @@ class DownloadsRepo {
       final fmt = formatFromMime(m['mime_type'] as String?);
       final br = (m['bitrate_kbps'] as num?)?.toInt();
       final dur = (m['duration_sec'] as num?)?.toInt();
-      if ((fmt ?? '').isEmpty && (br ?? 0) == 0 && (dur ?? 0) == 0) continue;
-      await _db.updateMeta(id, bitrateKbps: br, format: fmt, durationSec: dur);
+      final energy = (m['energy'] as num?)?.toDouble();
+      if ((fmt ?? '').isEmpty && (br ?? 0) == 0 && (dur ?? 0) == 0 && energy == null) continue;
+      await _db.updateMeta(id, bitrateKbps: br, format: fmt, durationSec: dur, energy: energy);
     }
   }
 

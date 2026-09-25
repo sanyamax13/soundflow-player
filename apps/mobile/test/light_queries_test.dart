@@ -46,7 +46,13 @@ void main() {
   Future<Db> freshDb() => Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
 
   DownloadedTrack track(String id,
-          {int bytes = 10, String? cover, String? format, int? kbps, int? sec, String? path}) =>
+          {int bytes = 10,
+          String? cover,
+          String? format,
+          int? kbps,
+          int? sec,
+          String? path,
+          double? energy}) =>
       DownloadedTrack(
         id: id,
         title: id,
@@ -58,6 +64,7 @@ void main() {
         format: format,
         bitrateKbps: kbps,
         durationSec: sec,
+        energy: energy,
       );
 
   group('existingFiles', () {
@@ -107,13 +114,17 @@ void main() {
       await db.close();
     });
 
-    test('idsNeedingMeta — только те, у кого нет ни формата, ни битрейта, ни длины', () async {
+    test('idsNeedingMeta — только те, у кого нет ни формата, ни битрейта, ни длины, ни энергии',
+        () async {
       final db = await freshDb();
+      // 25.09.2026: idsNeedingMeta теперь ловит ещё и energy IS NULL (фильтр
+      // «Настроение») — у «полных» записей energy тоже должна быть задана,
+      // иначе их снова засчитает как «нуждается в докачке».
       await db.upsertDownloaded(track('empty'));
       await db.upsertDownloaded(track('emptyFormat', format: ''));
-      await db.upsertDownloaded(track('hasFormat', format: 'mp3'));
-      await db.upsertDownloaded(track('hasKbps', kbps: 320));
-      await db.upsertDownloaded(track('hasSec', sec: 200));
+      await db.upsertDownloaded(track('hasFormat', format: 'mp3', energy: 0.5));
+      await db.upsertDownloaded(track('hasKbps', kbps: 320, energy: 0.5));
+      await db.upsertDownloaded(track('hasSec', sec: 200, energy: 0.5));
       expect((await db.idsNeedingMeta())..sort(), ['empty', 'emptyFormat']);
       await db.close();
     });

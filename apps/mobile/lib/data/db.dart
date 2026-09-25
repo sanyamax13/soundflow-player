@@ -20,7 +20,15 @@ class Db {
     final db = await f.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 7,
+        // false — иначе sqflite кеширует инстанс по пути, а у всех тестов
+        // путь один и тот же (':memory:') — «свежая» база одного теста
+        // тихо переиспользует данные другого, если версия уже совпадает
+        // (не доходит до onCreate/onUpgrade). Всплыло 25.09.2026 при
+        // добавлении колонки energy (v7→8): три теста light_queries_test.dart
+        // стали видеть чужие строки. Реальному приложению не мешает — оно
+        // открывает свою единственную базу по файловому пути один раз.
+        singleInstance: false,
+        version: 8,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
@@ -41,6 +49,9 @@ class Db {
           }
           if (from < 6) await _createTrackVectors(db);
           if (from < 7) await _createHiddenArtists(db);
+          if (from < 8) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN energy REAL');
+          }
         },
       ),
     );
@@ -59,7 +70,8 @@ class Db {
           added_at     INTEGER NOT NULL,
           bitrate_kbps INTEGER,
           format       TEXT,
-          duration_sec INTEGER
+          duration_sec INTEGER,
+          energy       REAL
         )
       ''');
 
@@ -178,11 +190,15 @@ class Db {
     return [for (final r in rows) r['id'] as String];
   }
 
-  /// id песен, у которых нет НИ формата, НИ битрейта, НИ длины (ждут докачки характеристик).
+  /// id песен, у которых нет НИ формата, НИ битрейта, НИ длины (ждут докачки
+  /// характеристик), ИЛИ нет энергии (Alex TG 25.09.2026, фильтр
+  /// «Настроение») — новое поле у уже скачанных песен на старых установках
+  /// пустое, даже если остальные характеристики давно пришли.
   Future<List<String>> idsNeedingMeta() async {
     final rows = await _db.rawQuery('SELECT id FROM downloaded_tracks '
-        "WHERE (format IS NULL OR format = '') "
-        'AND COALESCE(bitrate_kbps, 0) = 0 AND COALESCE(duration_sec, 0) = 0');
+        "WHERE ((format IS NULL OR format = '') "
+        'AND COALESCE(bitrate_kbps, 0) = 0 AND COALESCE(duration_sec, 0) = 0) '
+        'OR energy IS NULL');
     return [for (final r in rows) r['id'] as String];
   }
 
@@ -232,11 +248,12 @@ class Db {
   /// Дописать характеристики файла (пришли с сервера позже) — только
   /// непустые значения, чтобы не затирать уже известное.
   Future<void> updateMeta(String id,
-      {int? bitrateKbps, String? format, int? durationSec}) {
+      {int? bitrateKbps, String? format, int? durationSec, double? energy}) {
     final v = <String, Object?>{};
     if ((bitrateKbps ?? 0) > 0) v['bitrate_kbps'] = bitrateKbps;
     if ((format ?? '').isNotEmpty) v['format'] = format;
     if ((durationSec ?? 0) > 0) v['duration_sec'] = durationSec;
+    if (energy != null) v['energy'] = energy;
     if (v.isEmpty) return Future.value();
     return _db.update('downloaded_tracks', v, where: 'id = ?', whereArgs: [id]);
   }
@@ -355,6 +372,7 @@ class DownloadedTrack {
     this.bitrateKbps,
     this.format,
     this.durationSec,
+    this.energy,
   });
 
   final String id;
@@ -372,6 +390,11 @@ class DownloadedTrack {
   final String? format; // MP3 / FLAC / M4A / OGG …
   final int? durationSec;
 
+  /// Средняя громкость 0..1 с сервера (из waveform) — фильтр «Настроение»
+  /// (Alex TG 25.09.2026). null у старых записей, пока backfillMeta не
+  /// докачает.
+  final double? energy;
+
   Map<String, Object?> toMap() => {
         'id': id,
         'title': title,
@@ -384,6 +407,7 @@ class DownloadedTrack {
         'bitrate_kbps': bitrateKbps,
         'format': format,
         'duration_sec': durationSec,
+        'energy': energy,
       };
 
   static DownloadedTrack fromMap(Map<String, Object?> m) => DownloadedTrack(
@@ -398,6 +422,7 @@ class DownloadedTrack {
         bitrateKbps: m['bitrate_kbps'] as int?,
         format: m['format'] as String?,
         durationSec: m['duration_sec'] as int?,
+        energy: (m['energy'] as num?)?.toDouble(),
       );
 
   /// Короткая строка характеристик: «320k · MP3 · 3:45» (пустые части
