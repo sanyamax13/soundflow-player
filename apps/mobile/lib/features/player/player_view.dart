@@ -798,9 +798,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
+                    // ∞ не понравился (Alex TG 25.09.2026: «не значок
+                    // бесконечности, подскажи какая красивая будет») —
+                    // радиоволны читаются понятнее как «радио», тот же набор
+                    // иконок, что и весь остальной экран (CupertinoIcons).
                     child: ValueListenableBuilder<bool>(
                       valueListenable: _p.radio,
-                      builder: (_, on, _) => Icon(CupertinoIcons.infinite,
+                      builder: (_, on, _) => Icon(CupertinoIcons.antenna_radiowaves_left_right,
                           color: on ? Afisha.lime : Colors.white54, size: 18),
                     ),
                   ),
