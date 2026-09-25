@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,14 @@ import 'theme.dart';
 /// Общие кирпичики оформления «как у Apple» (Alex TG 20345, 21.09.2026):
 /// сгруппированный список на серых плашках, ряд с цветным значком, переключатель
 /// «сегменты». Цвета и радиусы — из [Afisha] (тёмная тема iOS).
+///
+/// 25.09.2026 (Alex TG, «переделаем всё приложение в таком стиле» — после
+/// разбора причин удаления с матовым стеклом): [AppleSection] заматирована —
+/// полупрозрачная плашка с размытием фона вместо сплошной серой, крупнее
+/// скругление (синтез направления iOS «Liquid Glass» и более крупных форм
+/// One UI, макетов ни той ни другой версии у меня нет — собственная
+/// добросовестная догадка, не копия). [AppleRow] не трогал — раскладка
+/// строки (значок/текст/шеврон) работает одинаково в обоих стилях.
 
 /// Крупный заголовок экрана вкладки, как в iOS (34 pt, жирный). Отступы —
 /// на стороне экрана: у всех вкладок заголовок стоит на одном и том же месте.
@@ -81,11 +91,38 @@ class AppleSection extends StatelessWidget {
                 ),
               ),
             ),
-          Material(
-            color: Afisha.groupBg,
-            borderRadius: BorderRadius.circular(12),
-            clipBehavior: Clip.antiAlias,
-            child: Column(children: rows),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  // 25.09.2026 (Alex TG, «на чёрном фоне стекло почти не видно
+                  // — стоит добиваться эффекта»): на сплошном чёрном фоне
+                  // размытие само по себе ничего не даёт (размытый чёрный —
+                  // тот же чёрный), поэтому стекло держится на своих двух
+                  // приметах — светлее самого фона (0.08 → 0.11) и блик
+                  // сверху-слева, как у настоящего стекла, которое ловит свет
+                  // даже когда за ним нет ярких красок.
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.16),
+                      Colors.white.withValues(alpha: 0.09),
+                      Colors.white.withValues(alpha: 0.05),
+                    ],
+                    stops: const [0, 0.35, 1],
+                  ),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Column(children: rows),
+                ),
+              ),
+            ),
           ),
           if (footer != null)
             Padding(
