@@ -88,6 +88,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     await tester.pumpWidget(await _app());
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 600)); // догнать плавное появление строк (StaggeredEntry)
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/taste_review_screen.png'));
   });
 }

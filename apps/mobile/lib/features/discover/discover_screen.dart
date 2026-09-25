@@ -9,6 +9,7 @@ import '../../app/providers.dart';
 import '../../core/apple.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/notice.dart';
+import '../../core/staggered_entry.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
 
@@ -361,14 +362,17 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     : ListView.builder(
                         padding: const EdgeInsets.only(bottom: 24),
                         itemCount: _items.length,
-                        itemBuilder: (context, i) => _DiscoverRow(
-                          track: _items[i],
-                          playing: _playingKey == _key(_items[i]) && !_playingLoading,
-                          loading: _playingKey == _key(_items[i]) && _playingLoading,
-                          status: _acquireStatus[_key(_items[i])],
-                          onPlay: () => _togglePlay(_items[i]),
-                          onAcquire: () => _acquire(i),
-                          onDismiss: () => _dismiss(i),
+                        itemBuilder: (context, i) => StaggeredEntry(
+                          index: i,
+                          child: _DiscoverRow(
+                            track: _items[i],
+                            playing: _playingKey == _key(_items[i]) && !_playingLoading,
+                            loading: _playingKey == _key(_items[i]) && _playingLoading,
+                            status: _acquireStatus[_key(_items[i])],
+                            onPlay: () => _togglePlay(_items[i]),
+                            onAcquire: () => _acquire(i),
+                            onDismiss: () => _dismiss(i),
+                          ),
                         ),
                       ),
           ),

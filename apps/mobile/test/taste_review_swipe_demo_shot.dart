@@ -67,6 +67,7 @@ Future<void> _dragFrames(WidgetTester tester, {required String prefix, required 
   await tester.binding.setSurfaceSize(const Size(390, 300));
   await tester.pumpWidget(await _app());
   await tester.pump(const Duration(milliseconds: 200));
+  await tester.pump(const Duration(milliseconds: 600)); // догнать плавное появление строк (StaggeredEntry)
   final row = find.text('Flo Rida — Wild Ones ft. Sia');
   final gesture = await tester.startGesture(tester.getCenter(row));
   const steps = 8;

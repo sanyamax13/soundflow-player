@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../app/providers.dart';
 import '../../core/notice.dart';
+import '../../core/staggered_entry.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
 
@@ -239,27 +240,30 @@ class _TasteReviewScreenState extends ConsumerState<TasteReviewScreen> {
                     : ListView.builder(
                         padding: const EdgeInsets.only(bottom: 24),
                         itemCount: _items.length,
-                        itemBuilder: (context, i) => Dismissible(
-                          key: ValueKey(_items[i]['id']),
-                          direction: DismissDirection.horizontal,
-                          // Alex TG 25.09.2026 (Gemini): за рулём размах руки
-                          // ограничен — порог смахивания снижен с обычных 50%
-                          // ширины экрана до 35%, чтобы срабатывало от
-                          // уверенного, но не длинного движения пальцем.
-                          dismissThresholds: const {
-                            DismissDirection.startToEnd: 0.35,
-                            DismissDirection.endToStart: 0.35,
-                          },
-                          background: const _SwipeHint(icon: CupertinoIcons.heart_fill, color: Afisha.lime, label: 'Оставить', alignEnd: false),
-                          secondaryBackground: const _SwipeHint(icon: CupertinoIcons.trash_fill, color: Colors.redAccent, label: 'Удалить', alignEnd: true),
-                          onDismissed: (dir) => dir == DismissDirection.startToEnd ? _keep(i) : _delete(i),
-                          child: _ReviewRow(
-                            track: _items[i],
-                            playing: _playingId == '${_items[i]['id']}' && !_playingLoading,
-                            loading: _playingId == '${_items[i]['id']}' && _playingLoading,
-                            onPlay: () => _togglePlay(_items[i]),
-                            onKeep: () => _keep(i),
-                            onDelete: () => _delete(i),
+                        itemBuilder: (context, i) => StaggeredEntry(
+                          index: i,
+                          child: Dismissible(
+                            key: ValueKey(_items[i]['id']),
+                            direction: DismissDirection.horizontal,
+                            // Alex TG 25.09.2026 (Gemini): за рулём размах руки
+                            // ограничен — порог смахивания снижен с обычных 50%
+                            // ширины экрана до 35%, чтобы срабатывало от
+                            // уверенного, но не длинного движения пальцем.
+                            dismissThresholds: const {
+                              DismissDirection.startToEnd: 0.35,
+                              DismissDirection.endToStart: 0.35,
+                            },
+                            background: const _SwipeHint(icon: CupertinoIcons.heart_fill, color: Afisha.lime, label: 'Оставить', alignEnd: false),
+                            secondaryBackground: const _SwipeHint(icon: CupertinoIcons.trash_fill, color: Colors.redAccent, label: 'Удалить', alignEnd: true),
+                            onDismissed: (dir) => dir == DismissDirection.startToEnd ? _keep(i) : _delete(i),
+                            child: _ReviewRow(
+                              track: _items[i],
+                              playing: _playingId == '${_items[i]['id']}' && !_playingLoading,
+                              loading: _playingId == '${_items[i]['id']}' && _playingLoading,
+                              onPlay: () => _togglePlay(_items[i]),
+                              onKeep: () => _keep(i),
+                              onDelete: () => _delete(i),
+                            ),
                           ),
                         ),
                       ),
