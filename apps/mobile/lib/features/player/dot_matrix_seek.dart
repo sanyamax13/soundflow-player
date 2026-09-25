@@ -230,6 +230,25 @@ double _eqBarValue(double envelope, double speed, double phase, double t) {
   return (envelope * s).clamp(0.12, 1.0);
 }
 
+// 25.09.2026 (Alex TG, голосовое): «когда достигает пика — красная плашечка
+// остаётся вверху и постепенно чуть-чуть падает, потом снова подбивает
+// наверх» — как пиковый индикатор на старом аппаратном VU-метре. Столбик
+// каждый цикл поднимается ровно до envelope (математический максимум
+// синуса в _eqBarValue), поэтому момент и высоту пика можно посчитать
+// заранее по формуле, без отдельной память между кадрами: держим потолок
+// сразу после пика, затем линейно роняем к текущей живой высоте столбика,
+// пока не подоспеет следующий пик.
+double _peakHoldValue(double envelope, double speed, double phase, double t, double liveV) {
+  const hold = 0.05; // секунд держится на самом верху
+  const fall = 0.4; // секунд падает оттуда до нуля
+  final x = t * speed + phase;
+  final k = (x - 0.25).floorToDouble();
+  final tPeak = (0.25 + k - phase) / speed;
+  final elapsed = t - tPeak;
+  final decayed = elapsed <= hold ? envelope : envelope * (1 - ((elapsed - hold) / fall).clamp(0.0, 1.0));
+  return math.max(decayed, liveV);
+}
+
 class _EqualizerPainter extends CustomPainter {
   const _EqualizerPainter({
     required this.envelopes,
@@ -276,6 +295,16 @@ class _EqualizerPainter extends CustomPainter {
     }
   }
 
+  // Пиковая «плашечка» — короткая красная чёрточка над самим столбиком,
+  // висит на потолке цикла и сползает вниз (см. [_peakHoldValue]).
+  void _peakCap(Canvas c, double x, double width, double capY) {
+    const capH = 3.0;
+    c.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(x, capY - capH, width, capH), Radius.circular(width / 2)),
+      Paint()..color = _red,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
@@ -290,6 +319,10 @@ class _EqualizerPainter extends CustomPainter {
       final h = (size.height * v).clamp(3.0, size.height);
       final x = i * gap + (gap - w) / 2;
       _segmentedBar(canvas, x, w, size.height - h, size.height, played);
+      if (played) {
+        final peakV = _peakHoldValue(envelopes[i], speeds[i], phases[i], t, v);
+        _peakCap(canvas, x, w, size.height - (size.height * peakV).clamp(3.0, size.height));
+      }
     }
   }
 
