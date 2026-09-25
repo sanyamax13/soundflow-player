@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
 import '../../core/app_log.dart';
+import '../../core/apple.dart';
 import '../../core/config.dart';
 import '../../core/local_taste.dart';
 import '../../core/notice.dart';
@@ -304,6 +305,112 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       unawaited(AppLog.event('radio_error', {'elapsed_ms': sw.elapsedMilliseconds}));
       Notice.show('Радио не собралось', kind: NoticeKind.warn);
     }
+  }
+
+  /// Долгое нажатие на радио — выбор, ПО ЧЕМУ собрать дальше (Alex TG
+  /// 25.09.2026: «делай любимое исполнитель и настроение», год не нужен,
+  /// делать сразу). «Настроение» сюда пока НЕ входит — под него нет данных
+  /// на телефоне (громкость по каждой песне библиотеки сервер не отдаёт
+  /// заранее, только по одной играющей сейчас), это отдельный шаг с правкой
+  /// сервера, следующим заходом.
+  Future<void> _openRadioFilter(NowPlaying now) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Играть дальше',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: Afisha.ink)),
+                ),
+              ),
+              AppleSection(
+                dividerInset: 58,
+                children: [
+                  AppleRow(
+                    title: 'Любимое',
+                    icon: CupertinoIcons.heart_fill,
+                    iconBg: Afisha.lime,
+                    onTap: () => Navigator.pop(ctx, 'favorite'),
+                  ),
+                  AppleRow(
+                    title: 'Этот исполнитель',
+                    subtitle: now.artist,
+                    icon: CupertinoIcons.person_fill,
+                    iconBg: const Color(0xFF4DA3FF),
+                    onTap: () => Navigator.pop(ctx, 'artist'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: Material(
+                  color: Afisha.lime,
+                  borderRadius: BorderRadius.circular(24),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () => Navigator.pop(ctx, null),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text('Отмена',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black,
+                              letterSpacing: -0.2)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final hidden = await ref.read(dbProvider).hiddenArtists();
+    switch (choice) {
+      case 'favorite':
+        await _startFilteredRadio(
+            (await ref.read(downloadsProvider).list(onlyFavorite: true))
+                .where((t) => !hidden.contains(t.artist)),
+            now,
+            'Дальше — любимое');
+      case 'artist':
+        await _startFilteredRadio(
+            (await ref.read(downloadsProvider).list())
+                .where((t) => t.artist == now.artist),
+            now,
+            'Дальше — ${now.artist}');
+    }
+  }
+
+  Future<void> _startFilteredRadio(
+      Iterable<DownloadedTrack> tracks, NowPlaying now, String message) async {
+    final pool = tracks.where((t) => t.id != now.id).toList()..shuffle();
+    if (pool.isEmpty) {
+      Notice.show('Тут пока нечего поставить', kind: NoticeKind.warn);
+      return;
+    }
+    await _p.setSimilarTail([
+      for (final t in pool)
+        NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
+    ]);
+    Notice.show(message);
   }
 
   /// Сколько ждём у сервера отпечаток ОДНОЙ песни, когда его нет на телефоне.
@@ -775,7 +882,30 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(CupertinoIcons.list_bullet, color: Colors.white54, size: 18),
+              // Радио — слева, покрупнее (Alex TG 25.09.2026: «список и так
+              // пальцем вытягивается наверх, замени левый значок на
+              // радиоволну и сделай покрупнее, чтобы видно было, что на неё
+              // нажать можно» — отдельный decorative список-значок тут был
+              // не нужен, разворот панели и так работает по всей строке).
+              // Долгое нажатие — фильтр (см. _openRadioFilter): любимое /
+              // этот исполнитель.
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  key: const ValueKey('radio_button'),
+                  onTap: () => _radio(now),
+                  onLongPress: () => _openRadioFilter(now),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _p.radio,
+                      builder: (_, on, _) => Icon(CupertinoIcons.antenna_radiowaves_left_right,
+                          color: on ? Afisha.lime : Colors.white70, size: 24),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text('Дальше: $nextTitle',
@@ -784,33 +914,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     style: const TextStyle(
                         color: Colors.white, fontSize: 13.5)),
               ),
-              // Кнопка «радио» переехала сюда с верха экрана (Alex TG
-              // 25.09.2026: «функция переедет в плейлист внизу») —
-              // пересобирает очередь под играющую песню, та же [_radio], тут
-              // только новое место. Отдельный InkWell рядом с общим
-              // GestureDetector строки — как и трейлинг-кнопки в _queueBody
-              // ниже, тап по значку не разворачивает панель.
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  key: const ValueKey('radio_button'),
-                  onTap: () => _radio(now),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.all(6),
-                    // ∞ не понравился (Alex TG 25.09.2026: «не значок
-                    // бесконечности, подскажи какая красивая будет») —
-                    // радиоволны читаются понятнее как «радио», тот же набор
-                    // иконок, что и весь остальной экран (CupertinoIcons).
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: _p.radio,
-                      builder: (_, on, _) => Icon(CupertinoIcons.antenna_radiowaves_left_right,
-                          color: on ? Afisha.lime : Colors.white54, size: 18),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 8),
               const Icon(CupertinoIcons.chevron_up, color: Colors.white54, size: 18),
             ],
           ),

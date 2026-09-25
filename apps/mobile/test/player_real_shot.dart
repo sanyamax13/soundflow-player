@@ -105,4 +105,17 @@ void main() {
     await expectLater(
         find.byType(MaterialApp), matchesGoldenFile('goldens/player_real.png'));
   });
+
+  testWidgets('плеер 4.2 — лист «Играть дальше» (долгое нажатие на радио)', (t) async {
+    await t.binding.setSurfaceSize(const Size(400, 860));
+    await t.pumpWidget(await _app());
+    await t.pump(const Duration(milliseconds: 300));
+    await t.longPress(find.byKey(const ValueKey('radio_button')));
+    // Не pumpAndSettle — у эквалайзера бесконечный AnimationController.repeat(),
+    // «устояться» ему нечем, тест провисит до таймаута. Лист открывается за
+    // ~250мс (Material bottom sheet), фиксированного pump хватает.
+    await t.pump(const Duration(milliseconds: 400));
+    await expectLater(find.byType(MaterialApp),
+        matchesGoldenFile('goldens/player_radio_filter.png'));
+  });
 }
