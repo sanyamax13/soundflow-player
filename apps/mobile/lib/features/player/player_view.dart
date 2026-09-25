@@ -352,6 +352,20 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     iconBg: const Color(0xFF4DA3FF),
                     onTap: () => Navigator.pop(ctx, 'artist'),
                   ),
+                  // 25.09.2026 (Alex TG: «добавь по жанрам заранее, напиши
+                  // скоро будет») — место под жанр показываем уже сейчас,
+                  // сама функция ждёт отдельной работы (программу ещё надо
+                  // научить определять жанр — база его пока не знает, см.
+                  // память player-radio-filter). Лист не закрывает, просто
+                  // говорит, что рано.
+                  AppleRow(
+                    title: 'Жанр',
+                    icon: CupertinoIcons.tag_fill,
+                    iconBg: const Color(0xFFB983FF),
+                    value: 'скоро',
+                    onTap: () => Notice.show('Жанр — скоро',
+                        subtitle: 'программа ещё учится его определять'),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
