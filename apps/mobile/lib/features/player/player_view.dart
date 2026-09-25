@@ -38,13 +38,18 @@ import 'player_controller.dart';
 /// Меню долгого нажатия убрано целиком (Alex TG 19.09.2026: «оно не нужно,
 /// если есть кнопка радио»). Вместе с ним ушли «скрыть исполнителя», «больше
 /// такого», «почему играет» — других мест в приложении для них не было;
-/// «меньше такого» остался в «Моей музыке». Радио и «убрать совсем» — только
-/// кнопками (таблетка сверху, урна внизу). План упрощения, п.1-2 и 6.
+/// «меньше такого» остался в «Моей музыке». «Убрать совсем» — кнопкой (урна
+/// внизу). План упрощения, п.1-2 и 6.
 /// Точечная матрица с цифрами внизу — перемотка (тап или вести пальцем по
 /// точкам), см. [DotMatrixSeek]; вариант 19, Alex TG 19.09.2026 (раньше была
 /// волна из 64 столбиков с сервера).
-/// «?» вверху — та же инструкция внутри приложения; в первый раз
-/// показывается сама.
+///
+/// 25.09.2026 (Alex TG): кнопка «радио» (таблетка сверху) переехала в панель
+/// «Дальше» внизу — значок ∞ прямо в её строке, пересобирает очередь под
+/// играющую песню (та же [_radio], поведение не поменялось, только место).
+/// Вопросик сверху (инструкция «как пользоваться») убран как кнопка совсем,
+/// без замены — сама подсказка при первом запуске всё ещё показывается один
+/// раз ([_maybeShowHelpFirstRun]), просто открыть её повторно теперь негде.
 ///
 /// Общий виджет для двух мест:
 ///  • вкладка «Поток» вставляет его в тело, без кнопки «вниз»;
@@ -521,54 +526,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             else
               const SizedBox(width: 12),
             const Spacer(),
-            // Мельче и бледнее радио-таблетки — подсказку открывают один раз,
-            // радио жмут часто, они не должны выглядеть одинаково важными
-            // (Опус-ревью «Поток» 23.09.2026, пункт 5).
-            IconButton(
-              onPressed: () => setState(() => _showHelp = true),
-              icon: Icon(CupertinoIcons.question_circle,
-                  color: Colors.white.withValues(alpha: 0.45), size: 18),
-            ),
-            // Раньше был GestureDetector впритык к тексту — тап-зона выходила
-            // мельче, чем сам значок рядом («?»), и Alex не мог понять, вся
-            // ли «таблетка» кликабельна (TG 14.09.2026). Material+InkWell —
-            // явная зона минимум 44×44 (стандарт доступного размера тапа) +
-            // видимый эффект нажатия, чтобы попадание было понятно на глаз.
-            Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                onTap: () => _radio(now),
-                borderRadius: BorderRadius.circular(20),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _p.radio,
-                    builder: (_, on, _) => Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Была буква «∞» текстом — единственный текстовый
-                          // символ среди иконок на экране (Опус-ревью «Поток»
-                          // 23.09.2026, пункт 4). Тот же смысл, настоящая иконка.
-                          Icon(CupertinoIcons.infinite,
-                              color: on ? Afisha.lime : Colors.white70, size: 16),
-                          const SizedBox(width: 6),
-                          const Text('радио',
-                              style:
-                                  TextStyle(color: Colors.white70, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            // Вопросик и кнопка «радио» отсюда убраны (Alex TG 25.09.2026) —
+            // см. комментарий у класса выше, куда что переехало.
           ],
         ),
       );
@@ -825,6 +784,29 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     style: const TextStyle(
                         color: Colors.white, fontSize: 13.5)),
               ),
+              // Кнопка «радио» переехала сюда с верха экрана (Alex TG
+              // 25.09.2026: «функция переедет в плейлист внизу») —
+              // пересобирает очередь под играющую песню, та же [_radio], тут
+              // только новое место. Отдельный InkWell рядом с общим
+              // GestureDetector строки — как и трейлинг-кнопки в _queueBody
+              // ниже, тап по значку не разворачивает панель.
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  key: const ValueKey('radio_button'),
+                  onTap: () => _radio(now),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _p.radio,
+                      builder: (_, on, _) => Icon(CupertinoIcons.infinite,
+                          color: on ? Afisha.lime : Colors.white54, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 2),
               const Icon(CupertinoIcons.chevron_up, color: Colors.white54, size: 18),
             ],
           ),

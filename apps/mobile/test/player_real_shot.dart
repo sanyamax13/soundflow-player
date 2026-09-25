@@ -1,14 +1,21 @@
 // Рендер НАСТОЯЩЕГО экрана плеера (PlayerView, вариант 4.2) в PNG — чтобы
 // Alex увидел его глазами до сборки APK. Не проверка логики. Запуск:
 //   flutter test --update-goldens test/player_real_shot.dart
-// Картинки: test/goldens/player_real.png, player_real_help.png
+// Картинка: test/goldens/player_real.png
 //
 // Виджеты и вёрстка — настоящие; проигрыватель — заглушка (аудиоплагинов в
 // тесте нет), обложка без файла → показывается запасной значок.
+//
+// Второй тест («инструкция») убран 25.09.2026 вместе с кнопкой-вопросиком
+// (Alex TG: «удали её») — раньше он тыкал в эту кнопку, чтобы открыть
+// _HelpOverlay. Сама подсказка осталась (показывается один раз при первом
+// запуске, path_provider), но в виджет-тесте этот путь молча не срабатывает
+// (нет платформенного плагина, try/catch внутри _maybeShowHelpFirstRun это
+// проглатывает) — без убранной кнопки честного способа открыть её из теста
+// не осталось, свою скриншот-проверку не оставляем ради проверки ради неё.
 
 import 'dart:io';
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,18 +92,5 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     await expectLater(
         find.byType(MaterialApp), matchesGoldenFile('goldens/player_real.png'));
-  });
-
-  testWidgets('плеер 4.2 — инструкция', (t) async {
-    await t.binding.setSurfaceSize(const Size(400, 860));
-    await t.pumpWidget(await _app());
-    await t.pump(const Duration(milliseconds: 300));
-    // Значок сменился на CupertinoIcons.question_circle (Опус-ревью «Поток»
-    // 23.09.2026, пункт 5) — тест по Icons.help_outline с тех пор не находил
-    // кнопку молча падал; поправлено попутно с правкой панели «Дальше».
-    await t.tap(find.byIcon(CupertinoIcons.question_circle));
-    await t.pump(const Duration(milliseconds: 200));
-    await expectLater(find.byType(MaterialApp),
-        matchesGoldenFile('goldens/player_real_help.png'));
   });
 }
