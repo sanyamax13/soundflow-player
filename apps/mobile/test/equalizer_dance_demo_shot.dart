@@ -48,9 +48,12 @@ void main() {
     ));
     await t.pump(const Duration(milliseconds: 16));
 
-    for (var frame = 0; frame < 6; frame++) {
+    // 10 кадров по 250мс (было 6×220мс) — пик теперь падает 0.9с, старого
+    // окна не хватало показать падение целиком (Alex TG 25.09.2026: «пусть
+    // не так быстро прыгает»).
+    for (var frame = 0; frame < 10; frame++) {
       await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/dance_frame_$frame.png'));
-      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 220)));
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 250)));
       await t.pump(const Duration(milliseconds: 16));
     }
   });

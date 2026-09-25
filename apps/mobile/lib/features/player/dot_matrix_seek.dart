@@ -239,8 +239,13 @@ double _eqBarValue(double envelope, double speed, double phase, double t) {
 // сразу после пика, затем линейно роняем к текущей живой высоте столбика,
 // пока не подоспеет следующий пик.
 double _peakHoldValue(double envelope, double speed, double phase, double t, double liveV) {
-  const hold = 0.05; // секунд держится на самом верху
-  const fall = 0.4; // секунд падает оттуда до нуля
+  // 25.09.2026 (Alex TG, фото с живого телефона): «пусть не так быстро
+  // прыгает, что бы было видно как падает» — было hold 0.05/fall 0.4, на
+  // столбиках с коротким циклом (до 0.43с) плашка почти сразу подбивало
+  // обратно наверх, падение толком не успевало показаться. Дольше держит
+  // потолок и дольше падает.
+  const hold = 0.12; // секунд держится на самом верху
+  const fall = 0.9; // секунд падает оттуда до нуля
   final x = t * speed + phase;
   final k = (x - 0.25).floorToDouble();
   final tPeak = (0.25 + k - phase) / speed;

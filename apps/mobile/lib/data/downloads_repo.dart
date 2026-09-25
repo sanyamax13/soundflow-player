@@ -276,16 +276,18 @@ class DownloadsRepo {
     await _db.updateMeta(id, durationSec: sec, bitrateKbps: kbps);
   }
 
-  /// Дописать характеристики (битрейт/формат/длительность) уже скачанным
-  /// песням, у которых их нет — они появились в ответе сервера позже
-  /// (Alex TG 18704). Один запрос всего каталога, сверка по id. Фоном при
-  /// старте, как backfillCovers.
+  /// Дописать характеристики (битрейт/формат/длительность/энергия) уже
+  /// скачанным песням, у которых их нет — они появились в ответе сервера
+  /// позже (Alex TG 18704). Один запрос всего каталога, сверка по id. Фоном
+  /// при старте, как backfillCovers. Было limit: 10000 — каталог 25.09.2026
+  /// дорос до 11671, старые (по дате добавления) скачанные песни отваливались
+  /// от ответа и не получали новые поля; серверный потолок тоже поднят.
   Future<void> backfillMeta() async {
     final need = await _db.idsNeedingMeta();
     if (need.isEmpty) return;
     List<Map<String, dynamic>> catalog;
     try {
-      catalog = await _api.tracks(limit: 10000);
+      catalog = await _api.tracks(limit: 30000);
     } catch (_) {
       return; // нет сети — попробуем в следующий раз
     }
