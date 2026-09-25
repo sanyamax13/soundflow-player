@@ -587,4 +587,34 @@ class Api {
     final qs = q.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&');
     return '$baseUrl/api/yandex/preview?$qs';
   }
+
+  // ---- «Разбор коллекции» (Alex TG 25.09.2026: «пройдись по всем песням,
+  // подскажи, что моё, что нет») — очередь несыгранных/неоценённых песен
+  // каталога, отсортированная от «меньше похоже на вкус» к «больше». Жёсткой
+  // метки «не моё» НЕТ (звук на реальных данных ненадёжен, см. память
+  // taste-playlists-request-2026-09-25) — только порядок. ----
+
+  /// Очередь «разбор коллекции» — id/артист/название/альбом/score (0..1).
+  Future<List<Map<String, dynamic>>> tasteReview({int? limit}) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/v1/taste/review',
+      queryParameters: limit == null ? null : {'limit': limit},
+    );
+    final list = (res.data?['tracks'] as List?) ?? const [];
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Прямая ссылка на файл трека каталога компьютера — играть без скачивания
+  /// на телефон (для очереди «разбор коллекции», трек может быть ещё не
+  /// скачан на телефон).
+  String catalogFileUrl(String id) => '$baseUrl/v1/music/$id/file';
+
+  /// Удалить трек из каталога компьютера насовсем — та же функция, что
+  /// «Удалить навсегда» в меню окна ПК: убирает с телефона (если скачан), из
+  /// каталога компьютера, ставит метку blocked (не докачает снова), стирает
+  /// файл с диска. Необратимо — вызывающий код должен подтвердить у Alex
+  /// перед вызовом.
+  Future<void> catalogDeleteForever(List<String> ids) async {
+    await _dio.post<Map<String, dynamic>>('/api/tracks/delete-forever', data: {'ids': ids});
+  }
 }

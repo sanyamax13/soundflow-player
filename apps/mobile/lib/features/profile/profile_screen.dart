@@ -15,6 +15,7 @@ import '../admin/admin_screen.dart';
 import '../discover/discover_screen.dart';
 import '../sync/sync_offer_card.dart';
 import '../settings/settings_screen.dart';
+import '../taste_review/taste_review_screen.dart';
 
 /// Профиль: синхронизация, статистика, настройки. Оформление — как «Настройки»
 /// на iPhone (Alex TG 20345, 21.09.2026): крупный заголовок, который при
@@ -47,6 +48,16 @@ class ProfileScreen extends StatelessWidget {
                   chevron: true,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(builder: (_) => const DiscoverScreen()),
+                  ),
+                ),
+                AppleRow(
+                  icon: CupertinoIcons.slider_horizontal_3,
+                  iconBg: Afisha.blue,
+                  title: 'Разбор коллекции',
+                  subtitle: 'послушать и почистить — от менее твоего к более',
+                  chevron: true,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const TasteReviewScreen()),
                   ),
                 ),
                 AppleRow(
