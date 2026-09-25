@@ -145,6 +145,13 @@ func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
 	// Есть каталог — отдаём его; пусто — тестовые тоны (для демо до наполнения).
 	if s.DB.Ping(r.Context()) == nil {
 		if list, err := s.DB.CatalogList(r.Context(), limit); err == nil && len(list) > 0 {
+			// Энергия (для фильтра «Настроение», Alex TG 25.09.2026) — необязательное
+			// поле, сбой тут не должен ронять весь список треков.
+			if energies, err := s.DB.TrackEnergies(r.Context()); err == nil {
+				for i := range list {
+					list[i].Energy = energies[list[i].ID]
+				}
+			}
 			writeJSON(w, http.StatusOK, map[string]any{"tracks": list})
 			return
 		}

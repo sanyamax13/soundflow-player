@@ -111,6 +111,10 @@ func (s *Store) NextLibraryBatch(ctx context.Context, excludeIDs []string, budge
 	return toDBCatalog(list), total, err
 }
 
+func (s *Store) TrackEnergies(ctx context.Context) (map[string]float64, error) {
+	return s.d.TrackEnergies()
+}
+
 func (s *Store) OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) ([]string, bool, error) {
 	// «Умное радио» (TASTE-PLAN §7): OrderRadio учитывает вкус поверх
 	// близости звука; нет сигналов вкуса — он сам падает на чистый косинус.

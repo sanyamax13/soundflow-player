@@ -21,6 +21,9 @@ type Store interface {
 	CatalogList(ctx context.Context, limit int) ([]db.CatalogTrack, error)
 	CatalogSearch(ctx context.Context, q string, limit int) ([]db.CatalogTrack, error)
 	NextLibraryBatch(ctx context.Context, excludeIDs []string, budgetBytes int64) ([]db.CatalogTrack, int64, error)
+	// TrackEnergies — средняя громкость 0..1 по треку (из waveform), для
+	// фильтра «Настроение» на телефоне. Пустая карта на Postgres-пути.
+	TrackEnergies(ctx context.Context) (map[string]float64, error)
 	OrderBySimilarity(ctx context.Context, seedID string, candidateIDs []string) (ordered []string, reordered bool, err error)
 
 	TrackFilePath(ctx context.Context, trackID string) (string, bool, error)

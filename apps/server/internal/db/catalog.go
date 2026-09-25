@@ -23,6 +23,11 @@ type CatalogTrack struct {
 	SizeBytes   int64  `json:"size_bytes"`   // размер файла (для бюджета «докачать ещё N ГБ»)
 	BitrateKbps int    `json:"bitrate_kbps"` // характеристики файла — для строки в «Моей музыке»
 	MimeType    string `json:"mime_type"`
+
+	// Energy — средняя громкость 0..1 из waveform (SQLite-сервер), 0 если не
+	// посчитана/недоступна (Postgres-путь). Фильтр «Настроение» на телефоне
+	// (Alex TG 25.09.2026), см. Store.TrackEnergies.
+	Energy float64 `json:"energy"`
 }
 
 // NewTrack + NewTrackFile — что вставляем после успешного скачивания.
@@ -548,6 +553,13 @@ func (d *Pool) TrackCoverURL(ctx context.Context, id string) (url string, found 
 // полоску как раньше.
 func (d *Pool) TrackWaveform(ctx context.Context, id string) (bars []byte, found bool, err error) {
 	return nil, false, nil
+}
+
+// TrackEnergies — тот же случай, что TrackWaveform: Postgres-каталог waveform
+// не хранит, считать среднюю громкость не из чего. Пустая карта — фильтр
+// «Настроение» на телефоне просто не увидит энергию ни у одного трека.
+func (d *Pool) TrackEnergies(ctx context.Context) (map[string]float64, error) {
+	return nil, nil
 }
 
 // DevicePlan / ClearDevicePlan — план ручной синхронизации живёт только в
