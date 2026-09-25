@@ -133,9 +133,13 @@ class _TasteReviewScreenState extends ConsumerState<TasteReviewScreen> {
     final id = '${t['id']}';
     await _stopIfPlaying(id);
     setState(() => _items = [..._items]..removeAt(index));
-    // Локально в очередь — уйдёт на сервер при обычной синхронизации, трек
-    // больше не попадёт в этот список (см. TasteReviewQueue на сервере).
-    await ref.read(syncProvider).record('like', trackId: id);
+    // Та же функция, что обычное сердечко в «Моей музыке» (Alex TG
+    // 25.09.2026 поймал: первая версия слала только сырое событие в
+    // синхронизацию, локальную отметку «избранное» не трогала — песня не
+    // появлялась в «Избранном», даже если уже скачана на телефон).
+    // setFavorite сам не падает, если трека нет в локальной базе (просто
+    // 0 строк обновится) — событие в синхронизацию уйдёт в любом случае.
+    await ref.read(downloadsProvider).setFavorite(id, true);
     if (!mounted) return;
     Notice.show('Оставлено', subtitle: '${t['artist']} — ${t['title']}', kind: NoticeKind.done);
   }
