@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -131,6 +132,7 @@ class _TasteReviewScreenState extends ConsumerState<TasteReviewScreen> {
   Future<void> _keep(int index) async {
     final t = _items[index];
     final id = '${t['id']}';
+    HapticFeedback.lightImpact();
     await _stopIfPlaying(id);
     setState(() => _items = [..._items]..removeAt(index));
     // Та же функция, что обычное сердечко в «Моей музыке» (Alex TG
@@ -144,36 +146,48 @@ class _TasteReviewScreenState extends ConsumerState<TasteReviewScreen> {
     Notice.show('Оставлено', subtitle: '${t['artist']} — ${t['title']}', kind: NoticeKind.done);
   }
 
+  // Alex TG 25.09.2026 (по разбору Gemini — «Tinder для разбора коллекции»,
+  // целиться в мелкую корзинку в машине неудобно): свайп влево/вправо вместо
+  // модального окна с вопросом. Взамен блокирующего диалога — окно 4 секунды
+  // с кнопкой «Отменить» в снэкбаре: песня СРАЗУ пропадает из списка, но
+  // реально стирается с компьютера только если за 4 секунды не отменили.
+  // Тот же путь, что и раньше («Удалить навсегда» — файл стирается без
+  // возврата), просто подтверждение сдвинуто ПОСЛЕ действия, а не до него.
   Future<void> _delete(int index) async {
     final t = _items[index];
     final id = '${t['id']}';
     final artist = '${t['artist']}';
     final title = '${t['title']}';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Удалить навсегда?'),
-        content: Text('$artist — $title\n\nФайл сотрётся с компьютера. Вернуть будет нельзя.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Отмена')),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
+    HapticFeedback.mediumImpact();
     await _stopIfPlaying(id);
     setState(() => _items = [..._items]..removeAt(index));
+
+    var cancelled = false;
+    void restore() {
+      cancelled = true;
+      if (!mounted) return;
+      final at = index.clamp(0, _items.length);
+      setState(() => _items = [..._items.take(at), t, ..._items.skip(at)]);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text('Удалено: $artist — $title'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(label: 'Отменить', onPressed: restore),
+        ));
+    }
+
+    await Future.delayed(const Duration(seconds: 4));
+    if (cancelled) return;
     try {
       await _api.catalogDeleteForever([id]);
-      if (!mounted) return;
-      Notice.show('Удалено насовсем', subtitle: '$artist — $title', kind: NoticeKind.removed);
     } catch (_) {
       if (!mounted) return;
       Notice.show('Не удалилось — компьютер недоступен', kind: NoticeKind.warn);
-      setState(() => _items = [..._items.take(index), t, ..._items.skip(index)]);
+      restore();
     }
   }
 
@@ -225,18 +239,66 @@ class _TasteReviewScreenState extends ConsumerState<TasteReviewScreen> {
                     : ListView.builder(
                         padding: const EdgeInsets.only(bottom: 24),
                         itemCount: _items.length,
-                        itemBuilder: (context, i) => _ReviewRow(
-                          track: _items[i],
-                          playing: _playingId == '${_items[i]['id']}' && !_playingLoading,
-                          loading: _playingId == '${_items[i]['id']}' && _playingLoading,
-                          onPlay: () => _togglePlay(_items[i]),
-                          onKeep: () => _keep(i),
-                          onDelete: () => _delete(i),
+                        itemBuilder: (context, i) => Dismissible(
+                          key: ValueKey(_items[i]['id']),
+                          direction: DismissDirection.horizontal,
+                          // Alex TG 25.09.2026 (Gemini): за рулём размах руки
+                          // ограничен — порог смахивания снижен с обычных 50%
+                          // ширины экрана до 35%, чтобы срабатывало от
+                          // уверенного, но не длинного движения пальцем.
+                          dismissThresholds: const {
+                            DismissDirection.startToEnd: 0.35,
+                            DismissDirection.endToStart: 0.35,
+                          },
+                          background: const _SwipeHint(icon: CupertinoIcons.heart_fill, color: Afisha.lime, label: 'Оставить', alignEnd: false),
+                          secondaryBackground: const _SwipeHint(icon: CupertinoIcons.trash_fill, color: Colors.redAccent, label: 'Удалить', alignEnd: true),
+                          onDismissed: (dir) => dir == DismissDirection.startToEnd ? _keep(i) : _delete(i),
+                          child: _ReviewRow(
+                            track: _items[i],
+                            playing: _playingId == '${_items[i]['id']}' && !_playingLoading,
+                            loading: _playingId == '${_items[i]['id']}' && _playingLoading,
+                            onPlay: () => _togglePlay(_items[i]),
+                            onKeep: () => _keep(i),
+                            onDelete: () => _delete(i),
+                          ),
                         ),
                       ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Цветная подложка под строкой, пока её тащат пальцем — видна с той
+/// стороны, куда свайпают (Dismissible сам решает, в какой момент это
+/// показать; alignEnd — свайп влево, значит подпись и иконка справа).
+class _SwipeHint extends StatelessWidget {
+  const _SwipeHint({required this.icon, required this.color, required this.label, required this.alignEnd});
+
+  final IconData icon;
+  final Color color;
+  final String label;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    // Alex TG 25.09.2026 (Gemini): фон помягче (не кислотное пятно во тьме
+    // салона), а сама иконка — крупная и яркая, чтобы читалась боковым
+    // зрением за рулём.
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 32),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 16)),
+      ],
+    );
+    return Container(
+      color: color.withValues(alpha: 0.15),
+      alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: alignEnd ? content : Row(mainAxisSize: MainAxisSize.min, children: content.children.reversed.toList()),
     );
   }
 }

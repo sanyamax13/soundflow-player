@@ -54,6 +54,12 @@ void main() {
     await (FontLoader('Inter')
           ..addFont(Future.value(ByteData.view(inter.buffer))))
         .load();
+    final grotesk = File('assets/fonts/SpaceGrotesk-Regular.ttf');
+    if (grotesk.existsSync()) {
+      await (FontLoader('SpaceGrotesk')
+            ..addFont(Future.value(ByteData.view(grotesk.readAsBytesSync().buffer))))
+          .load();
+    }
     for (final p in [
       r'E:\flutter\bin\cache\artifacts\material_fonts\materialicons-regular.otf',
       r'E:\flutter\bin\cache\artifacts\material_fonts\MaterialIcons-Regular.otf',

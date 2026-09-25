@@ -26,6 +26,12 @@ void main() {
             .load();
       }
     }
+    final grotesk = File('assets/fonts/SpaceGrotesk-Regular.ttf');
+    if (grotesk.existsSync()) {
+      await (FontLoader('SpaceGrotesk')
+            ..addFont(Future.value(ByteData.view(grotesk.readAsBytesSync().buffer))))
+          .load();
+    }
   });
 
   testWidgets('полоса прогресса — скруглённые столбики эквалайзера', (t) async {

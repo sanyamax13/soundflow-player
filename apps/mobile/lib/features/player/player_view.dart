@@ -6,6 +6,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -216,11 +217,19 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   }
 
   // ── действия ──────────────────────────────────────────────────────────
-  Future<void> _toggle() => _p.toggle();
+  // Alex TG 25.09.2026 (по разбору Gemini — «вибро даёт уверенность, что
+  // действие сработало, даже если водитель не смотрит на экран»): лёгкий
+  // отклик на самые частые нажатия (плей/пауза, лайк, вперёд/назад),
+  // потяжелее — на удаление трека.
+  Future<void> _toggle() {
+    HapticFeedback.lightImpact();
+    return _p.toggle();
+  }
 
   Future<void> _toggleFavButton() async {
     final cur = _p.now.value;
     if (cur == null) return;
+    HapticFeedback.lightImpact();
     final v = !_fav;
     setState(() => _fav = v);
     await ref.read(downloadsProvider).setFavorite(cur.id, v);
@@ -229,9 +238,15 @@ class _PlayerViewState extends ConsumerState<PlayerView>
 
   // «Дальше» / «Назад» плашкой не подписываем: смену песни и так видно по
   // обложке и названию, а плашка на каждый свайп только мельтешила.
-  void _swipeNext() => _p.next();
+  void _swipeNext() {
+    HapticFeedback.lightImpact();
+    _p.next();
+  }
 
-  void _swipePrev() => _p.prev();
+  void _swipePrev() {
+    HapticFeedback.lightImpact();
+    _p.prev();
+  }
 
   /// Спросить причину (список общий с «Моей музыкой», core/removal_reasons.dart)
   /// и убрать трек с телефона (и с сервера — обычным синком). Раньше рядом
@@ -242,6 +257,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   Future<void> _confirmDelete(NowPlaying now) async {
     final reason = await pickRemovalReason(context);
     if (reason == null || !mounted) return;
+    HapticFeedback.mediumImpact();
     await ref.read(downloadsProvider).delete(now.id, reason: reason);
     if (!mounted) return;
     await _p.next();
@@ -819,13 +835,13 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             iconSize: 34,
             color: Colors.white,
             icon: const Icon(CupertinoIcons.backward_fill),
-            onPressed: _p.prev,
+            onPressed: _swipePrev,
           ),
           const SizedBox(width: 14),
           ValueListenableBuilder<bool>(
             valueListenable: _p.playing,
             builder: (_, pl, _) => GestureDetector(
-              onTap: _p.toggle,
+              onTap: _toggle,
               child: Container(
                 width: 64,
                 height: 64,
@@ -843,7 +859,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             iconSize: 34,
             color: Colors.white,
             icon: const Icon(CupertinoIcons.forward_fill),
-            onPressed: _p.next,
+            onPressed: _swipeNext,
           ),
           const SizedBox(width: 10),
           // Цель для сердечка-анимации (_heartPop) — оно прилетает СЮДА, а не

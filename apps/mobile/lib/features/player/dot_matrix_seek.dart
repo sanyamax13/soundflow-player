@@ -75,7 +75,11 @@ class DotMatrixSeek extends StatefulWidget {
 
   static const _height = 46.0;
 
+  // Alex TG 25.09.2026 (по разбору Gemini): выразительный геометрический
+  // шрифт для крупных цифр таймлайна вместо системного — даёт более
+  // современный вид без структурных изменений.
   static const _digitStyle = TextStyle(
+    fontFamily: 'SpaceGrotesk',
     fontSize: 24,
     fontWeight: FontWeight.w600,
     height: 1,

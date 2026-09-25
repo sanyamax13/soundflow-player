@@ -74,6 +74,12 @@ flutter:
   uses-material-design: true
 
   fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-Regular.ttf
+          weight: 600
+        - asset: assets/fonts/SpaceGrotesk-Regular.ttf
+          weight: 700
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter-Regular.ttf
