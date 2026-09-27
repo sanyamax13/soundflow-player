@@ -118,6 +118,21 @@ func Open(path string) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS phone_inventory_meta (
 			device_id TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '',
 			count INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0)`,
+		// Отпечаток удалённой песни (Alex TG 22525, 27.09.2026 «сохраняй отпечаток»): при удалении стирались и файл,
+		// и отпечаток — самые ценные оценки «не нравится» пропадали для обучения вкусу. Музыку не храним, только числа
+		// и подписи; причину удаления даёт feedback_event по track_id. Триггер ловит любой путь удаления строки трека.
+		`CREATE TABLE IF NOT EXISTS deleted_track_vectors (
+			track_id TEXT PRIMARY KEY, normalized_key TEXT NOT NULL DEFAULT '', artist TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL DEFAULT '', genre_tags TEXT, mood TEXT, feature_vector BLOB,
+			deleted_at TEXT NOT NULL DEFAULT '')`,
+		`CREATE TRIGGER IF NOT EXISTS keep_deleted_track_vector BEFORE DELETE ON tracks
+			WHEN OLD.feature_vector IS NOT NULL
+			BEGIN
+				INSERT OR REPLACE INTO deleted_track_vectors
+					(track_id, normalized_key, artist, title, genre_tags, mood, feature_vector, deleted_at)
+				VALUES (OLD.id, OLD.normalized_key, OLD.artist, OLD.title, OLD.genre_tags, OLD.mood, OLD.feature_vector,
+					strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
+			END`,
 	} {
 		if _, err := h.Exec(mig); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			h.Close()

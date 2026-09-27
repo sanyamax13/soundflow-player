@@ -143,3 +143,22 @@ func TestCatalogSearchAndBlocked(t *testing.T) {
 		t.Fatalf("TrackFilePath t1: %q ok=%v err=%v", p, ok, err)
 	}
 }
+
+// Удалённая песня оставляет свой отпечаток в deleted_track_vectors (Alex TG 22525, 27.09.2026).
+func TestDeletedTrackKeepsVector(t *testing.T) {
+	d := open(t)
+	if _, err := d.sql.Exec(`INSERT INTO tracks (id, artist, title, normalized_key, feature_vector) VALUES ('t1','A','B','a|b', x'0000803F')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.sql.Exec(`DELETE FROM tracks WHERE id='t1'`); err != nil {
+		t.Fatal(err)
+	}
+	var art string
+	var vec []byte
+	if err := d.sql.QueryRow(`SELECT artist, feature_vector FROM deleted_track_vectors WHERE track_id='t1'`).Scan(&art, &vec); err != nil {
+		t.Fatal(err)
+	}
+	if art != "A" || len(vec) != 4 {
+		t.Fatalf("got %q %d", art, len(vec))
+	}
+}
