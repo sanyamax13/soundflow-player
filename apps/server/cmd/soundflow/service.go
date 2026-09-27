@@ -33,39 +33,45 @@ import (
 
 // Service — состояние приложения: база, модель, фоновые задачи.
 type Service struct {
-	ctx       context.Context
-	dataDir   string
-	dbPath    string
-	assetsDir string
-	db        *localdb.DB
-	eng       *inference.Lazy // nil, если не нашли onnxruntime.dll/cnn14.onnx; сама модель грузится по требованию и выгружается после простоя
-	jobs      *JobRunner
-	phoneAddr string
-	phoneSrv  *http.Server
-	phoneAPI  *api.Server        // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
-	dl        *downloaderProc    // дочерний Python «качалка» (Найти трек / торренты)
-	store     *litestore.Store   // та же БД для acquire из окна
-	covers    *coverKeeper       // сама ищет обложки песням, у которых их нет (coverkeeper.go)
-	waveforms *waveformKeeper    // сама считает форму звука для полоски-эквалайзера (wavekeeper.go)
-	spectrum  *spectrumKeeper    // сама проверяет спектр — ловит «поддельный 320» (spectrumkeeper.go)
-	recon     *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
-	waveMu    sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
-	waveStop  context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
-	pcMu      sync.Mutex         // кэш «песен компьютера с файлом на диске» для сверки с телефоном (phonecheck.go)
-	pcAt      time.Time
-	pcSet     map[string]int64
-	guardMu   sync.Mutex // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
-	guardStop context.CancelFunc
-	pairing   pairingState                                                   // окно «Подключить телефон» (pairing.go)
-	waveEmbed func(ctx context.Context, it yandexWaveOut) ([]float32, error) // отпечаток кандидата «Волны»; nil — настоящий (в тестах подменяют)
-	pm        pathmap.Mapper                                                 // канон→локальный путь для acquire/отпечатка
-	acqOnce   sync.Once
-	acqT      *acqTracker // последние попытки «Найти трек»
-	torOnce   sync.Once
-	torT      *torTracker // последние закачки «Торренты — обзор»
-	startedAt time.Time
-	frontend  embed.FS
-	mu        sync.Mutex
+	ctx        context.Context
+	dataDir    string
+	dbPath     string
+	assetsDir  string
+	db         *localdb.DB
+	eng        *inference.Lazy // nil, если не нашли onnxruntime.dll/cnn14.onnx; сама модель грузится по требованию и выгружается после простоя
+	jobs       *JobRunner
+	phoneAddr  string
+	phoneSrv   *http.Server
+	phoneAPI   *api.Server        // тот же /v1-сервер; окну нужен для «качает прямо сейчас»
+	dl         *downloaderProc    // дочерний Python «качалка» (Найти трек / торренты)
+	store      *litestore.Store   // та же БД для acquire из окна
+	covers     *coverKeeper       // сама ищет обложки песням, у которых их нет (coverkeeper.go)
+	genres     *genreKeeper       // сама узнаёт жанр песен у Яндекса (genrekeeper.go)
+	origCovers *origCoverKeeper   // сама ищет родные обложки песням из сборников (origcoverkeeper.go)
+	backups    *backupKeeper      // сама раз в сутки копирует базу (backupkeeper.go)
+	waveforms  *waveformKeeper    // сама считает форму звука для полоски-эквалайзера (wavekeeper.go)
+	bass       *bassKeeper        // сама разбирает удары баса для пульсации кнопки «играть» (basskeeper.go)
+	loudness   *loudKeeper        // сама считает громкость песен для выравнивания (loudkeeper.go)
+	moods      *moodKeeper        // сама знает настроение песен и угадывает неизвестный жанр (moodkeeper.go)
+	spectrum   *spectrumKeeper    // сама проверяет спектр — ловит «поддельный 320» (spectrumkeeper.go)
+	recon      *reconciler        // сама сверяет каталог с диском: убирает песни без файла (reconcile.go)
+	waveMu     sync.Mutex         // «Пересобрать волну» идёт минуту — вторая пересборка одновременно не нужна
+	waveStop   context.CancelFunc // останавливает waveDailyLoop (сама собирает волну на сегодня, yandex_wave.go)
+	pcMu       sync.Mutex         // кэш «песен компьютера с файлом на диске» для сверки с телефоном (phonecheck.go)
+	pcAt       time.Time
+	pcSet      map[string]int64
+	guardMu    sync.Mutex // одна проверка «сторожа по звуку» за раз (dislikeguard.go)
+	guardStop  context.CancelFunc
+	pairing    pairingState                                                   // окно «Подключить телефон» (pairing.go)
+	waveEmbed  func(ctx context.Context, it yandexWaveOut) ([]float32, error) // отпечаток кандидата «Волны»; nil — настоящий (в тестах подменяют)
+	pm         pathmap.Mapper                                                 // канон→локальный путь для acquire/отпечатка
+	acqOnce    sync.Once
+	acqT       *acqTracker // последние попытки «Найти трек»
+	torOnce    sync.Once
+	torT       *torTracker // последние закачки «Торренты — обзор»
+	startedAt  time.Time
+	frontend   embed.FS
+	mu         sync.Mutex
 
 	// Честный статус телефонного слушателя (Опус-ревью 14.09.2026, пункт 1):
 	// раньше окно всегда показывало «сервер работает», даже если порт был
@@ -74,6 +80,7 @@ type Service struct {
 	// отражают, что произошло НА САМОМ ДЕЛЕ.
 	phoneListening bool
 	phoneBoundAddr string // "" пока не забиндились; напр. "0.0.0.0:8091"
+	homeURL        string // http://<адрес в домашней сети>:<порт> — отдаётся телефону в /v1/health
 	phoneListenErr string
 
 	// Удалённый доступ через VDS (relay.go) — без настройки (env пустой)
@@ -159,9 +166,21 @@ func NewService() (*Service, error) {
 	go s.startPhoneServer()
 	go s.startRelay()
 	s.covers = newCoverKeeper(s)
+	s.genres = newGenreKeeper(s)
+	s.genres.Start()
+	s.origCovers = newOrigCoverKeeper(s)
+	s.origCovers.Start()
+	s.backups = newBackupKeeper(s)
+	s.backups.Start()
 	s.covers.Start()
 	s.waveforms = newWaveformKeeper(s)
 	s.waveforms.Start()
+	s.bass = newBassKeeper(s)
+	s.bass.Start()
+	s.loudness = newLoudKeeper(s)
+	s.loudness.Start()
+	s.moods = newMoodKeeper(s)
+	s.moods.Start()
 	s.spectrum = newSpectrumKeeper(s)
 	s.spectrum.Start()
 	s.recon = newReconciler(s)
@@ -194,7 +213,13 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	s.stopRelay()
 	s.dl.shutdown()
 	s.covers.Stop()
+	s.genres.Stop()
+	s.origCovers.Stop()
+	s.backups.Stop()
 	s.waveforms.Stop()
+	s.bass.Stop()
+	s.loudness.Stop()
+	s.moods.Stop()
 	s.spectrum.Stop()
 	s.recon.Stop()
 	if s.waveStop != nil {
@@ -274,7 +299,7 @@ func (s *Service) mountAPI(r chi.Router) {
 	r.Post("/api/phone/plan", localOnly(s.hPhonePlan))
 	r.Get("/api/phone/plan", s.hPhonePlanGet)
 	r.Delete("/api/phone/plan", localOnly(s.hPhonePlanCancel))
-	r.Post("/api/tracks/delete-forever", localOnly(s.hDeleteForever))
+	r.Post("/api/tracks/delete-forever", localOrHomeLAN(s.hDeleteForever))
 	r.Get("/api/catalog/missing", s.hMissing)
 	r.Post("/api/catalog/missing/clean", localOnly(s.hMissingClean))
 	// возврат песен с телефона на ПК, разово и без кнопок (restore.go): очередь ставим только с этого компьютера,
@@ -488,12 +513,13 @@ func (s *Service) hRoots(w http.ResponseWriter, r *http.Request) {
 	}
 	type root struct {
 		Path   string `json:"path"`
+		Dir    string `json:"dir"` // настоящая папка на диске сервера — для «Обновить медиатеку»
 		Tracks int    `json:"tracks"`
 		WithFP int    `json:"with_fp"`
 	}
 	out := make([]root, 0, len(tree))
 	for _, n := range tree {
-		out = append(out, root{Path: n.Path, Tracks: n.Tracks, WithFP: n.WithFP})
+		out = append(out, root{Path: n.Path, Dir: rootDir(n.Path), Tracks: n.Tracks, WithFP: n.WithFP})
 	}
 	writeJSON(w, out)
 }
@@ -793,8 +819,37 @@ func sortTree(n *FolderNode) {
 	}
 }
 
+// rootDir — обратное к splitRoot для «диска»: «G:» показывается в окне, а на сервере (Linux) это
+// /srv/soundflow/G. Нет такой папки — возвращаем как есть (Windows).
+func rootDir(display string) string {
+	if len(display) == 2 && display[1] == ':' {
+		d := "/srv/soundflow/" + strings.ToUpper(display[:1])
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			return d
+		}
+	}
+	return display
+}
+
 func splitRoot(p string) (root, rest string) {
 	p = strings.ReplaceAll(p, "/", "\\")
+	// Сервер на Linux (с 26.09.2026): диски brain смонтированы как /srv/soundflow/<буква>/… —
+	// в окне показываем их по-старому, «G:», иначе каждая песня становилась отдельной «папкой»
+	// (путь начинался с «\», корень не находился).
+	if t := strings.TrimPrefix(p, "\\"); t != p {
+		segs := strings.SplitN(t, "\\", 4)
+		if len(segs) == 4 && strings.EqualFold(segs[0], "srv") && strings.EqualFold(segs[1], "soundflow") && len(segs[2]) == 1 {
+			return strings.ToUpper(segs[2]) + ":", segs[3]
+		}
+		if i := strings.Index(t, "\\"); i > 0 {
+			return "/" + t[:i], t[i+1:]
+		}
+		return "/" + t, ""
+	}
+	// «G:музыка\…» — диск без косой черты после двоеточия.
+	if len(p) > 2 && p[1] == ':' && p[2] != '\\' {
+		return p[:2], p[2:]
+	}
 	low := strings.ToLower(p)
 	for _, pre := range []string{`e:\soundflow-data\music`, `e:\soundflow-data\cache`, `e:\soundflow-data`} {
 		if strings.HasPrefix(low, pre) {

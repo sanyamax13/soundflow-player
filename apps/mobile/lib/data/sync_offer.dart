@@ -19,19 +19,47 @@ import 'downloads_repo.dart';
 /// новых песен (85 МБ) — скачать?». Пока Alex не нажмёт «Скачать»/«Стереть»
 /// ([run]), ничего не качается и не стирается — места на телефоне может не
 /// хватить, решать ему.
+///
+/// 26.09.2026 (разбор Gemini «плашки», Alex): новые песни качаются САМИ, когда
+/// телефон дома в Wi-Fi ([autoDownload], переключатель в «Связи с домом»), без
+/// плашки «Скачать?». Не хватает места — не качаем, красная карточка. Убранное на
+/// компьютере само НЕ стирается — только кнопкой в карточке. Плашки-предложения с
+/// кнопками сверху больше нет: кнопки наверху за рулём не достать.
 class SyncOffer extends ChangeNotifier {
-  SyncOffer(this._downloads, {Future<int?> Function()? freeSpace})
-    : _freeSpace = freeSpace ?? DeviceInfo.freeSpaceBytes;
+  SyncOffer(
+    this._downloads, {
+    Future<int?> Function()? freeSpace,
+    Future<bool> Function()? atHome,
+    this.autoDownload = true,
+    this.onAutoChanged,
+  })  : _freeSpace = freeSpace ?? DeviceInfo.freeSpaceBytes,
+        _atHome = atHome ?? _defaultAtHome;
 
   final DownloadsRepo _downloads;
   final Future<int?> Function() _freeSpace;
+  final Future<bool> Function() _atHome;
+
+  /// Качать новое само, дома по Wi-Fi (по умолчанию включено).
+  bool autoDownload;
+
+  /// Сохранить переключатель (main.dart пишет в базу телефона).
+  final void Function(bool)? onAutoChanged;
+
+  void setAutoDownload(bool v) {
+    autoDownload = v;
+    onAutoChanged?.call(v);
+    notifyListeners();
+    if (v) unawaited(refresh());
+  }
+
+  static Future<bool> _defaultAtHome() async {
+    final t = (await DeviceInfo.read()).transport;
+    return t == 'wifi' || t == 'ethernet';
+  }
 
   /// Запас свободного места, который не занимаем скачиванием: телефону нужно
   /// место и для своей работы.
   static const spaceReserve = 1024 * 1024 * 1024;
-
-  /// Не объявлять одно и то же чаще, чем раз в это время (если не менялось).
-  static const _repeatAfter = Duration(minutes: 30);
 
   PlanPreview preview = PlanPreview.empty;
   int? freeBytes;
@@ -52,9 +80,6 @@ class SyncOffer extends ChangeNotifier {
 
   DownloadCancelToken? _token;
   bool _refreshing = false;
-  String? _announcedSig;
-  DateTime? _announcedAt;
-  String? _snoozedSig;
 
   /// Только для тестов и картинок: выставить состояние без обращения к серверу.
   @visibleForTesting
@@ -94,8 +119,9 @@ class SyncOffer extends ChangeNotifier {
   String get addSubtitle {
     final f = freeBytes;
     if (f == null) return 'Скачать на телефон?';
+    // Вместо окна «Мало места» — прямо на карточке, сколько не хватает (27.09.2026, разбор Gemini и Алисы).
     return lowSpace
-        ? 'Не хватит места: свободно ${fmtBytes(f)}'
+        ? 'Не хватит места: нужно ещё ${fmtBytes(preview.addBytes + spaceReserve - f)}'
         : 'На телефоне свободно ${fmtBytes(f)}';
   }
 
@@ -118,7 +144,7 @@ class SyncOffer extends ChangeNotifier {
       checkedAt = DateTime.now();
       lastCheckFailed = false;
       notifyListeners();
-      if (announce) _announce();
+      if (announce) await _maybeAutoRun();
     } catch (_) {
       lastCheckFailed = true;
       notifyListeners();
@@ -128,11 +154,8 @@ class SyncOffer extends ChangeNotifier {
   }
 
   /// Выполнить: [adds] — скачать, [removes] — стереть. Зовётся кнопками.
-  Future<void> run({required bool adds, required bool removes}) async {
+  Future<void> run({required bool adds, required bool removes, bool auto = false}) async {
     if (running) return;
-    if (adds && preview.addCount > 0 && lowSpace && !await _confirmLowSpace()) {
-      return;
-    }
     final token = DownloadCancelToken();
     _token = token;
     running = true;
@@ -153,9 +176,9 @@ class SyncOffer extends ChangeNotifier {
           notifyListeners();
         },
       );
-      _report(r);
+      _report(r, auto: auto);
     } catch (_) {
-      showServerUnreachable(lead: 'Не получилось');
+      if (!auto) showServerUnreachable(lead: 'Не получилось');
     } finally {
       running = false;
       _token = null;
@@ -168,7 +191,28 @@ class SyncOffer extends ChangeNotifier {
   /// «Стоп»: текущая песня докачается, следующая не начнётся.
   void cancel() => _token?.cancel();
 
-  void _report(({int added, int removed, int failed, bool stopped}) r) {
+  /// Сама качает новое, если: включено, есть что качать, места хватает и телефон
+  /// дома (Wi-Fi, не удалённый доступ). Стирание — никогда само.
+  Future<void> _maybeAutoRun() async {
+    final p = preview;
+    if (!autoDownload || running || p.addCount == 0 || lowSpace) return;
+    if (!await _atHome()) return;
+    await run(adds: true, removes: false, auto: true);
+  }
+
+  void _report(({int added, int removed, int failed, bool stopped}) r, {bool auto = false}) {
+    // Наверху — только короткие плашки без кнопок (разбор Gemini 26.09.2026).
+    if (auto) {
+      if (r.added > 0) {
+        Notice.show(
+          'Скачано ${fmtInt(r.added)} '
+          '${plural(r.added, 'новая песня', 'новые песни', 'новых песен')}',
+          kind: NoticeKind.done,
+          duration: const Duration(seconds: 3),
+        );
+      }
+      return;
+    }
     final parts = [
       if (r.added > 0) 'скачано ${r.added}',
       if (r.removed > 0) 'стёрто ${r.removed}',
@@ -181,90 +225,13 @@ class SyncOffer extends ChangeNotifier {
     } else if (r.failed > 0) {
       Notice.show(
         'Не всё получилось',
-        subtitle:
-            '${did == null ? '' : '$did. '}Не вышло: ${r.failed}. Нажмите ещё раз',
+        subtitle: '${did == null ? '' : '$did. '}Не вышло: ${r.failed}',
         kind: NoticeKind.warn,
       );
     } else if (did == null) {
-      Notice.show('Всё уже на месте', kind: NoticeKind.done);
+      Notice.show('Всё уже на месте', kind: NoticeKind.done, duration: const Duration(seconds: 3));
     } else {
-      Notice.show('Готово', subtitle: did, kind: NoticeKind.done);
+      Notice.show('Готово', subtitle: did, kind: NoticeKind.done, duration: const Duration(seconds: 3));
     }
-  }
-
-  /// Плашка-предложение при заходе в приложение: «Скачать?» — да / не сейчас.
-  /// Одно и то же не повторяем чаще раза в полчаса, а после «Не сейчас» — вообще
-  /// пока предложение не изменится (карточка на экране остаётся).
-  void _announce() {
-    final p = preview;
-    if (p.isEmpty || running) return;
-    final sig = p.signature;
-    if (sig == _snoozedSig) return;
-    final now = DateTime.now();
-    final at = _announcedAt;
-    if (sig == _announcedSig &&
-        at != null &&
-        now.difference(at) < _repeatAfter) {
-      return;
-    }
-    _announcedSig = sig;
-    _announcedAt = now;
-
-    final add = p.addCount > 0;
-    final rem = p.removeCount > 0;
-    final String title;
-    final String sub;
-    final String label;
-    if (add && rem) {
-      title = 'Есть новое на компьютере';
-      sub =
-          'Скачать ${fmtInt(p.addCount)} (${fmtBytes(p.addBytes)}) и стереть ${fmtInt(p.removeCount)}?';
-      label = 'Скачать и стереть';
-    } else if (add) {
-      title = addTitle;
-      sub = addSubtitle;
-      label = 'Скачать';
-    } else {
-      title = removeTitle;
-      sub = removeSubtitle;
-      label = 'Стереть';
-    }
-    Notice.show(
-      title,
-      subtitle: sub,
-      kind: lowSpace ? NoticeKind.warn : NoticeKind.info,
-      duration: const Duration(seconds: 12),
-      actions: [
-        NoticeAction(label, () => run(adds: add, removes: rem)),
-        NoticeAction('Не сейчас', () => _snoozedSig = sig, primary: false),
-      ],
-    );
-  }
-
-  Future<bool> _confirmLowSpace() async {
-    final ctx = rootNavigatorKey.currentContext;
-    if (ctx == null) return false;
-    final go = await showDialog<bool>(
-      context: ctx,
-      builder: (c) => AlertDialog(
-        title: const Text('Мало места'),
-        content: Text(
-          'На телефоне свободно ${fmtBytes(freeBytes ?? 0)}, а нужно '
-          '${fmtBytes(preview.addBytes)}. Скачивание может остановиться на '
-          'середине. Всё равно начать?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Начать'),
-          ),
-        ],
-      ),
-    );
-    return go == true;
   }
 }

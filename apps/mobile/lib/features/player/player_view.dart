@@ -6,20 +6,26 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
+import '../../core/black_box.dart';
 import '../../core/app_log.dart';
-import '../../core/apple.dart';
 import '../../core/config.dart';
+import '../../core/fit_text.dart';
+import '../../core/format.dart';
+import '../../core/genres.dart';
+import '../../core/glass_sheet.dart';
 import '../../core/local_taste.dart';
 import '../../core/notice.dart';
-import '../../core/removal_reasons.dart';
 import '../../data/db.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/theme.dart';
+import '../my_music/artist_grouping.dart' show artistKey, artistPartKey, artistsOf, primaryArtist;
 import 'cover_art.dart';
 import 'cover_palette.dart';
 import 'dot_matrix_seek.dart';
@@ -57,10 +63,16 @@ import 'player_controller.dart';
 ///  • вкладка «Поток» вставляет его в тело, без кнопки «вниз»;
 ///  • [NowPlayingScreen] открывает поверх (тап по мини-плееру), с «вниз».
 class PlayerView extends ConsumerStatefulWidget {
-  const PlayerView({super.key, this.onDismiss, this.emptyState});
+  const PlayerView({super.key, this.onDismiss, this.emptyState, this.onDismissDrag, this.onDismissDragEnd});
 
   final VoidCallback? onDismiss;
   final Widget? emptyState;
+
+  /// «Живое» закрытие (27.09.2026, разбор Gemini и Алисы, Alex «делай»): палец тянет плеер вниз
+  /// за шапку или обложку — сюда идёт сдвиг по вертикали, на отпускание — скорость. Решает, закрыть
+  /// или вернуть, [NowPlayingScreen]. Нет — закрытие только взмахом, как раньше.
+  final ValueChanged<double>? onDismissDrag;
+  final ValueChanged<double>? onDismissDragEnd;
 
   @override
   ConsumerState<PlayerView> createState() => _PlayerViewState();
@@ -83,6 +95,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   // так») — null, пока не досчитана на сервере (см. wavekeeper.go) или
   // ещё грузится; тогда DotMatrixSeek пляшет как раньше, наугад.
   final ValueNotifier<List<double>?> _waveform = ValueNotifier(null);
+  final ValueNotifier<Uint8List?> _bass = ValueNotifier(null); // удары баса для пульса кнопки «играть»
   String? _waveformTrackId;
 
   // Куда «прилетает» сердечко при лайке — центр кнопки лайка в _transport(),
@@ -101,7 +114,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   // весь список. Значение двигается ЖИВЬЁМ во время onVerticalDragUpdate,
   // а не только по итоговой скорости жеста.
   late final AnimationController _queueOpen;
-  static const double _queuePeek = 78;
+  static const double _queuePeek = 98; // полоска + ряд из 5 кнопок режима с подписями (27.09.2026)
+  // «Дыхание» обложки, пока играет: 1.0 ↔ 1.02 за ~4.5 с (разбор Gemini
+  // 26.09.2026, моушн «Ambient Flow»). На паузе стоит — батарея и тесты.
+  late final AnimationController _breath;
 
   bool _showHelp = false;
 
@@ -120,14 +136,43 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       duration: const Duration(milliseconds: 720),
     );
     _dragX = AnimationController.unbounded(vsync: this, value: 0);
-    _queueOpen = AnimationController(
+    // Без границ: шторку можно чуть «перетянуть» за края — она тянется туже и
+    // пружинит назад («резинка», Alex «4 делай», 26.09.2026).
+    _queueOpen = AnimationController.unbounded(
       vsync: this,
       duration: const Duration(milliseconds: 260),
     );
+    _breath = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4500),
+    );
   }
 
-  void _animateQueueTo(double target) {
-    _queueOpen.animateTo(target, curve: Curves.easeOutCubic);
+  void _onPlaying() {
+    if (_p.playing.value && _p.now.value != null) {
+      if (!_breath.isAnimating) _breath.repeat(reverse: true);
+    } else {
+      _breath.stop();
+    }
+  }
+
+  void _animateQueueTo(double target, {double velocity = 0}) {
+    // Пружина вместо ровной кривой: доезжает с лёгким «отскоком», как в iOS.
+    _queueOpen.animateWith(SpringSimulation(
+      const SpringDescription(mass: 1, stiffness: 260, damping: 26),
+      _queueOpen.value,
+      target,
+      velocity,
+    ));
+  }
+
+  // Палец за краем (свёрнута и тянут вниз, раскрыта и тянут вверх) — шторка идёт
+  // вчетверо туже и не дальше пары процентов: чувствуется упор, а не обрыв.
+  double _queueRaw = 0;
+  double _rubber(double raw) {
+    if (raw < 0) return math.max(raw * 0.25, -0.05);
+    if (raw > 1) return math.min(1 + (raw - 1) * 0.25, 1.04);
+    return raw;
   }
 
   @override
@@ -137,7 +182,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       _wired = true;
       _controller = ref.read(playerProvider);
       _p.now.addListener(_onNow);
+      _p.playing.addListener(_onPlaying);
       _onNow();
+      _onPlaying();
       _maybeShowHelpFirstRun();
     }
   }
@@ -145,12 +192,15 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   @override
   void dispose() {
     _controller?.now.removeListener(_onNow);
+    _controller?.playing.removeListener(_onPlaying);
+    _breath.dispose();
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
     _queueOpen.dispose();
     _tint.dispose();
     _waveform.dispose();
+    _bass.dispose();
     super.dispose();
   }
 
@@ -185,9 +235,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     if (cur == null || cur.id == _waveformTrackId) return;
     _waveformTrackId = cur.id;
     _waveform.value = null; // новая песня — пока пляшем наугад, как раньше
-    final bars = await ref.read(apiProvider).waveform(cur.id);
+    _bass.value = null;
+    final api = ref.read(apiProvider);
+    final (bars, bass) = await (api.waveform(cur.id), api.bass(cur.id)).wait;
     if (!mounted || _p.now.value?.id != cur.id) return; // трек уже сменился — не подмешиваем чужое
     _waveform.value = bars;
+    _bass.value = bass;
   }
 
   Future<void> _syncTint() async {
@@ -248,21 +301,33 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _p.prev();
   }
 
-  /// Спросить причину (список общий с «Моей музыкой», core/removal_reasons.dart)
-  /// и убрать трек с телефона (и с сервера — обычным синком). Раньше рядом
-  /// была ещё «не хочу эту версию» — она удаляла файл СРАЗУ, без вопроса о
-  /// причине вообще; теперь это просто один из трёх пунктов того же листа
-  /// (Опус-ревью телефона 14.09.2026, пункт 9 — было пять пересекающихся
-  /// действий «не нравится», осталось два: «меньше такого» и «убрать совсем»).
-  Future<void> _confirmDelete(NowPlaying now) async {
-    final reason = await pickRemovalReason(context);
-    if (reason == null || !mounted) return;
-    HapticFeedback.mediumImpact();
-    await ref.read(downloadsProvider).delete(now.id, reason: reason);
-    if (!mounted) return;
-    await _p.next();
-    Notice.show('Убрал с телефона',
-        subtitle: '${now.artist} — ${now.title}', kind: NoticeKind.removed);
+  // 26.09.2026 (Alex, голосовое TG 21938 + «1 да так, 2 б, 3 да без вопроса»): «Отбор» убран, его
+  // решение переехало сюда — смахнуть обложку вправо = в избранное, влево = удалить насовсем (и с
+  // компьютера), без вопроса о причине; в обоих случаях дальше следующая песня. Листать — ⏮ ⏭.
+  Future<void> _swipeKeep(NowPlaying now) async {
+    HapticFeedback.lightImpact();
+    BlackBox.log('swipe_keep', {'id': now.id, 'title': now.title, 'artist': now.artist});
+    if (!_fav) {
+      setState(() => _fav = true);
+      _heart.forward(from: 0);
+      unawaited(ref.read(downloadsProvider).setFavorite(now.id, true));
+    }
+    await _p.next(reportSkip: false);
+  }
+
+  Future<void> _swipeDelete(NowPlaying now) async {
+    HapticFeedback.heavyImpact();
+    BlackBox.log('swipe_delete', {'id': now.id, 'title': now.title, 'artist': now.artist});
+    await _p.next(reportSkip: false); // музыка не прерывается — удаление идёт уже за кадром
+    final api = ref.read(apiProvider);
+    final downloads = ref.read(downloadsProvider);
+    try {
+      await api.catalogDeleteForever([now.id]); // файл с компьютера — насовсем
+    } catch (_) {
+      // Нет связи с домом — событие «удалено» с телефона дойдёт само, программа на компьютере
+      // доудалит файл (как обычное удаление с телефона).
+    }
+    await downloads.delete(now.id, reason: 'dislike');
   }
 
   /// Радио «по этой песне». Всё считает ТЕЛЕФОН по уже лежащим на нём
@@ -323,201 +388,6 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     }
   }
 
-  /// Долгое нажатие на радио — выбор, ПО ЧЕМУ собрать дальше (Alex TG
-  /// 25.09.2026: «делай любимое исполнитель и настроение», год не нужен,
-  /// делать сразу). «Настроение» сюда пока НЕ входит — под него нет данных
-  /// на телефоне (громкость по каждой песне библиотеки сервер не отдаёт
-  /// заранее, только по одной играющей сейчас), это отдельный шаг с правкой
-  /// сервера, следующим заходом.
-  Future<void> _openRadioFilter(NowPlaying now) async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Играть дальше',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.4,
-                          color: Afisha.ink)),
-                ),
-              ),
-              AppleSection(
-                dividerInset: 58,
-                children: [
-                  AppleRow(
-                    title: 'Любимое',
-                    icon: CupertinoIcons.heart_fill,
-                    iconBg: Afisha.lime,
-                    onTap: () => Navigator.pop(ctx, 'favorite'),
-                  ),
-                  AppleRow(
-                    title: 'Этот исполнитель',
-                    subtitle: now.artist,
-                    icon: CupertinoIcons.person_fill,
-                    iconBg: const Color(0xFF4DA3FF),
-                    onTap: () => Navigator.pop(ctx, 'artist'),
-                  ),
-                  AppleRow(
-                    title: 'Настроение',
-                    icon: CupertinoIcons.waveform,
-                    iconBg: const Color(0xFFFF9F4D),
-                    onTap: () => Navigator.pop(ctx, 'mood'),
-                  ),
-                  // 25.09.2026 (Alex TG: «добавь по жанрам заранее, напиши
-                  // скоро будет») — место под жанр показываем уже сейчас,
-                  // сама функция ждёт отдельной работы (программу ещё надо
-                  // научить определять жанр — база его пока не знает, см.
-                  // память player-radio-filter). Лист не закрывает, просто
-                  // говорит, что рано.
-                  AppleRow(
-                    title: 'Жанр',
-                    icon: CupertinoIcons.tag_fill,
-                    iconBg: const Color(0xFFB983FF),
-                    value: 'скоро',
-                    onTap: () => Notice.show('Жанр — скоро',
-                        subtitle: 'программа ещё учится его определять'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: Material(
-                  color: Afisha.lime,
-                  borderRadius: BorderRadius.circular(24),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(24),
-                    onTap: () => Navigator.pop(ctx, null),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text('Отмена',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
-                              letterSpacing: -0.2)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (choice == null || !mounted) return;
-    final hidden = await ref.read(dbProvider).hiddenArtists();
-    switch (choice) {
-      case 'favorite':
-        await _startFilteredRadio(
-            (await ref.read(downloadsProvider).list(onlyFavorite: true))
-                .where((t) => !hidden.contains(t.artist)),
-            now,
-            'Дальше — любимое');
-      case 'artist':
-        await _startFilteredRadio(
-            (await ref.read(downloadsProvider).list())
-                .where((t) => t.artist == now.artist),
-            now,
-            'Дальше — ${now.artist}');
-      case 'mood':
-        if (!mounted) return;
-        final mood = await _pickMood();
-        if (mood == null || !mounted) return;
-        final withEnergy = (await ref.read(downloadsProvider).list())
-            .where((t) => t.energy != null && !hidden.contains(t.artist))
-            .toList()
-          ..sort((a, b) => a.energy!.compareTo(b.energy!));
-        final half = (withEnergy.length / 2).ceil();
-        final pool = mood == 'calm' ? withEnergy.take(half) : withEnergy.reversed.take(half);
-        await _startFilteredRadio(
-            pool, now, mood == 'calm' ? 'Дальше — спокойное' : 'Дальше — энергичное');
-    }
-  }
-
-  /// Второй лист — спокойное/энергичное, поверх сортировки по [DownloadedTrack.energy]
-  /// (сервер считает среднюю громкость из waveform, Alex TG 25.09.2026).
-  Future<String?> _pickMood() {
-    return showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Настроение',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.4,
-                          color: Afisha.ink)),
-                ),
-              ),
-              AppleSection(
-                dividerInset: 58,
-                children: [
-                  AppleRow(
-                    title: 'Спокойное',
-                    icon: CupertinoIcons.moon_fill,
-                    iconBg: const Color(0xFF6C7BFF),
-                    onTap: () => Navigator.pop(ctx, 'calm'),
-                  ),
-                  AppleRow(
-                    title: 'Энергичное',
-                    icon: CupertinoIcons.bolt_fill,
-                    iconBg: const Color(0xFFFF6B4D),
-                    onTap: () => Navigator.pop(ctx, 'energetic'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: Material(
-                  color: Afisha.lime,
-                  borderRadius: BorderRadius.circular(24),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(24),
-                    onTap: () => Navigator.pop(ctx, null),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text('Отмена',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
-                              letterSpacing: -0.2)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _startFilteredRadio(
       Iterable<DownloadedTrack> tracks, NowPlaying now, String message) async {
     final pool = tracks.where((t) => t.id != now.id).toList()..shuffle();
@@ -529,6 +399,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       for (final t in pool)
         NowPlaying(id: t.id, title: t.title, artist: t.artist, path: t.path, coverPath: t.coverPath),
     ]);
+    // Строка «Дальше: …» внизу читает очередь при перерисовке — без этого после фильтра там
+    // оставалась песня из старой очереди (найдено 26.09.2026 на фильтре по жанру).
+    if (mounted) setState(() {});
     Notice.show(message);
   }
 
@@ -687,34 +560,31 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               // Свой слой: фон перерисовывается каждый кадр (медленный перелив), и без
               // границы вместе с ним каждый кадр заново рисовался весь экран плеера —
               // обложка, тексты, кнопки (оптимизация 21.09.2026, Alex TG 20331).
-              RepaintBoundary(child: _LivingBackdrop(anim: _bg, colors: colors, img: img)),
+              // Цвет фона переливается к новой обложке за 650 мс, а не щёлкает (Alex «4 делай»).
+              RepaintBoundary(
+                child: TweenAnimationBuilder<CoverColors>(
+                  tween: _CoverColorsTween(end: colors),
+                  duration: const Duration(milliseconds: 650),
+                  curve: Curves.easeInOut,
+                  builder: (_, c, _) => _LivingBackdrop(anim: _bg, colors: c, img: img),
+                ),
+              ),
               SafeArea(
                 child: Column(
                   children: [
                     _topBar(now),
-                    const Spacer(),
-                    _coverArea(now, img, colors),
-                    const Spacer(),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Text(now.title,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              // Было 23 — мельче цифр времени под ним (32).
-                              // Название важнее «сколько прошло» (Опус-ревью
-                              // «Поток» 23.09.2026, пункт 2).
-                              fontSize: 26,
-                              fontWeight: FontWeight.w600)),
+                    // Обложка занимает ровно столько, сколько осталось после названия,
+                    // полосы и кнопок: длинное название в две строки раньше выталкивало
+                    // кнопки под шторку «Дальше» (Alex, голосовое TG 26.09.2026: «все
+                    // окна одного размера»). Кнопки всегда на одном месте.
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Center(child: _coverArea(now, img, colors)),
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(now.artist,
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 13)),
-                    const SizedBox(height: 20),
+                    _titleRow(now),
+                    const SizedBox(height: 16),
                     // Полоса обновляется несколько раз в секунду (позиция) — свой слой,
                     // чтобы не тянуть за собой перерисовку остального экрана.
                     RepaintBoundary(
@@ -724,7 +594,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                           waveform: _waveform),
                     ),
                     const SizedBox(height: 12),
-                    _transport(),
+                    _transport(colors),
                     const SizedBox(height: 16),
                     const SizedBox(height: _queuePeek),
                   ],
@@ -740,7 +610,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     );
   }
 
-  Widget _topBar(NowPlaying now) => Padding(
+  Widget _topBar(NowPlaying now) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: widget.onDismissDrag == null ? null : (d) => widget.onDismissDrag!(d.delta.dy),
+        onVerticalDragEnd:
+            widget.onDismissDragEnd == null ? null : (d) => widget.onDismissDragEnd!(d.primaryVelocity ?? 0),
+        child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
         child: Row(
           children: [
@@ -754,43 +629,172 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             const Spacer(),
             // Вопросик и кнопка «радио» отсюда убраны (Alex TG 25.09.2026) —
             // см. комментарий у класса выше, куда что переехало.
+            // Урны больше нет: удаление — смахнуть обложку влево (26.09.2026, Alex).
+            const SizedBox(width: 64, height: 64),
+          ],
+        ),
+      ),
+      );
+
+
+  // Название и исполнитель слева, «сердце» справа на уровне названия (разбор Gemini
+  // 26.09.2026, Alex «беру»): под рукой, но в стороне от ряда кнопок плеера.
+  // Смена песни — текст уезжает вбок и проявляется новый (200 мс), а не подменяется.
+  Widget _titleRow(NowPlaying now) => Padding(
+        padding: const EdgeInsets.fromLTRB(28, 0, 12, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                layoutBuilder: (cur, prev) => Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [...prev, ?cur],
+                ),
+                transitionBuilder: (child, a) => FadeTransition(
+                  opacity: a,
+                  child: SlideTransition(
+                    position: Tween(begin: const Offset(0.06, 0), end: Offset.zero).animate(a),
+                    child: child,
+                  ),
+                ),
+                child: Column(
+                  key: ValueKey(now.id),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Длинное — шрифт сам уменьшается до 18, чтобы влезло целиком (Alex 27.09.2026).
+                    FitText(now.title,
+                        maxLines: 2,
+                        minFontSize: 18,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            // Название крупнее цифр времени (Опус-ревью «Поток» 23.09.2026, п. 2).
+                            fontSize: 26,
+                            height: 1.15,
+                            letterSpacing: -0.5,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    FitText(now.artist,
+                        maxLines: 1,
+                        minFontSize: 13,
+                        fallbackMaxLines: 2,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+            ),
+            // Цель для сердечка-анимации (_heartPop) — оно прилетает СЮДА, а не
+            // в центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3).
+            CompositedTransformTarget(
+              link: _favLink,
+              child: _Pressable(
+                key: const ValueKey('player_fav'),
+                onTap: _toggleFavButton,
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                      color: _fav ? Afisha.lime : Colors.white70, size: 30),
+                ),
+              ),
+            ),
           ],
         ),
       );
+
+  bool? _coverDown;
 
   Widget _coverArea(NowPlaying now, ImageProvider? img, CoverColors colors) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
       onHorizontalDragUpdate: (d) {
-        _dragX.value = (_dragX.value + d.delta.dx).clamp(-150.0, 150.0);
+        _dragX.value = (_dragX.value + d.delta.dx).clamp(-220.0, 220.0);
       },
       onHorizontalDragEnd: (d) {
         final v = d.primaryVelocity ?? 0;
-        if (_dragX.value <= -60 || v < -600) {
-          _swipeNext();
-        } else if (_dragX.value >= 60 || v > 600) {
-          _swipePrev();
+        // Порог выше, чем был у «следующая/предыдущая»: удаление насовсем не должно срабатывать
+        // от случайного касания.
+        // Быстрый взмах засчитываем, только если палец реально прошёл хотя бы 60 точек: иначе
+        // короткий рывок в машине удалял бы песню насовсем (ревизия кода 27.09.2026).
+        if (_dragX.value <= -110 || (v < -900 && _dragX.value <= -60)) {
+          unawaited(_swipeDelete(now));
+        } else if (_dragX.value >= 110 || (v > 900 && _dragX.value >= 60)) {
+          unawaited(_swipeKeep(now));
         }
         _dragX.animateTo(0,
             duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
       },
+      // Первое движение пальца решает: вниз — плеер едет за пальцем (живое закрытие), вверх — очередь.
+      onVerticalDragStart: (_) => _coverDown = null,
+      onVerticalDragUpdate: (d) {
+        _coverDown ??= d.delta.dy > 0;
+        if (_coverDown! && widget.onDismissDrag != null) widget.onDismissDrag!(d.delta.dy);
+      },
       onVerticalDragEnd: (d) {
         final v = d.primaryVelocity ?? 0;
-        if (v > 300) {
+        if ((_coverDown ?? false) && widget.onDismissDragEnd != null) {
+          widget.onDismissDragEnd!(v);
+        } else if (v > 300) {
           widget.onDismiss?.call();
         } else if (v < -300) {
           _animateQueueTo(1);
         }
+        _coverDown = null;
       },
       child: AnimatedBuilder(
         animation: _dragX,
-        builder: (context, child) => Transform.translate(
-          offset: Offset(_dragX.value, 0),
-          child: Transform.rotate(angle: _dragX.value / 2600, child: child),
-        ),
+        builder: (context, child) {
+          final t = (_dragX.value / 110).clamp(-1.0, 1.0);
+          final glow = t >= 0 ? Afisha.lime : Afisha.red;
+          return Transform.translate(
+            offset: Offset(_dragX.value, 0),
+            child: Transform.rotate(
+              angle: _dragX.value / 1500,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  child!,
+                  // Обложка наливается лаймом (оставить) или красным (удалить) изнутри.
+                  if (t.abs() > 0.05)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Center(
+                            child: AspectRatio(
+                              aspectRatio: 1,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: glow.withValues(alpha: 0.30 * t.abs()),
+                                  borderRadius: BorderRadius.circular(32),
+                                  border: Border.all(color: glow.withValues(alpha: 0.9 * t.abs()), width: 3),
+                                ),
+                                child: Icon(t >= 0 ? CupertinoIcons.heart_fill : CupertinoIcons.trash_fill,
+                                    color: glow.withValues(alpha: t.abs()), size: 96),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
         child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            // Квадрат по свободному месту: самый большой, что влезает и по ширине,
+            // и по высоте (см. Expanded в build).
+            child: AspectRatio(
+              aspectRatio: 1,
             // Hero — тот же тег, что у обложки в мини-плеере (mini_player.dart):
             // при переходе снизу обложка «вырастает» с места мини-плеера, а не
             // пропадает/появляется новая (Опус-ревью «Поток» 23.09.2026,
@@ -799,16 +803,29 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             // нет второго с тем же тегом.
             child: Hero(
               tag: 'player-cover',
-              child: DecoratedBox(
+              // Играет — обложка чуть «дышит»; пауза — мягко оседает до 96%.
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _p.playing,
+                builder: (_, pl, child) => AnimatedScale(
+                  scale: pl ? 1.0 : 0.96,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  child: child,
+                ),
+                child: ScaleTransition(
+                  scale: Tween(begin: 1.0, end: 1.02)
+                      .animate(CurvedAnimation(parent: _breath, curve: Curves.easeInOutSine)),
+                  child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: Afisha.surfaceHi,
-                  borderRadius: BorderRadius.circular(20),
+                  // 20 → 32 и тень мягче/ниже (разбор Gemini 26.09.2026, One UI).
+                  borderRadius: BorderRadius.circular(32),
                   boxShadow: [
                     // Обычная тёмная тень для глубины.
                     BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
+                        color: Colors.black.withValues(alpha: 0.4),
                         blurRadius: 40,
-                        offset: const Offset(0, 16)),
+                        offset: const Offset(0, 24)),
                     // Цветной ореол цвета обложки поверх чёрного фона внизу
                     // экрана — раньше тут была только чёрная тень, и она
                     // сливалась с чёрным низом фона, наполовину терялась
@@ -820,82 +837,93 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                         offset: const Offset(0, 20)),
                   ],
                 ),
-                child: CoverArt(trackId: now.id, localPath: now.coverPath),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(32),
+                  // Смена песни — новая обложка проявляется за 300 мс, а не
+                  // подменяется рывком (разбор Gemini 26.09.2026).
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    switchInCurve: Curves.easeOutCubic,
+                    child: CoverArt(key: ValueKey(now.id), trackId: now.id, localPath: now.coverPath, artist: now.artist),
+                  ),
+                ),
+              ),
+                ),
               ),
             ),
+          ),
           ),
         ),
       );
   }
 
-  // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай, сам расположишь как
-  // надо»): видимый размер иконок тот же — растёт только зона нажатия
-  // вокруг; зазоры между кнопками увеличены (14/10 → 20), чтобы увеличенные
-  // невидимые зоны соседних кнопок не перекрывали друг друга.
-  static const _tapZone = BoxConstraints(minWidth: 64, minHeight: 64);
-
-  Widget _transport() => Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            iconSize: 34,
-            color: Colors.white,
-            constraints: _tapZone,
-            icon: const Icon(CupertinoIcons.backward_fill),
-            onPressed: _swipePrev,
+  // Разбор Gemini 26.09.2026 (Alex «беру»): в ряду только управление песней —
+  // «сердце» уехало к названию, урна — в «•••» сверху. Пауза крупнее (80pt,
+  // вслепую в машине), кнопки при нажатии проседают и пружинят обратно,
+  // значок play/pause перетекает, а не мигает.
+  // Кнопки — скруглённые квадраты (27.09.2026, Alex: «убирай капсулу и ставь скруглённые квадраты,
+  // анимации оставь»; вариант Алисы 3 / Gemini Б): «назад/вперёд» — стеклянные 64×64, скругление 22,
+  // кромка цвета обложки; «играть» — лаймовый 84×84, скругление 26, пульсирует под бас. Та же форма,
+  // что у кнопок режимов и плиток настроения — экран цельный. Значки залитые (видно на солнце),
+  // стрелки прыгают при нажатии, «пауза ↔ играть» перетекает.
+  Widget _transport(CoverColors colors) {
+    final rim = colors.isFallback ? Colors.white.withValues(alpha: 0.14) : _rim(colors.glow).withValues(alpha: 0.55);
+    Widget glass(Widget child) => ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: rim, width: 1.5),
+              ),
+              child: child,
+            ),
           ),
-          const SizedBox(width: 20),
-          ValueListenableBuilder<bool>(
-            valueListenable: _p.playing,
-            builder: (_, pl, _) => GestureDetector(
-              onTap: _toggle,
+        );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _NudgeButton(
+          key: const ValueKey('player_prev'),
+          icon: CupertinoIcons.backward_fill,
+          dir: -1,
+          onTap: _swipePrev,
+          frame: glass,
+        ),
+        const SizedBox(width: 28),
+        ValueListenableBuilder<bool>(
+          valueListenable: _p.playing,
+          builder: (_, pl, _) => _Pressable(
+            key: const ValueKey('player_play'),
+            onTap: _toggle,
+            child: _BassPulse(
+              player: _p,
+              bass: _bass,
+              radius: 26,
               child: Container(
-                width: 64,
-                height: 64,
-                decoration: const BoxDecoration(
-                  color: Afisha.lime,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(pl ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-                    color: Colors.black, size: 30),
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(color: Afisha.lime, borderRadius: BorderRadius.circular(26)),
+                child: Center(child: _PlayPauseIcon(playing: pl)),
               ),
             ),
           ),
-          const SizedBox(width: 20),
-          IconButton(
-            iconSize: 34,
-            color: Colors.white,
-            constraints: _tapZone,
-            icon: const Icon(CupertinoIcons.forward_fill),
-            onPressed: _swipeNext,
-          ),
-          const SizedBox(width: 16),
-          // Цель для сердечка-анимации (_heartPop) — оно прилетает СЮДА, а не
-          // в центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3).
-          CompositedTransformTarget(
-            link: _favLink,
-            child: IconButton(
-              iconSize: 26,
-              constraints: _tapZone,
-              icon: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-                  color: _fav ? Afisha.lime : Colors.white70),
-              onPressed: _toggleFavButton,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Builder(
-            builder: (context) => IconButton(
-              iconSize: 24,
-              constraints: _tapZone,
-              icon: const Icon(CupertinoIcons.trash, color: Colors.white70),
-              onPressed: () {
-                final now = _p.now.value;
-                if (now != null) _confirmDelete(now);
-              },
-            ),
-          ),
-        ],
-      );
+        ),
+        const SizedBox(width: 28),
+        _NudgeButton(
+          key: const ValueKey('player_next'),
+          icon: CupertinoIcons.forward_fill,
+          dir: 1,
+          onTap: _swipeNext,
+          frame: glass,
+        ),
+      ],
+    );
+  }
 
   // Плашка «Дальше» + список очереди в одном раскрывающемся блоке: свёрнута
   // (высота _queuePeek) — просто строка, ведёшь пальцем — тянется живьём
@@ -955,15 +983,17 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                           GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () => _animateQueueTo(t > 0.5 ? 0 : 1),
+                            onVerticalDragStart: (_) => _queueRaw = _queueOpen.value.clamp(0.0, 1.0),
                             onVerticalDragUpdate: (d) {
-                              _queueOpen.value =
-                                  (_queueOpen.value - d.delta.dy / dragRange).clamp(0.0, 1.0);
+                              _queueRaw -= d.delta.dy / dragRange;
+                              _queueOpen.value = _rubber(_queueRaw);
                             },
                             onVerticalDragEnd: (d) {
                               final v = d.primaryVelocity ?? 0;
-                              if (v < -300) return _animateQueueTo(1);
-                              if (v > 300) return _animateQueueTo(0);
-                              _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0);
+                              final vel = -v / dragRange; // доля высоты в секунду
+                              if (v < -300) return _animateQueueTo(1, velocity: vel);
+                              if (v > 300) return _animateQueueTo(0, velocity: vel);
+                              _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0, velocity: vel);
                             },
                             child: _queueHandleRow(now),
                           ),
@@ -990,15 +1020,21 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     );
   }
 
+  // 27.09.2026 (Alex, по макету «5 кнопок-значков вместо Дальше»): вместо значка радиоволны с долгим
+  // нажатием — пять крупных кнопок, каждая в одно нажатие, включённая лаймовая; повторное нажатие —
+  // обычный Поток. Строку «Дальше: …» убрали — очередь видна, если потянуть полоску вверх.
+  static const _modes = <(String, IconData, String)>[
+    ('similar', CupertinoIcons.waveform_path, 'Похожее'),
+    ('artist', CupertinoIcons.person, 'Исполнитель'),
+    ('favorite', CupertinoIcons.heart_fill, 'Любимое'),
+    ('mood', CupertinoIcons.moon, 'Настроение'),
+    ('genre', CupertinoIcons.music_note_2, 'Жанр'),
+  ];
+
   Widget _queueHandleRow(NowPlaying now) {
-    final q = _p.queueView;
-    final i = _p.currentIndex;
-    final nextTitle = (i >= 0 && i + 1 < q.length)
-        ? '${q[i + 1].title} — ${q[i + 1].artist}'
-        : 'больше ничего';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       child: Column(
         children: [
           Container(
@@ -1009,49 +1045,304 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              // Радио — слева, покрупнее (Alex TG 25.09.2026: «список и так
-              // пальцем вытягивается наверх, замени левый значок на
-              // радиоволну и сделай покрупнее, чтобы видно было, что на неё
-              // нажать можно» — отдельный decorative список-значок тут был
-              // не нужен, разворот панели и так работает по всей строке).
-              // Долгое нажатие — фильтр (см. _openRadioFilter): любимое /
-              // этот исполнитель.
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  key: const ValueKey('radio_button'),
-                  onTap: () => _radio(now),
-                  onLongPress: () => _openRadioFilter(now),
-                  borderRadius: BorderRadius.circular(18),
-                  child: Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: _p.radio,
-                      builder: (_, on, _) => Icon(CupertinoIcons.antenna_radiowaves_left_right,
-                          color: on ? Afisha.lime : Colors.white70, size: 24),
+          const SizedBox(height: 6),
+          ValueListenableBuilder<String?>(
+            valueListenable: _p.radioMode,
+            builder: (_, mode, _) => Row(
+              children: [
+                for (final (key, icon, label) in _modes)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: _modeButton(key, icon, mode == key && _modeLabel != null ? _modeLabel! : label,
+                          mode == key, now),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('Дальше: $nextTitle',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 13.5)),
-              ),
-              const SizedBox(width: 8),
-              const Icon(CupertinoIcons.chevron_up, color: Colors.white54, size: 18),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+
+  Widget _modeButton(String key, IconData icon, String label, bool on, NowPlaying now) {
+    // Нажимается всё — и плитка, и подпись: вместе ~70 точек по высоте (правило «не меньше 64» для машины).
+    return GestureDetector(
+      key: ValueKey('mode_$key'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _selectMode(key, now),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            height: 52,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: on ? Afisha.lime : Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(icon, size: 26, color: on ? Colors.black : Colors.white),
+          ),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(label,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: on ? 0.9 : 0.55))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Режим «что играть дальше» — от ИГРАЮЩЕЙ песни, в одно нажатие, без списков.
+  Future<void> _selectMode(String mode, NowPlaying now) async {
+    HapticFeedback.selectionClick();
+    BlackBox.log('radio_mode', {'mode': mode, 'from': _p.radioMode.value, 'track': now.id});
+    // Настроение и Жанр — выбор из списка (Alex TG 21980: «не по той песне, что играет, а вообще выбор»).
+    if (mode == 'mood' || mode == 'genre') return _selectFromList(mode, now);
+    if (_p.radioMode.value == mode) {
+      await _p.stopRadio();
+      Notice.show('Обычный Поток', duration: const Duration(seconds: 2));
+      return;
+    }
+    if (_p.radio.value) await _p.stopRadio();
+    final hidden = await ref.read(dbProvider).hiddenArtists();
+    final all = (await ref.read(downloadsProvider).list()).where((t) => !hidden.contains(t.artist)).toList();
+    switch (mode) {
+      case 'similar':
+        await _radio(now);
+      case 'artist':
+        // По главному исполнителю, а не по всей строке: у «ILLENIUM feat. Tom Grennan & …» точное
+        // совпадение было только у самой этой песни — «Тут пока нечего поставить» (Alex, скрин
+        // 27.09.2026). Теперь — все песни ILLENIUM, и с гостями, и без (как папки «Моей музыки»).
+        // Несколько исполнителей — спросить, кого слушать дальше (Alex 27.09.2026); один — сразу.
+        final names = artistsOf(now.artist);
+        if (names.length > 1) {
+          final pick = await _pickArtist(names, all, now);
+          if (pick == null || !mounted) return;
+          final k = artistPartKey(pick);
+          await _startFilteredRadio(
+              all.where((t) => artistsOf(t.artist).any((n) => artistPartKey(n) == k)), now, 'Дальше — $pick');
+        } else {
+          final key = artistKey(now.artist);
+          await _startFilteredRadio(
+              all.where((t) => artistKey(t.artist) == key), now, 'Дальше — ${primaryArtist(now.artist)}');
+        }
+      case 'favorite':
+        await _startFilteredRadio(all.where((t) => t.favorite), now, 'Дальше — любимое');
+    }
+    if (_p.radio.value) {
+      _modeLabel = null;
+      _p.radioMode.value = mode;
+    }
+  }
+
+  /// Что выбрано в «Настроении»/«Жанре» — подпись под кнопкой вместо слова («Рэп», «Бодрое»).
+  String? _modeLabel;
+  String? _modeKey; // какая плитка сейчас включена — обводится лаймом
+  DateTime? _metaRetryAt;
+
+  Future<void> _selectFromList(String mode, NowPlaying now) async {
+    final hidden = await ref.read(dbProvider).hiddenArtists();
+    var all = (await ref.read(downloadsProvider).list()).where((t) => !hidden.contains(t.artist)).toList();
+    if (!mounted) return;
+    final active = _p.radioMode.value == mode;
+    // 27.09.2026: настроение — настоящее, по звуку (сервер, moodkeeper.go), а не громкость на три части;
+    // жанр — 11 больших групп вместо ~96 кодов Яндекса (core/genres.dart).
+    String? keyOf(DownloadedTrack t) => mode == 'mood' ? t.mood : genreGroup(t.genre);
+    final counts = <String, int>{};
+    for (final t in all) {
+      final k = keyOf(t);
+      if (k != null && k.isNotEmpty) counts[k] = (counts[k] ?? 0) + 1;
+    }
+    // Пусто — возможно, сервер уже разметил, а телефон ещё не спросил: докачиваем сразу, не ждём
+    // ночной докачки (не чаще раза в 10 минут, чтобы без сети не дёргать каталог на каждое нажатие).
+    // Для настроения — и когда какого-то из 6 ещё нет (сервер добавил новое, телефон не переспросил).
+    final incomplete = counts.isEmpty || (mode == 'mood' && moodOrder.any((o) => !counts.containsKey(o.$1)));
+    if (incomplete && DateTime.now().difference(_metaRetryAt ?? DateTime(2000)) > const Duration(minutes: 10)) {
+      _metaRetryAt = DateTime.now();
+      Notice.show('Подгружаю с компьютера…', duration: const Duration(seconds: 2));
+      try {
+        await ref.read(downloadsProvider).backfillMeta(force: true);
+      } catch (_) {}
+      if (!mounted) return;
+      all = (await ref.read(downloadsProvider).list()).where((t) => !hidden.contains(t.artist)).toList();
+      if (!mounted) return;
+      counts.clear();
+      for (final t in all) {
+        final k = keyOf(t);
+        if (k != null && k.isNotEmpty) counts[k] = (counts[k] ?? 0) + 1;
+      }
+      BlackBox.log('radio_mode', {'mode': mode, 'meta_refetch': counts.length});
+    }
+    if (counts.isEmpty) {
+      Notice.show(mode == 'mood' ? 'Настроение песен ещё считается' : 'Жанры ещё собираются',
+          subtitle: 'программа на компьютере разметит их сама — загляни позже', kind: NoticeKind.warn);
+      return;
+    }
+    final order = mode == 'mood' ? moodOrder : genreGroupOrder;
+    // Жанр, где меньше 10 песен, не показываем — радио из трёх песен быстро кончится (27.09.2026).
+    final tiles = <_Tile>[
+      for (final (k, l, e) in order)
+        if ((counts[k] ?? 0) >= (mode == 'genre' ? 10 : 1))
+          _Tile(k, l, e, count: mode == 'genre' ? counts[k] : null, stripe: mode == 'mood' ? moodColors[k] : null),
+    ];
+    if (mode == 'genre') tiles.sort((a, b) => (b.count ?? 0).compareTo(a.count ?? 0));
+    final pick = await _pickTiles(mode == 'mood' ? 'Настроение' : 'Жанр', tiles, active: active ? _modeKey : null);
+    if (pick == null || !mounted) return;
+    if (pick == '') {
+      await _p.stopRadio();
+      Notice.show('Обычный Поток', duration: const Duration(seconds: 2));
+      return;
+    }
+    if (_p.radio.value) await _p.stopRadio();
+    final label = order.firstWhere((o) => o.$1 == pick).$2;
+    BlackBox.log('radio_mode', {'mode': mode, 'pick': pick});
+    await _startFilteredRadio(all.where((t) => keyOf(t) == pick), now, 'Дальше — $label');
+    if (_p.radio.value) {
+      _modeLabel = label.split(',').first.split(' и ').first; // коротко под кнопкой: «Танцевальная», «Фолк»
+      _modeKey = pick;
+      _p.radioMode.value = mode;
+    }
+  }
+
+  /// Кого из исполнителей песни слушать дальше: шторка со строками 64pt — имя и сколько у него ещё
+  /// песен на телефоне. Без песен — строка приглушена и не нажимается.
+  Future<String?> _pickArtist(List<String> names, List<DownloadedTrack> all, NowPlaying now) {
+    final counts = {
+      for (final n in names)
+        n: all.where((t) => t.id != now.id && artistsOf(t.artist).any((x) => artistPartKey(x) == artistPartKey(n))).length,
+    };
+    // Выбирать не из чего — не показываем меню ради одной строки.
+    final withSongs = [for (final n in names) if (counts[n]! > 0) n];
+    if (withSongs.length == 1) return Future.value(withSongs.first);
+    if (withSongs.isEmpty) {
+      Notice.show('Тут пока нечего поставить',
+          subtitle: 'у ${names.map((n) => '«$n»').join(' и ')} других песен на телефоне нет', kind: NoticeKind.warn);
+      return Future.value();
+    }
+    return showGlassSheet<String>(
+      context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const GlassSheetTitle('Кого слушать дальше?'),
+          for (final n in names)
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: counts[n]! == 0
+                  ? null
+                  : () {
+                      HapticFeedback.selectionClick();
+                      Navigator.pop(ctx, n);
+                    },
+              child: SizedBox(
+                height: 64,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    Icon(CupertinoIcons.person_fill,
+                        color: counts[n]! == 0 ? Afisha.inkDim : Afisha.lime, size: 24),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(n,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: counts[n]! == 0 ? Afisha.inkDim : Afisha.ink)),
+                    ),
+                    Text(counts[n]! == 0 ? 'нет других песен' : '${counts[n]} ${songWord(counts[n]!)}',
+                        style: const TextStyle(fontSize: 14, color: Afisha.inkDim)),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Плитки 2 в ряд в стеклянной шторке (27.09.2026, смешанный вариант Gemini и Алисы, Alex
+  /// «смешай»): крупный эмодзи и название; у настроения — цветная полоска снизу и без чисел, у жанра —
+  /// число песен. Включённая плитка обведена лаймом, сверху «✕ Вернуть обычный Поток» (вернёт '').
+  Future<String?> _pickTiles(String title, List<_Tile> tiles, {String? active}) {
+    return showGlassSheet<String>(
+      context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GlassSheetTitle(title),
+          if (active != null) ...[
+            GlassSheetButton(label: '✕  Вернуть обычный Поток', onTap: () => Navigator.pop(ctx, '')),
+            const SizedBox(height: 12),
+          ],
+          Flexible(
+            child: GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              // У жанра — название в две строки и число песен, плитка чуть выше.
+              childAspectRatio: tiles.any((t) => t.count != null) ? 1.4 : 1.75,
+              children: [for (final t in tiles) _tileView(t, t.key == active, () => Navigator.pop(ctx, t.key))],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tileView(_Tile t, bool on, VoidCallback onTap) => Material(
+        color: on ? Afisha.lime.withValues(alpha: 0.10) : Colors.white.withValues(alpha: 0.07),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: on
+              ? const BorderSide(color: Afisha.lime, width: 2)
+              : BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: Stack(
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(t.emoji, style: const TextStyle(fontSize: 30)),
+                      const SizedBox(height: 4),
+                      Text(t.label,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16, height: 1.15, fontWeight: FontWeight.w600, color: Afisha.ink)),
+                      if (t.count != null)
+                        Text('${t.count} ${songWord(t.count!)}',
+                            style: const TextStyle(fontSize: 12, color: Afisha.inkDim)),
+                    ],
+                  ),
+                ),
+              ),
+              if (t.stripe != null)
+                Positioned(left: 0, right: 0, bottom: 0, height: 3, child: ColoredBox(color: Color(t.stripe!))),
+            ],
+          ),
+        ),
+      );
 
   Widget _queueBody(NowPlaying now) {
     return StatefulBuilder(
@@ -1127,22 +1418,55 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               if (t == 0) return const SizedBox.shrink();
               final scale = 0.6 + Curves.easeOut.transform(t) * 0.9;
               final opacity = t < 0.5 ? t * 2 : (1 - t) * 2;
-              return Opacity(
-                opacity: opacity.clamp(0, 1),
-                child: Transform.scale(
-                  scale: scale,
-                  // Было 120 — от центра экрана хватало места. Растёт теперь
-                  // от кнопки лайка внизу экрана, крупнее — упиралось бы в
-                  // край (Опус-ревью «Поток» 23.09.2026, пункт 3).
-                  child: const Icon(CupertinoIcons.heart_fill,
-                      color: Afisha.lime, size: 90),
-                ),
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Искры разлетаются от сердечка (отложенная анимация из разбора Gemini
+                  // «Сейчас играет», Alex «делай» 27.09.2026).
+                  CustomPaint(size: const Size(220, 220), painter: _SparksPainter(_heart)),
+                  Opacity(
+                    opacity: opacity.clamp(0, 1),
+                    child: Transform.scale(
+                      scale: scale,
+                      // Было 120 — от центра экрана хватало места. Растёт теперь
+                      // от кнопки лайка внизу экрана, крупнее — упиралось бы в
+                      // край (Опус-ревью «Поток» 23.09.2026, пункт 3).
+                      child: const Icon(CupertinoIcons.heart_fill,
+                          color: Afisha.lime, size: 90),
+                    ),
+                  ),
+                ],
               );
             },
           ),
         ),
       );
 
+}
+
+/// 12 лаймовых искр по кругу: вылетают от центра с замедлением, уменьшаются и гаснут.
+/// Перерисовывается сама по [anim] — без перестройки экрана на каждый кадр.
+class _SparksPainter extends CustomPainter {
+  _SparksPainter(this.anim) : super(repaint: anim);
+
+  final Animation<double> anim;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = anim.value;
+    if (t <= 0 || t >= 1) return;
+    final c = size.center(Offset.zero);
+    final fly = Curves.easeOutCubic.transform(t);
+    final paint = Paint()..color = Afisha.lime.withValues(alpha: (1 - t).clamp(0.0, 1.0));
+    for (var i = 0; i < 12; i++) {
+      final a = i * math.pi / 6 + (i.isOdd ? 0.26 : 0);
+      final dist = (i.isOdd ? 70.0 : 96.0) * fly;
+      canvas.drawCircle(c + Offset(math.cos(a), math.sin(a)) * (18 + dist), (i.isOdd ? 3.5 : 5) * (1 - t * 0.7), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SparksPainter old) => old.anim != anim;
 }
 
 // ── живой фон: медленно переливается цветами обложки (Alex TG 18608) ──────
@@ -1162,9 +1486,24 @@ class _LivingBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Размытая обложка — отдельный неподвижный слой: размытие 50 дорогое, а
+    // перелив ниже меняется каждый кадр. Без своей границы весь этот блюр
+    // пересчитывался бы 60 раз в секунду (26.09.2026, вместе с размытием 50).
+    final blurred = img == null
+        ? null
+        : RepaintBoundary(
+            // История: 45 → 22 → 12 → 6 (Alex TG 24.09.2026, «чтобы было видно,
+            // что это обложка»). 26.09.2026 по разбору Gemini Alex сам выбрал
+            // сильное «стеклянное» размытие 50 («10 давай 50»).
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
+              child: Image(image: img!, fit: BoxFit.cover, color: Colors.black.withValues(alpha: 0.12), colorBlendMode: BlendMode.darken),
+            ),
+          );
     return AnimatedBuilder(
       animation: anim,
-      builder: (context, _) {
+      child: blurred,
+      builder: (context, blurredChild) {
         final a = anim.value * 2 * math.pi; // 0..2π за период
         Alignment orbit(double phase, double rx, double ry) => Alignment(
               math.cos(a + phase) * rx,
@@ -1175,14 +1514,7 @@ class _LivingBackdrop extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (img != null)
-                // Alex TG 24.09.2026: «замылен, чтобы было видно что это
-                // обложка размыта» — было 45, потом 22, потом 12, всё ещё
-                // сильно — обложка не узнавалась. Ослабил ещё раз.
-                ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6, tileMode: TileMode.decal),
-                  child: Image(image: img!, fit: BoxFit.cover, color: Colors.black.withValues(alpha: 0.12), colorBlendMode: BlendMode.darken),
-                ),
+              ?blurredChild,
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
@@ -1294,12 +1626,11 @@ class _HelpOverlay extends StatelessWidget {
                     style: TextStyle(color: Afisha.inkDim, fontSize: 12)),
                 const SizedBox(height: 14),
                 row(CupertinoIcons.hand_point_right, 'Тап', 'пауза или играть'),
-                row(CupertinoIcons.arrow_left_right, 'Смахнуть вбок', 'следующая / предыдущая песня'),
+                row(CupertinoIcons.heart, 'Смахнуть вправо', 'в избранное и дальше'),
+                row(CupertinoIcons.trash, 'Смахнуть влево', 'удалить насовсем (и с компьютера) и дальше'),
                 row(CupertinoIcons.chevron_up, 'Смахнуть вверх', 'очередь «Дальше»'),
                 row(CupertinoIcons.chevron_down, 'Смахнуть вниз', 'свернуть плеер'),
                 row(CupertinoIcons.ellipsis, 'Вести по точкам', 'перемотка'),
-                row(CupertinoIcons.trash, 'Урна внизу',
-                    'убрать песню с телефона совсем (спросит причину)'),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,
@@ -1315,4 +1646,254 @@ class _HelpOverlay extends StatelessWidget {
       ),
     );
   }
+}
+
+// Кнопка, которая при касании проседает до 85% и пружинит обратно (разбор Gemini
+// 26.09.2026: живой отклик, как в iOS). Вибрацию даёт сам обработчик (_toggle и т.п.).
+class _Pressable extends StatefulWidget {
+  const _Pressable({super.key, required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<_Pressable> {
+  bool _down = false;
+
+  void _set(bool v) {
+    if (_down != v) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _set(true),
+      onTapCancel: () => _set(false),
+      onTapUp: (_) => _set(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.85 : 1.0,
+        duration: Duration(milliseconds: _down ? 80 : 260),
+        curve: _down ? Curves.easeOutQuad : Curves.elasticOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _CoverColorsTween extends Tween<CoverColors> {
+  _CoverColorsTween({super.end});
+
+  @override
+  CoverColors lerp(double t) => (begin ?? end!).lerpTo(end!, t);
+}
+
+/// Плитка выбора настроения/жанра.
+class _Tile {
+  const _Tile(this.key, this.label, this.emoji, {this.count, this.stripe});
+  final String key;
+  final String label;
+  final String emoji;
+  final int? count;
+  final int? stripe;
+}
+
+/// «Играть» перетекает в «пауза» и обратно за 300 мс, а не подменяется (совет Gemini 27.09.2026).
+class _PlayPauseIcon extends StatefulWidget {
+  const _PlayPauseIcon({required this.playing});
+  final bool playing;
+
+  @override
+  State<_PlayPauseIcon> createState() => _PlayPauseIconState();
+}
+
+class _PlayPauseIconState extends State<_PlayPauseIcon> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+    value: widget.playing ? 1 : 0,
+  );
+
+  @override
+  void didUpdateWidget(_PlayPauseIcon old) {
+    super.didUpdateWidget(old);
+    if (old.playing != widget.playing) {
+      widget.playing ? _c.forward() : _c.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedIcon(
+        icon: AnimatedIcons.play_pause,
+        progress: CurvedAnimation(parent: _c, curve: Curves.easeInOutCubic),
+        color: const Color(0xFF1C1C1C),
+        size: 38,
+      );
+}
+
+/// Цвет кромки капсулы из цвета обложки: той же тональности, но светлее и насыщеннее, чтобы
+/// светился и на тёмной обложке.
+Color _rim(Color c) {
+  final h = HSLColor.fromColor(c);
+  return h.withLightness(h.lightness.clamp(0.55, 0.7)).withSaturation(h.saturation.clamp(0.5, 1.0)).toColor();
+}
+
+/// «Назад/вперёд» в капсуле: на нажатие стрелка коротко прыгает в свою сторону и пружинит обратно
+/// (Alex «2+3+4», 27.09.2026). Зона нажатия — вся половина капсулы, высота 88.
+class _NudgeButton extends StatefulWidget {
+  const _NudgeButton({super.key, required this.icon, required this.dir, required this.onTap, this.frame});
+  final IconData icon;
+  final double dir;
+  final VoidCallback onTap;
+
+  /// Подложка вокруг стрелки (стеклянный скруглённый квадрат); зона нажатия всё равно 80×88.
+  final Widget Function(Widget child)? frame;
+
+  @override
+  State<_NudgeButton> createState() => _NudgeButtonState();
+}
+
+class _NudgeButtonState extends State<_NudgeButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          _c.forward(from: 0);
+          widget.onTap();
+        },
+        child: SizedBox(
+          width: 80,
+          height: 88,
+          child: Center(
+            child: (widget.frame ?? (w) => w)(AnimatedBuilder(
+              animation: _c,
+              builder: (_, child) {
+                final t = _c.value;
+                // быстрый толчок на ~10 точек и затухающая пружинка обратно
+                final dx = math.sin(t * math.pi * 2.2) * (1 - t) * 10 * widget.dir;
+                return Transform.translate(offset: Offset(dx, 0), child: child);
+              },
+              child: Center(child: Icon(widget.icon, color: Colors.white, size: 28)),
+            )),
+          ),
+        ),
+      );
+}
+
+/// Пульс кнопки «играть» под бас (Alex 27.09.2026: «от кнопки плей пульсация под басы»): каждый
+/// кадр смотрит, какое место песни играет, берёт отметку баса (20 в секунду, с сервера) — на удар
+/// вспыхивает лаймовое свечение и кнопка чуть подрастает, дальше гаснет само (~120 мс). Отметок нет
+/// (ещё не посчитаны, нет связи) — спокойно «дышит» раз в 3 секунды. На паузе — замирает. Кадры
+/// идут только когда экран виден (TickerMode скрытых вкладок их останавливает).
+class _BassPulse extends StatefulWidget {
+  const _BassPulse({required this.player, required this.bass, required this.child, this.radius});
+  final PlayerController player;
+
+  /// Скругление свечения — как у кнопки (null — круг).
+  final double? radius;
+  final ValueNotifier<Uint8List?> bass;
+  final Widget child;
+
+  @override
+  State<_BassPulse> createState() => _BassPulseState();
+}
+
+class _BassPulseState extends State<_BassPulse> with SingleTickerProviderStateMixin {
+  late final Ticker _ticker = createTicker(_tick);
+  final ValueNotifier<double> _g = ValueNotifier(0);
+  Duration _last = Duration.zero;
+  Duration _posAt = Duration.zero; // позиция из плеера и когда она пришла — между ними досчитываем
+  DateTime _posTime = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.player.position.addListener(_onPos);
+    widget.player.playing.addListener(_onPlaying);
+    _onPlaying();
+  }
+
+  void _onPos() {
+    _posAt = widget.player.position.value;
+    _posTime = DateTime.now();
+  }
+
+  void _onPlaying() {
+    if (widget.player.playing.value) {
+      _onPos();
+      if (!_ticker.isActive) {
+        _last = Duration.zero;
+        _ticker.start();
+      }
+    } else {
+      if (_ticker.isActive) _ticker.stop();
+      _g.value = 0;
+    }
+  }
+
+  void _tick(Duration elapsed) {
+    final dt = (elapsed - _last).inMicroseconds / 1e6;
+    _last = elapsed;
+    final env = widget.bass.value;
+    double e;
+    if (env != null && env.isNotEmpty) {
+      final pos = _posAt + DateTime.now().difference(_posTime);
+      final i = pos.inMilliseconds ~/ 50;
+      e = (i >= 0 && i < env.length) ? env[i] / 255.0 : 0;
+    } else {
+      e = 0.25 + 0.2 * math.sin(elapsed.inMilliseconds / 3000 * 2 * math.pi); // «дыхание»
+    }
+    final decayed = _g.value * math.exp(-dt / 0.12);
+    _g.value = math.max(e, decayed);
+  }
+
+  @override
+  void dispose() {
+    widget.player.position.removeListener(_onPos);
+    widget.player.playing.removeListener(_onPlaying);
+    _ticker.dispose();
+    _g.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<double>(
+        valueListenable: _g,
+        child: widget.child,
+        builder: (_, g, child) => Transform.scale(
+          scale: 1 + 0.07 * g,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: widget.radius == null ? BoxShape.circle : BoxShape.rectangle,
+              borderRadius: widget.radius == null ? null : BorderRadius.circular(widget.radius!),
+              boxShadow: [
+                BoxShadow(
+                  color: Afisha.lime.withValues(alpha: 0.18 + 0.5 * g),
+                  blurRadius: 12 + 22 * g,
+                  spreadRadius: 1 + 5 * g,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      );
 }

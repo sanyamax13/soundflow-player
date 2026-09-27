@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'apple.dart';
+import 'package:flutter/services.dart';
+
+import 'glass_sheet.dart';
 import 'theme.dart';
 
 /// Причины «Убрать совсем» — 14.09.2026 (Опус-ревью телефона, пункт 9)
@@ -19,75 +21,49 @@ const kRemovalReasons = <String, String>{
 };
 
 /// Показать лист выбора причины удаления — общий и для плеера, и для «Моей
-/// музыки» (одно и то же действие, один и тот же список). null — отменил.
-/// Оформление — стекло (apple.dart, AppleSection/AppleRow) + отдельная кнопка
-/// «Отмена» фирменным лаймом снизу (Alex TG 25.09.2026 — из четырёх
-/// показанных вариантов выбрал этот, «синтез iOS 27 + One UI»).
+/// музыки» (одно и то же действие, один и тот же список). null — отменил,
+/// '' — «Без причины».
+///
+/// 27.09.2026 (разбор Gemini и Алисы, Alex «делай»): общий стеклянный вид шторок
+/// (glass_sheet.dart); первой строкой «Без причины» — удалить одним нажатием, не
+/// выбирая; «Отмена» лаймом внизу — палец идёт к безопасному.
 Future<String?> pickRemovalReason(BuildContext context) {
-  return showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    showDragHandle: true,
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+  return showGlassSheet<String>(
+    context,
+    builder: (ctx) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const GlassSheetTitle('Удалить песню', body: 'Сотрётся с телефона и с компьютера насовсем.'),
+        _reasonRow(ctx, 'Без причины', ''),
+        for (final e in kRemovalReasons.entries) _reasonRow(ctx, e.value, e.key),
+        const SizedBox(height: 12),
+        GlassSheetButton(label: 'Отмена', kind: GlassButtonKind.lime, onTap: () => Navigator.pop(ctx)),
+      ],
+    ),
+  );
+}
+
+Widget _reasonRow(BuildContext ctx, String label, String value) => InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        HapticFeedback.heavyImpact();
+        Navigator.pop(ctx, value);
+      },
+      child: SizedBox(
+        height: 64,
+        child: Row(
           children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Причина удаления',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
-                    color: Afisha.ink,
-                  ),
-                ),
-              ),
-            ),
-            AppleSection(
-              dividerInset: 16,
-              children: [
-                for (final e in kRemovalReasons.entries)
-                  AppleRow(
-                    title: e.value,
-                    destructive: true,
-                    onTap: () => Navigator.pop(ctx, e.key),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: Material(
-                color: Afisha.lime,
-                borderRadius: BorderRadius.circular(24),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: () => Navigator.pop(ctx, null),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      'Отмена',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            const SizedBox(width: 8),
+            const Icon(Icons.delete_outline, color: Afisha.red, size: 26),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Afisha.red)),
             ),
           ],
         ),
       ),
-    ),
-  );
-}
+    );

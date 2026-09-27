@@ -65,32 +65,63 @@ double _maxAffinity(List<Float32List> centroids, Float32List v) {
   return best;
 }
 
-/// «Не больше 2 подряд одного исполнителя» — общий проход по уже
-/// отсортированному пулу id, тот же merge-приём, что в radio.go (Go-версия
-/// не делится кодом с Dart, но приём один и тот же, вынесен один раз здесь
-/// для двух функций ниже).
+/// Разнообразие исполнителей (26.09.2026, общий вывод пяти разборов: «не ставить одного исполнителя
+/// подряд»): песня исполнителя встаёт не раньше, чем через [artistGap] других. Если в пуле остались
+/// только те же исполнители — правило мягко ослабляется (через 2, через 1, подряд), песни не теряются.
+/// Раньше было мягче — «не больше 2 подряд» (тот же merge-приём, что в radio.go).
+const artistGap = 3;
+
 List<String> _limitConsecutiveArtist(List<String> orderedByScore, Map<String, String> artists) {
   final pool = [...orderedByScore];
   final ordered = <String>[];
-  String? lastArtist;
-  var run = 0;
   while (pool.isNotEmpty) {
     var pick = 0;
-    if (run >= 2) {
-      final alt = pool.indexWhere((id) => artists[id] != lastArtist);
-      if (alt != -1) pick = alt;
+    for (var gap = artistGap; gap > 0; gap--) {
+      final recent = {
+        for (var i = ordered.length - 1; i >= 0 && i >= ordered.length - gap; i--) artists[ordered[i]],
+      };
+      final idx = pool.indexWhere((id) => !recent.contains(artists[id]));
+      if (idx != -1) {
+        pick = idx;
+        break;
+      }
     }
-    final id = pool.removeAt(pick);
-    ordered.add(id);
-    final artist = artists[id];
-    if (artist == lastArtist) {
-      run++;
-    } else {
-      lastArtist = artist;
-      run = 1;
-    }
+    ordered.add(pool.removeAt(pick));
   }
   return ordered;
+}
+
+/// «Забытое» в Потоке (26.09.2026, общий вывод пяти разборов: главная ценность своей коллекции —
+/// песни, которые давно не звучали; это и ломает «пузырь вкуса»): примерно каждая [forgottenEvery]-я
+/// позиция отдаётся лучшей по порядку песне из [forgotten] (не играла полгода или ни разу).
+const forgottenEvery = 8;
+
+List<String> mixForgotten(List<String> ordered, Set<String> forgotten) {
+  if (forgotten.isEmpty) return ordered;
+  // Порядок по вкусу не ломаем: на каждую [forgottenEvery]-ю позицию ставим ближайшую по этому
+  // порядку «забытую» песню (которая ещё не стоит), на остальные — просто следующую по порядку.
+  // Всё «забыто» (истории ещё нет) — порядок не меняется.
+  final used = <String>{};
+  final out = <String>[];
+  var next = 0, nextOld = 0;
+  while (out.length < ordered.length) {
+    String? pick;
+    if ((out.length + 1) % forgottenEvery == 0) {
+      while (nextOld < ordered.length && (used.contains(ordered[nextOld]) || !forgotten.contains(ordered[nextOld]))) {
+        nextOld++;
+      }
+      if (nextOld < ordered.length) pick = ordered[nextOld];
+    }
+    if (pick == null) {
+      while (used.contains(ordered[next])) {
+        next++;
+      }
+      pick = ordered[next];
+    }
+    used.add(pick);
+    out.add(pick);
+  }
+  return out;
 }
 
 // Калибровано на реальных данных — см. duplicateSimThreshold в
@@ -205,6 +236,7 @@ List<String> weightedShuffleByTaste({
   required List<Float32List> centroidsLongTerm,
   required List<Float32List> centroidsRecent,
   math.Random? rng,
+  Set<String>? forgotten,
 }) {
   final r = rng ?? math.Random();
   const eps = 0.05;
@@ -222,5 +254,6 @@ List<String> weightedShuffleByTaste({
     keyed.add(MapEntry(id, math.pow(u, 1 / weight).toDouble()));
   }
   keyed.sort((a, b) => b.value.compareTo(a.value));
-  return _limitConsecutiveArtist([for (final e in keyed) e.key], artists);
+  final byTaste = [for (final e in keyed) e.key];
+  return _limitConsecutiveArtist(forgotten == null ? byTaste : mixForgotten(byTaste, forgotten), artists);
 }

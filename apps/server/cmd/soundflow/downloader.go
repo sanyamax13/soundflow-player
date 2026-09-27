@@ -12,8 +12,9 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
+
+	"soundflow/server/internal/proc"
 )
 
 // downloaderProc — менеджер дочернего процесса «качалки» (Python, apps/
@@ -242,16 +243,16 @@ func (d *downloaderProc) startOnce() error {
 		// на диск G, по папкам исполнителей, не мешать с диском C (там и так
 		// места мало). Дефолт — под переопределение своим SOUNDFLOW_TRACK_
 		// CACHE_DIR, если у кого-то G: не диск с музыкой.
-		"TRACK_CACHE_DIR=" + trackCacheDir(),
+		"TRACK_CACHE_DIR="+trackCacheDir(),
 		// торрент-альбомы: и место закачки qBittorrent, и путь в ответах качалки (CANONICAL_ALBUMS_DIR
 		// не задаём — тогда пути не переписываются, как и должно быть на этом компьютере).
 		// ВАЖНО (21.09.2026): в config.py качалки load_dotenv(override=True) — строка ALBUMS_DIR из её
 		// .env главнее этой переменной. Поэтому в .env качалки ALBUMS_DIR тоже стоит на G:\Музыка\Торренты;
 		// меняя путь — править и там (проба 21.09: торрент лёг в E:\soundflow-data\music вопреки этой строке).
-		"ALBUMS_DIR=" + albumsDir(),
+		"ALBUMS_DIR="+albumsDir(),
 		// раскладка альбомов одного исполнителя по папкам исполнителей (см. albumsArtistRoot); в .env качалки
 		// этой строки нет, поэтому её значение не перебивается. Пусто — раскладка выключена.
-		"ALBUMS_ARTIST_ROOT=" + albumsArtistRoot(),
+		"ALBUMS_ARTIST_ROOT="+albumsArtistRoot(),
 	)
 	// Лог качалки — рядом с ней, перезаписываем при старте. Нужен, когда
 	// что-то не качается: окно консоли скрыто, иначе диагностики нет.
@@ -425,11 +426,5 @@ func qbtLaunchCmd(exe string) *exec.Cmd {
 
 // hideChildWindow — не показывать консольное окно дочернего python на Windows.
 func hideChildWindow(cmd *exec.Cmd) {
-	if runtime.GOOS != "windows" {
-		return
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
-	}
+	proc.Quiet(cmd)
 }

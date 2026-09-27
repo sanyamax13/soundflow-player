@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -40,29 +41,50 @@ List<DownloadedTrack> excludeHidden(List<DownloadedTrack> all, Set<String> hidde
 @visibleForTesting
 Future<List<DownloadedTrack>> orderByTaste(Db db, List<DownloadedTrack> items) async {
   final rawVecs = await db.trackVectorsFor([for (final t in items) t.id]);
-  final vecs = <String, Float32List>{};
-  for (final e in rawVecs.entries) {
-    final v = bytesToVec(e.value);
-    if (v != null) vecs[e.key] = v;
-  }
   final (longTerm, recent) = decodeCentroids(await db.kvGet('taste_centroids'));
-  // Не в изоляте (в отличие от офлайн-радио, player_view.dart
-  // _offlineRadioFallback): «Поток» строится один раз при открытии вкладки,
-  // пока на экране уже спиннер загрузки — задержка тут не подвешивает
-  // интерфейс поверх уже играющей музыки так, как подвешивало радио.
-  // Заворачивать в Isolate.run здесь ломало виджет-тесты (boot стрима не
-  // успевает дождаться реального изолята за фиксированные pump()) без
-  // реальной пользы — Alex жаловался на радио, не на открытие «Потока».
-  final orderedIds = weightedShuffleByTaste(
+  // «Забытое»: не играли полгода или ни разу — примерно каждая 8-я песня (local_taste.dart).
+  // Пока истории мало (всё «ни разу») — mixForgotten ничего не меняет.
+  final forgotten = await db.forgottenIds(DateTime.now().subtract(const Duration(days: 180)));
+  // Счёт — в отдельном изоляте (`offlineComputeRunner`, как у офлайн-радио): чёрный ящик
+  // 27.09.2026 — при каждом запуске экран замирал на ~0,5 с, пока 11 700 отпечатков
+  // сравнивались с центрами вкуса прямо на UI-потоке. Тесты подменяют раннер синхронным.
+  final orderedIds = await offlineComputeRunner(_orderJob(
     ids: [for (final t in items) t.id],
-    vecs: vecs,
+    blobs: rawVecs,
     artists: {for (final t in items) t.id: t.artist},
-    centroidsLongTerm: longTerm,
-    centroidsRecent: recent,
-  );
+    longTerm: longTerm,
+    recent: recent,
+    forgotten: forgotten,
+  ));
   final byId = {for (final t in items) t.id: t};
   return [for (final id in orderedIds) if (byId[id] case final t?) t];
 }
+
+/// Отдельной функцией, чтобы замыкание для изолята захватывало только эти данные
+/// (а не базу/экран — их в другой изолят не передать).
+List<String> Function() _orderJob({
+  required List<String> ids,
+  required Map<String, Uint8List> blobs,
+  required Map<String, String> artists,
+  required List<Float32List> longTerm,
+  required List<Float32List> recent,
+  required Set<String> forgotten,
+}) =>
+    () {
+      final vecs = <String, Float32List>{};
+      for (final e in blobs.entries) {
+        final v = bytesToVec(e.value);
+        if (v != null) vecs[e.key] = v;
+      }
+      return weightedShuffleByTaste(
+        ids: ids,
+        vecs: vecs,
+        artists: artists,
+        centroidsLongTerm: longTerm,
+        centroidsRecent: recent,
+        forgotten: forgotten,
+      );
+    };
 
 class _StreamScreenState extends ConsumerState<StreamScreen> {
   List<DownloadedTrack>? _items;
@@ -136,16 +158,26 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
   Future<void> _primeFromCache(Db db, PlayerController player) async {
     if (player.now.value != null || player.streamQueueCount != -1) return;
     final raw = await db.kvGet(_cacheKey);
-    if (raw == null || raw.isEmpty || !mounted) return;
-    List<dynamic> decoded;
+    // Где остановились в прошлый раз (PlayerController.onResumePoint) — эта песня первой и с
+    // того же места: система закрыла приложение на паузе — открыл, а там то же, что было
+    // (чёрный ящик 27.09.2026: Samsung «заморозил» плеер, после открытия — новая очередь).
+    Map<String, dynamic>? resume;
     try {
-      decoded = jsonDecode(raw) as List<dynamic>;
-    } catch (_) {
-      return;
-    }
+      resume = jsonDecode(await db.kvGet('resume_point') ?? '') as Map<String, dynamic>;
+    } catch (_) {}
+    if (!mounted) return;
+    List<dynamic> decoded = const [];
+    try {
+      if (raw != null && raw.isNotEmpty) decoded = jsonDecode(raw) as List<dynamic>;
+    } catch (_) {}
+    if (resume != null) decoded = [resume, ...decoded.where((e) => e is Map && e['id'] != resume!['id'])];
+    if (decoded.isEmpty) return;
+    // Кэш очереди мог устареть: песню с тех пор убрали с телефона. Без этой
+    // проверки она всплывала первой при запуске и не играла (0:00 / 0:00) —
+    // Alex, голосовое TG 26.09.2026, v110. Файл на месте — берём.
     final queue = [
       for (final e in decoded)
-        if (e is Map<String, dynamic>)
+        if (e is Map<String, dynamic> && File(e['path'] as String).existsSync())
           NowPlaying(
             id: e['id'] as String,
             title: e['title'] as String,
@@ -155,7 +187,9 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
           ),
     ];
     if (queue.isEmpty || !mounted) return;
-    await player.playQueue(queue, startIndex: 0, shuffle: false, autoplay: false);
+    final resumed = resume != null && queue.first.id == resume['id'];
+    final pos = resumed ? Duration(milliseconds: (resume['pos_ms'] as num?)?.toInt() ?? 0) : Duration.zero;
+    await player.playQueue(queue, startIndex: 0, shuffle: false, autoplay: false, initialPosition: pos);
     if (mounted) setState(() => _primed = true);
   }
 

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
@@ -10,9 +12,11 @@ import '../../core/cover_thumb.dart';
 import '../../core/format.dart';
 import '../../core/notice.dart';
 import '../../core/apple.dart';
+import '../../core/glass_sheet.dart';
 import '../../core/theme.dart';
 import '../../core/removal_reasons.dart';
 import '../../data/db.dart';
+import '../../data/downloads_repo.dart';
 import '../sync/sync_offer_card.dart';
 import '../player/player_controller.dart';
 import 'artist_grouping.dart';
@@ -38,9 +42,9 @@ class MyMusicScreen extends ConsumerStatefulWidget {
 /// полоске букв (список на тысячи строк — строить всё ради измерения нельзя).
 const double _kRowH = 76;
 const double _kHeaderH = 32;
-const double _kBrokenH = 56;
 const double _kMoreH = 44;
-const double _kRailW = 24;
+// 24 → 44: шире под палец в машине (разбор Gemini 26.09.2026, «Моя музыка»).
+const double _kRailW = 44;
 const int _kMaxArtistHits = 30;
 const int _kMaxSongHits = 150;
 
@@ -77,11 +81,13 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   bool _onlyFav = false;
   List<DownloadedTrack>? _items;
   List<ArtistFolder> _folders = const [];
-  List<DownloadedTrack> _broken = const [];
   int _count = 0;
 
   /// Ключ открытой папки исполнителя — null, если показываем список.
   String? _openKey;
+
+  /// Какие строки страницы исполнителя уже «проявились» (появление лесенкой — один раз на страницу).
+  final _staggered = <int>{};
 
   // Алфавитный список: плоские записи, буквы полоски и куда за какой прыгать.
   List<_Entry> _entries = const [];
@@ -110,11 +116,30 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_items == null) _refresh();
+    if (_items == null) {
+      final d = ref.read(downloadsProvider);
+      d.changes.addListener(_onLibraryChanged);
+      _downloads = d;
+      _refresh();
+    }
+  }
+
+  // Песни на телефоне поменялись (докачалась пачка, убрали) — перечитать список.
+  // Во время закачки события идут часто, поэтому с задержкой: одно обновление
+  // на серию, а не на каждую песню.
+  DownloadsRepo? _downloads;
+  Timer? _libraryDebounce;
+  void _onLibraryChanged() {
+    _libraryDebounce?.cancel();
+    _libraryDebounce = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) _refresh();
+    });
   }
 
   @override
   void dispose() {
+    _downloads?.changes.removeListener(_onLibraryChanged);
+    _libraryDebounce?.cancel();
     _scroll.dispose();
     _searchCtl.dispose();
     _activeLetter.dispose();
@@ -147,8 +172,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     if (!mounted) return;
     setState(() {
       _items = items;
-      _folders = g.folders;
-      _broken = g.broken;
+      // Песни с нечитаемым именем — обычной папкой в конце списка (27.09.2026: отдельный лист
+      // «Имя не читается» с «Исправить имя» убран, имена чистит программа на компьютере сама).
+      _folders = [...g.folders, if (g.broken.isNotEmpty) _BrokenFolder(g.broken)];
       _count = s.count;
       _covers.clear();
       _foldArtist = [for (final t in items) foldName(t.artist)];
@@ -162,6 +188,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       // папка могла остаться без песен (всё удалили) — вернуться к списку
       if (_openKey != null && !_folders.any((f) => f.key == _openKey)) {
         _openKey = null;
+        _staggered.clear();
       }
     });
   }
@@ -172,7 +199,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     final entries = <_Entry>[];
     final letters = <String>[];
     _letterOffset.clear();
-    var y = _broken.isEmpty ? 0.0 : _kBrokenH;
+    var y = 0.0;
     String? cur;
     for (final f in _folders) {
       if (f.letter != cur) {
@@ -210,11 +237,6 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     final off = _letterOffset[letter];
     if (off == null || !_scroll.hasClients) return;
     _scroll.jumpTo(off.clamp(0.0, _scroll.position.maxScrollExtent).toDouble());
-  }
-
-  String _mb(int bytes) {
-    if (bytes >= 1 << 30) return '${(bytes / (1 << 30)).toStringAsFixed(1)} ГБ';
-    return '${(bytes / (1 << 20)).toStringAsFixed(1)} МБ';
   }
 
   /// Обложка исполнителя — первая из его песен, что реально лежит на диске.
@@ -256,26 +278,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     await _refresh();
   }
 
-  Future<bool> _confirm(String title, String body, String okLabel) async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(okLabel),
-          ),
-        ],
-      ),
-    );
-    return yes == true;
-  }
+  // Шторка снизу в общем стиле (core/glass_sheet.dart), а не серое окно посреди экрана.
+  Future<bool> _confirm(String title, String body, String okLabel) =>
+      confirmSheet(context, title: title, body: body, okLabel: okLabel, danger: true);
 
   /// Раньше рядом лежали два похожих пункта — «Не та версия» (удаляла файл
   /// СРАЗУ, без вопроса) и «Удалить песню» (спрашивала да/нет, но не
@@ -285,7 +290,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   Future<void> _removeCompletely(DownloadedTrack t) async {
     final reason = await pickRemovalReason(context);
     if (reason == null || !mounted) return;
-    await ref.read(downloadsProvider).delete(t.id, reason: reason);
+    await ref.read(downloadsProvider).delete(t.id, reason: reason.isEmpty ? null : reason); // '' — «Без причины»
     await _refresh();
   }
 
@@ -310,67 +315,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     for (final t in folder.tracks) {
       await d.delete(t.id);
     }
-    if (mounted) setState(() => _openKey = null);
-    await _refresh();
-  }
-
-  // ─── битые имена ───────────────────────────────────────────────────────
-  Future<void> _fixName(DownloadedTrack t) async {
-    final artistCtl = TextEditingController(
-      text: isBrokenName(t.artist) ? '' : t.artist,
-    );
-    final titleCtl = TextEditingController(
-      text: isBrokenName(t.title) ? '' : t.title,
-    );
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Исправить имя'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: artistCtl,
-              decoration: const InputDecoration(labelText: 'Исполнитель'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: titleCtl,
-              decoration: const InputDecoration(labelText: 'Название'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final artist = artistCtl.text.trim();
-    final title = titleCtl.text.trim();
-    if (artist.isEmpty || title.isEmpty) return;
-    await ref
-        .read(downloadsProvider)
-        .rename(t.id, artist: artist, title: title);
-    await _refresh();
-  }
-
-  Future<void> _deleteBroken(DownloadedTrack t) async {
-    if (!await _confirm(
-      'Удалить эту песню?',
-      'Имя не читается, восстановить неоткуда. Файл сотрётся с телефона.',
-      'Удалить',
-    )) {
-      return;
+    if (mounted) {
+      _staggered.clear();
+      setState(() => _openKey = null);
     }
-    await ref.read(downloadsProvider).delete(t.id, reason: 'broken_tag');
     await _refresh();
   }
 
@@ -430,6 +378,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
 
   void _openFolder(ArtistFolder f) {
     FocusManager.instance.primaryFocus?.unfocus();
+    _staggered.clear();
     setState(() => _openKey = f.key);
   }
 
@@ -448,7 +397,20 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       fit: StackFit.expand,
       children: [
         Offstage(offstage: folder != null, child: _artistList()),
-        if (folder != null) _artistDetail(folder),
+        // Страница исполнителя «выезжает из глубины»: 0.95 → 1 и проявление
+        // за 300 мс (разбор Gemini 26.09.2026).
+        if (folder != null)
+          TweenAnimationBuilder<double>(
+            key: ValueKey(folder.key),
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.fastOutSlowIn,
+            builder: (_, t, child) => Opacity(
+              opacity: t,
+              child: Transform.scale(scale: 0.95 + 0.05 * t, child: child),
+            ),
+            child: _artistDetail(folder),
+          ),
       ],
     );
   }
@@ -500,7 +462,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : searching
                   ? _searchResults()
-                  : (_folders.isEmpty && _broken.isEmpty)
+                  : _folders.isEmpty
                   ? _empty()
                   : _alphabetList(),
             ),
@@ -559,7 +521,6 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
-              if (_broken.isNotEmpty) SliverToBoxAdapter(child: _brokenRow()),
               SliverPadding(
                 padding: const EdgeInsets.only(right: _kRailW),
                 sliver: SliverVariedExtentList(
@@ -572,6 +533,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                   }, childCount: entries.length),
                 ),
               ),
+              // Низ списка не прячется под стеклянным мини-плеером и меню
+              // (они теперь поверх содержимого, shell.dart extendBody).
+              SliverToBoxAdapter(child: SizedBox(height: MediaQuery.paddingOf(context).bottom)),
             ],
           ),
         ),
@@ -584,20 +548,29 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
             valueListenable: _railShown,
             builder: (_, l, _) => l == null
                 ? const SizedBox.shrink()
-                : Container(
-                    width: 72,
-                    height: 72,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Afisha.lime.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Text(
-                      l,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 34,
-                        fontWeight: FontWeight.w700,
+                // Стеклянный квадрат 100×100 с буквой 40pt — видно, куда прыгнул,
+                // не глядя на палец (разбор Gemini 26.09.2026).
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                        ),
+                        child: Text(
+                          l,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 40,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -617,7 +590,8 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       builder: (context, c) {
         final h = c.maxHeight;
         final slot = h / letters.length;
-        final step = slot >= 12 ? 1 : (12 / slot).ceil();
+        // буквы 12pt (было 9.5 — мелко для машины, вердикт Gemini 26.09.2026)
+        final step = slot >= 15 ? 1 : (15 / slot).ceil();
         void go(double dy) {
           final i = (dy / h * letters.length).floor().clamp(
             0,
@@ -649,11 +623,11 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                       minWidth: 0,
                       minHeight: 0,
                       maxWidth: _kRailW,
-                      maxHeight: 18,
+                      maxHeight: 22,
                       child: letters[i] == cur
                           ? Container(
-                              width: 16,
-                              height: 16,
+                              width: 20,
+                              height: 20,
                               alignment: Alignment.center,
                               decoration: const BoxDecoration(
                                 color: Afisha.lime,
@@ -663,7 +637,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                                 letters[i],
                                 style: const TextStyle(
                                   color: Colors.black,
-                                  fontSize: 9.5,
+                                  fontSize: 12,
                                   height: 1,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -674,7 +648,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                               letters[i],
                               style: const TextStyle(
                                 color: Afisha.inkDim,
-                                fontSize: 9.5,
+                                fontSize: 12,
                                 height: 1,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -724,7 +698,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     required String title,
     required String subtitle,
     Widget? trailing,
-  }) => InkWell(
+  }) => _PressRow(
     onTap: onTap,
     child: Container(
       height: _kRowH,
@@ -733,13 +707,8 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          const Positioned(
-            left: 62,
-            right: -4,
-            bottom: 0,
-            height: 0.5,
-            child: ColoredBox(color: Afisha.sep),
-          ),
+          // Линий между строками больше нет — хватает отступов (вердикт Gemini
+          // 26.09.2026: в iOS/One UI разделители — лишний шум).
           Row(
             children: [
               leading,
@@ -766,9 +735,11 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Afisha.inkDim,
-                        fontSize: 13,
+                      // 13 серым → 14 Medium, 55% белого (разбор Gemini 26.09.2026).
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -787,32 +758,43 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     leading: CoverThumb(
       path: _artistCover(f),
       url: f.tracks.isNotEmpty ? coverUrlFor(f.tracks.first.id) : null,
-      size: 48,
+      size: 56,
       radius: 12,
       label: f.display,
     ),
     title: f.display,
     subtitle: '${f.count} ${songWord(f.count)}',
-    trailing: PopupMenuButton<String>(
-      icon: const Icon(CupertinoIcons.ellipsis, color: Afisha.inkDim, size: 22),
-      onSelected: (v) {
-        switch (v) {
-          case 'play':
-            _playList(f.tracks, 0);
-          case 'shuffle':
-            _playList(f.tracks, 0, shuffle: true);
-          case 'delete':
-            _deleteArtist(f);
-        }
-      },
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: 'play', child: Text('Играть всё')),
-        PopupMenuItem(value: 'shuffle', child: Text('Вперемешку')),
-        PopupMenuItem(
-          value: 'delete',
-          child: Text('Удалить всего исполнителя'),
-        ),
-      ],
+    trailing: _moreButton(() async {
+      final v = await showAppleActionSheet<String>(
+        context,
+        title: f.display,
+        actions: const [
+          SheetAction('play', 'Играть всё', CupertinoIcons.play_fill),
+          SheetAction('shuffle', 'Вперемешку', CupertinoIcons.shuffle),
+          SheetAction('delete', 'Удалить всего исполнителя', CupertinoIcons.trash, destructive: true),
+        ],
+      );
+      switch (v) {
+        case 'play':
+          _playList(f.tracks, 0);
+        case 'shuffle':
+          _playList(f.tracks, 0, shuffle: true);
+        case 'delete':
+          _deleteArtist(f);
+      }
+    }),
+  );
+
+  // «•••» справа, зона нажатия 64×64 (разбор Gemini 26.09.2026).
+  Widget _moreButton(VoidCallback onTap) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: onTap,
+    child: const SizedBox(
+      width: 64,
+      height: 64,
+      child: Center(
+        child: Icon(CupertinoIcons.ellipsis, color: Afisha.inkDim, size: 22),
+      ),
     ),
   );
 
@@ -825,7 +807,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       leading: CoverThumb(
         path: t.coverPath,
         url: coverUrlFor(t.id),
-        size: 48,
+        size: 56,
         radius: 12,
         label: primaryArtist(t.artist),
       ),
@@ -838,50 +820,41 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
   // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай, сам расположишь как
   // надо»): было VisualDensity.compact — тап ещё меньше стандарта. Строка
   // высотой 76 (_kRowH) — 64 помещается, задел под соседние строки есть.
+  // Разбор Gemini 26.09.2026 (Alex «8 делай»): сердце видно только у любимых
+  // (нажатие — убрать из избранного), добавить — через «•••». Строка чище, в машине
+  // меньше шансов попасть не туда. Меню — нижняя шторка с крупными пунктами.
   Widget _songActions(DownloadedTrack t) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      IconButton(
-        constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-        onPressed: () => _toggleFav(t),
-        icon: Icon(
-          t.favorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-          color: t.favorite ? Afisha.lime : Afisha.inkDim,
-          size: 22,
+      if (t.favorite)
+        IconButton(
+          constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
+          onPressed: () => _toggleFav(t),
+          icon: const Icon(CupertinoIcons.heart_fill, color: Afisha.lime, size: 22),
         ),
-      ),
-      PopupMenuButton<String>(
-        padding: EdgeInsets.zero,
-        icon: SizedBox(
-          width: 64,
-          height: 64,
-          child: Center(
-            child: Icon(
-              CupertinoIcons.ellipsis,
-              color: Afisha.inkDim,
-              size: 22,
+      _moreButton(() async {
+        final v = await showAppleActionSheet<String>(
+          context,
+          title: '${t.title} — ${t.artist}',
+          actions: [
+            SheetAction(
+              'fav',
+              t.favorite ? 'Убрать из избранного' : 'В избранное',
+              t.favorite ? CupertinoIcons.heart_slash : CupertinoIcons.heart_fill,
             ),
-          ),
-        ),
-        onSelected: (v) {
-          switch (v) {
-            case 'fav':
-              _toggleFav(t);
-            case 'less':
-              _lessLike(t);
-            case 'delete':
-              _removeCompletely(t);
-          }
-        },
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: 'fav',
-            child: Text(t.favorite ? 'Убрать из избранного' : 'В избранное'),
-          ),
-          const PopupMenuItem(value: 'less', child: Text('Меньше такого')),
-          const PopupMenuItem(value: 'delete', child: Text('Убрать совсем')),
-        ],
-      ),
+            const SheetAction('less', 'Меньше такого', CupertinoIcons.hand_thumbsdown),
+            const SheetAction('delete', 'Убрать совсем', CupertinoIcons.trash, destructive: true),
+          ],
+        );
+        switch (v) {
+          case 'fav':
+            _toggleFav(t);
+          case 'less':
+            _lessLike(t);
+          case 'delete':
+            _removeCompletely(t);
+        }
+      }),
     ],
   );
 
@@ -902,6 +875,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     final rows = res.rows;
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
       itemCount: rows.length,
       itemExtentBuilder: (i, _) => switch (rows[i]) {
         String() => _kHeaderH,
@@ -939,129 +913,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     );
   }
 
-  // ─── «Имя не читается»: одна строка сверху, песни — в листе по нажатию ───
-  Widget _brokenRow() => InkWell(
-    onTap: _openBroken,
-    child: Container(
-      height: _kBrokenH,
-      color: Afisha.surfaceHi,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          const Icon(
-            CupertinoIcons.exclamationmark_circle,
-            color: Afisha.inkDim,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Имя не читается — ${_broken.length} ${songWord(_broken.length)}',
-              style: const TextStyle(
-                color: Afisha.inkDim,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const Icon(
-            CupertinoIcons.chevron_forward,
-            color: Afisha.chevron,
-            size: 15,
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Future<void> _openBroken() => showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Afisha.surfaceHi,
-    builder: (ctx) => SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(ctx).height * 0.7,
-        ),
-        child: SingleChildScrollView(child: _brokenSection(ctx)),
-      ),
-    ),
-  );
-
-  /// Песни с нечитаемым именем. Каждое действие сперва закрывает лист (его
-  /// содержимое само не обновится), потом делает своё; строку сверху можно
-  /// нажать ещё раз, если что-то осталось.
-  Widget _brokenSection(BuildContext sheet) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Имя не читается — ${_broken.length} ${songWord(_broken.length)}',
-          style: const TextStyle(
-            color: Afisha.inkDim,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        for (final t in _broken)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isBrokenName(t.title)
-                            ? '(название не читается)'
-                            : t.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      Text(
-                        t.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Afisha.inkDim,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(sheet);
-                    _fixName(t);
-                  },
-                  child: const Text('Исправить имя'),
-                ),
-                IconButton(
-                  constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-                  onPressed: () {
-                    Navigator.pop(sheet);
-                    _deleteBroken(t);
-                  },
-                  icon: const Icon(
-                    CupertinoIcons.trash,
-                    color: Afisha.inkDim,
-                    size: 20,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
-
   // ─── песни одной папки исполнителя ─────────────────────────────────────
   Widget _artistDetail(ArtistFolder folder) {
+    // Альбомы в плеере не нужны (Alex TG 21750, 26.09.2026: «только артисты») — просто по названию.
     final tracks = folder.tracks.toList()
       ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
     return Scaffold(
@@ -1079,50 +933,35 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       ),
       body: Column(
         children: [
+          // «Играть всё» / «Вперемешку» — крупные таблетки 56pt вместо текстовых
+          // ссылок (разбор Gemini 26.09.2026): вслепую в машине.
+          Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text(
+              '${tracks.length} ${songWord(tracks.length)}',
+              style: const TextStyle(color: Afisha.inkDim),
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Row(
               children: [
-                Text(
-                  '${tracks.length} ${songWord(tracks.length)}',
-                  style: const TextStyle(color: Afisha.inkDim),
-                ),
-                // FittedBox: на узком экране или с крупным шрифтом кнопки
-                // чуть сожмутся, а не вылезут за край.
                 Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton.icon(
-                            onPressed: tracks.isEmpty
-                                ? null
-                                : () => _playList(tracks, 0),
-                            icon: const Icon(
-                              CupertinoIcons.play_fill,
-                              size: 16,
-                            ),
-                            label: const Text('Играть всё'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Afisha.lime,
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: tracks.isEmpty
-                                ? null
-                                : () => _playList(tracks, 0, shuffle: true),
-                            icon: const Icon(CupertinoIcons.shuffle, size: 18),
-                            label: const Text('Вперемешку'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Afisha.inkDim,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  child: _pill(
+                    label: 'Играть всё',
+                    icon: CupertinoIcons.play_fill,
+                    accent: true,
+                    onTap: tracks.isEmpty ? null : () => _playList(tracks, 0),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _pill(
+                    label: 'Вперемешку',
+                    icon: CupertinoIcons.shuffle,
+                    accent: false,
+                    onTap: tracks.isEmpty ? null : () => _playList(tracks, 0, shuffle: true),
                   ),
                 ),
               ],
@@ -1131,9 +970,15 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
           const Divider(height: 0.5, thickness: 0.5, color: Afisha.sep),
           Expanded(
             child: ListView.builder(
+              padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
               itemCount: tracks.length,
               itemExtent: _kRowH,
-              itemBuilder: (_, i) => _songRow(tracks, i),
+              // Появление «лесенкой» — только у первых 12 строк и только один раз: в ленивом списке
+              // строка пересоздаётся при прокрутке, и каждая заново «проявлялась» 0,4–0,8 с — список
+              // мигал и казался пустым (ревизия кода 27.09.2026).
+              itemBuilder: (_, i) => (i < 12 && _staggered.add(i))
+                  ? _StaggerIn(index: i, child: _songRow(tracks, i))
+                  : _songRow(tracks, i),
             ),
           ),
         ],
@@ -1141,17 +986,57 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
     );
   }
 
+  Widget _pill({
+    required String label,
+    required IconData icon,
+    required bool accent,
+    required VoidCallback? onTap,
+  }) => _PressRow(
+    onTap: onTap ?? () {},
+    radius: 28,
+    child: Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: accent ? Afisha.lime : Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 20, color: accent ? Colors.black : Afisha.ink),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: accent ? Colors.black : Afisha.ink,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   Widget _songRow(List<DownloadedTrack> tracks, int i) {
     final t = tracks[i];
-    // Одна строка характеристик: «320k · MP3 · 3:45 · 7.7 МБ». Совместки в
-    // строку не выносим (Alex TG 18714) — полное написание видно в теге.
-    final spec = [if (t.specs.isNotEmpty) t.specs, _mb(t.bytes)].join(' · ');
+    // Было «320k · MP3 · 3:45 · 7.7 МБ» (Alex TG 18704); 26.09.2026 по разбору
+    // Gemini Alex решил убрать технические данные («7 делай») — только длина.
+    // Альбома на телефоне в базе нет, поэтому без «Альбом ·».
+    final d = t.durationSec;
+    final dur = d == null || d <= 0 ? '' : '${d ~/ 60}:${(d % 60).toString().padLeft(2, '0')}';
+    // Только длительность: альбомы в плеере не нужны (Alex TG 21750, 26.09.2026).
+    final spec = dur;
     return _rowShell(
       onTap: () => _playList(tracks, i),
       leading: CoverThumb(
         path: t.coverPath,
         url: coverUrlFor(t.id),
-        size: 48,
+        size: 56,
         radius: 12,
         label: primaryArtist(t.artist),
       ),
@@ -1180,4 +1065,106 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       ),
     ),
   );
+}
+
+/// Строка/кнопка, которая при касании подсвечивается (8% белого) и чуть
+/// проседает (98%), отпустил — пружинит назад (разбор Gemini 26.09.2026).
+class _PressRow extends StatefulWidget {
+  const _PressRow({required this.onTap, required this.child, this.radius = 0});
+
+  final VoidCallback onTap;
+  final Widget child;
+  final double radius;
+
+  @override
+  State<_PressRow> createState() => _PressRowState();
+}
+
+class _PressRowState extends State<_PressRow> {
+  bool _down = false;
+
+  void _set(bool v) {
+    if (_down != v) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.98 : 1.0,
+        duration: Duration(milliseconds: _down ? 80 : 350),
+        curve: _down ? Curves.easeOut : Curves.elasticOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 80),
+          decoration: BoxDecoration(
+            color: _down ? Colors.white.withValues(alpha: 0.08) : Colors.transparent,
+            borderRadius: BorderRadius.circular(widget.radius),
+          ),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Строки страницы исполнителя выплывают снизу каскадом: сдвиг 20pt, 400 мс,
+/// задержка 30 мс между строками (только первые ~12 — дальше без задержки).
+class _StaggerIn extends StatefulWidget {
+  const _StaggerIn({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggerIn> createState() => _StaggerInState();
+}
+
+class _StaggerInState extends State<_StaggerIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 400),
+  );
+  Timer? _delay;
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.index.clamp(0, 12);
+    _delay = Timer(Duration(milliseconds: 30 * i), () {
+      if (mounted) _c.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+    return AnimatedBuilder(
+      animation: a,
+      child: widget.child,
+      builder: (_, child) => Opacity(
+        opacity: a.value,
+        child: Transform.translate(offset: Offset(0, 20 * (1 - a.value)), child: child),
+      ),
+    );
+  }
+}
+
+/// Папка «Имя не читается» — в самом конце списка (раздел «#»), как любой исполнитель.
+class _BrokenFolder extends ArtistFolder {
+  _BrokenFolder(List<DownloadedTrack> tracks) : super('_broken', 'Имя не читается', tracks);
+
+  @override
+  late final String letter = '#';
 }

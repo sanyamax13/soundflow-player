@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../app/providers.dart';
 import '../../core/apple.dart';
+import '../../core/glass_sheet.dart';
 import '../../core/cover_thumb.dart';
 import '../../core/notice.dart';
 import '../../core/staggered_entry.dart';
@@ -46,6 +48,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   String? _playingKey; // artist|title того, что сейчас звучит/грузится
   bool _playingLoading = false;
 
+  // «Слушать всё» (Alex «да», 26.09.2026): песни играют подряд — кончилась одна, сама
+  // начинается следующая. Для машины: слушаешь и скачиваешь понравившееся, ничего не тыкая.
+  bool _playAll = false;
+
   // Прогресс «Скачать» (Alex TG 24.09.2026: «нет прогресс бара, качается ли,
   // что делает») — artist|title → состояние из /api/acquire/log. Опрашивается,
   // пока в этом словаре есть хоть одна «running» запись.
@@ -62,10 +68,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     _player.playerStateStream.listen((s) {
       if (!mounted) return;
       if (s.processingState == ProcessingState.completed) {
+        final finished = _playingKey;
         setState(() {
           _playingKey = null;
           _playingLoading = false;
         });
+        if (_playAll) _playNextAfter(finished);
       }
     });
   }
@@ -187,6 +195,67 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
   }
 
+  /// Шторка с полем ссылки в общем стеклянном виде (glass_sheet.dart). Если в буфере уже лежит
+  /// ссылка Яндекс.Музыки — сверху большая кнопка «Добавить из буфера», вставлять руками не надо
+  /// (разбор Алисы 27.09.2026). Нет — клавиатура открыта сразу, «Показать» — Enter или кнопка.
+  Future<void> _askPlaylistLink() async {
+    String? clip;
+    try {
+      // С ограничением по времени: буфер не должен задерживать саму шторку.
+      final t = (await Clipboard.getData(Clipboard.kTextPlain).timeout(const Duration(milliseconds: 400)))?.text?.trim();
+      if (t != null && t.contains('music.yandex')) clip = t;
+    } catch (_) {}
+    if (!mounted) return;
+    final go = await showGlassSheet<bool>(
+      context,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const GlassSheetTitle('Плейлист Яндекс.Музыки',
+                body: 'В Яндекс.Музыке: плейлист → «Поделиться» → скопировать ссылку'),
+            if (clip != null) ...[
+              GlassSheetButton(
+                label: 'Добавить из буфера',
+                kind: GlassButtonKind.lime,
+                onTap: () {
+                  _urlCtrl.text = clip!;
+                  Navigator.pop(ctx, true);
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              controller: _urlCtrl,
+              autofocus: clip == null,
+              autocorrect: false,
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.go,
+              style: const TextStyle(fontSize: 17),
+              decoration: InputDecoration(
+                hintText: 'https://music.yandex.ru/…',
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.08),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+              ),
+              onSubmitted: (_) => Navigator.pop(ctx, true),
+            ),
+            const SizedBox(height: 12),
+            GlassSheetButton(
+              label: 'Показать',
+              kind: clip == null ? GlassButtonKind.lime : GlassButtonKind.plain,
+              onTap: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (go == true && mounted) await _showPlaylist();
+  }
+
   void _closePlaylist() {
     setState(() {
       _playlistMode = false;
@@ -205,6 +274,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   Future<void> _togglePlay(Map<String, dynamic> t) async {
     final key = _key(t);
     if (_playingKey == key) {
+      _playAll = false; // остановил сам — «подряд» тоже выключаем
       await _player.stop();
       if (!mounted) return;
       setState(() {
@@ -242,15 +312,40 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
   }
 
+  /// Следующая после [key] песня списка (для «Слушать всё»); конец списка — стоп.
+  void _playNextAfter(String? key) {
+    final i = key == null ? -1 : _items.indexWhere((t) => _key(t) == key);
+    if (i + 1 < _items.length) {
+      unawaited(_togglePlay(_items[i + 1]));
+    } else {
+      setState(() => _playAll = false);
+    }
+  }
+
+  Future<void> _toggleAll() async {
+    if (_playAll) {
+      setState(() => _playAll = false);
+      await _player.stop();
+      if (mounted) setState(() => _playingKey = null);
+      return;
+    }
+    if (_items.isEmpty) return;
+    setState(() => _playAll = true);
+    final cur = _playingKey == null ? -1 : _items.indexWhere((t) => _key(t) == _playingKey);
+    if (cur < 0) await _togglePlay(_items.first); // уже что-то играет — просто дальше пойдёт подряд
+  }
+
   Future<void> _dismiss(int index) async {
     final t = _items[index];
     final artist = '${t['artist'] ?? ''}';
     final title = '${t['title'] ?? ''}';
-    if (_playingKey == _key(t)) await _player.stop();
+    // Сначала убрать из списка (свайп требует, чтобы строка ушла сразу), потом остановить звук.
+    final wasPlaying = _playingKey == _key(t);
     setState(() {
       _items = [..._items]..removeAt(index);
-      if (_playingKey == _key(t)) _playingKey = null;
+      if (wasPlaying) _playingKey = null;
     });
+    if (wasPlaying) await _player.stop();
     try {
       await _api.discoverDismiss(artist, title);
     } catch (_) {
@@ -297,44 +392,30 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         actions: [
           if (_playlistMode)
             TextButton(onPressed: _closePlaylist, child: const Text('Закрыть'))
-          else
+          else ...[
+            // Ссылка на плейлист нужна редко — под значком, а не полем на пол-экрана
+            // (разбор Gemini 26.09.2026, «Открытия»).
+            IconButton(
+              onPressed: _askPlaylistLink,
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
+              icon: const Icon(CupertinoIcons.link, color: Colors.white70),
+              tooltip: 'Плейлист по ссылке',
+            ),
             IconButton(
               onPressed: _loadingList ? null : () => _loadWave(refresh: _day == 0),
-              icon: const Icon(CupertinoIcons.refresh),
+              constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
+              icon: Icon(CupertinoIcons.refresh, color: _loadingList ? Colors.white24 : Colors.white70),
               tooltip: 'Пересобрать волну',
             ),
+          ],
         ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _urlCtrl,
-                    enabled: !_playlistMode,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      hintText: 'Ссылка на плейлист Яндекс.Музыки',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) => _showPlaylist(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _playlistMode ? null : _showPlaylist,
-                  child: const Text('Показать'),
-                ),
-              ],
-            ),
-          ),
           if (!_playlistMode && !_loadingDays && _days.length > 1)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              // 8 → 16 снизу: в машине палец не должен цеплять соседнее (вердикт Gemini 26.09.2026)
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: AppleSegmented<int>(
                 options: {
                   for (final d in _days)
@@ -342,6 +423,25 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 },
                 selected: _day,
                 onChanged: _selectDay,
+              ),
+            ),
+          if (!_loadingList && _items.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                height: 56,
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _playAll ? Afisha.groupHi : Afisha.lime,
+                    foregroundColor: _playAll ? Afisha.ink : Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                  ),
+                  onPressed: _toggleAll,
+                  icon: Icon(_playAll ? CupertinoIcons.stop_fill : CupertinoIcons.play_fill, size: 20),
+                  label: Text(_playAll ? 'Остановить' : 'Слушать всё',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                ),
               ),
             ),
           if (_error != null)
@@ -364,14 +464,26 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         itemCount: _items.length,
                         itemBuilder: (context, i) => StaggeredEntry(
                           index: i,
-                          child: _DiscoverRow(
+                          // «Убрать» — свайпом влево (как в iOS), кнопки ✕ в строке больше нет;
+                          // «Вернуть» — в плашке снизу (_dismiss).
+                          child: Dismissible(
+                            key: ValueKey('d-${_key(_items[i])}'),
+                            direction: DismissDirection.endToStart,
+                            onDismissed: (_) => _dismiss(i),
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 28),
+                              color: Afisha.red,
+                              child: const Icon(CupertinoIcons.trash, color: Colors.white, size: 26),
+                            ),
+                            child: _DiscoverRow(
                             track: _items[i],
                             playing: _playingKey == _key(_items[i]) && !_playingLoading,
                             loading: _playingKey == _key(_items[i]) && _playingLoading,
                             status: _acquireStatus[_key(_items[i])],
                             onPlay: () => _togglePlay(_items[i]),
                             onAcquire: () => _acquire(i),
-                            onDismiss: () => _dismiss(i),
+                          ),
                           ),
                         ),
                       ),
@@ -382,6 +494,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 }
 
+/// Строка «Открытий» (разбор Gemini 26.09.2026, Alex «беру»): название сверху, исполнитель снизу;
+/// нажатие на строку — послушать/пауза; справа одна кнопка «скачать» (кружок пока качается,
+/// галочка — есть); «убрать» — свайпом влево (см. Dismissible выше). Играющая — лаймом.
 class _DiscoverRow extends StatelessWidget {
   const _DiscoverRow({
     required this.track,
@@ -390,7 +505,6 @@ class _DiscoverRow extends StatelessWidget {
     required this.status,
     required this.onPlay,
     required this.onAcquire,
-    required this.onDismiss,
   });
 
   final Map<String, dynamic> track;
@@ -402,70 +516,94 @@ class _DiscoverRow extends StatelessWidget {
 
   final VoidCallback onPlay;
   final VoidCallback onAcquire;
-  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
     final artist = '${track['artist'] ?? ''}';
     final title = '${track['title'] ?? ''}';
-    final album = '${track['album'] ?? ''}';
     final haveIt = track['already_have'] == true || status?.state == 'done';
     final s = status;
-    return ListTile(
-      leading: CoverThumb(url: '${track['cover_url'] ?? ''}', label: artist),
-      title: Text('$artist — $title', maxLines: 1, overflow: TextOverflow.ellipsis),
-      // Пока качается/если не вышло — показываем что именно происходит, а не
-      // альбом (Alex TG 24.09.2026: «нет прогресс бара, качается ли, что
-      // делает и т.д.»).
-      subtitle: s != null && s.state != 'done'
-          ? Text(
-              s.note.isEmpty ? (s.state == 'running' ? 'качаю…' : 'не вышло') : s.note,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: s.state == 'fail' ? Colors.redAccent : Afisha.lime),
-            )
-          : album.isEmpty
-              ? null
-              : Text(album, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        // 25.09.2026 (Gemini, Alex «кнопки на 64 точки делай»): видимый
-        // размер иконок тот же — растёт только зона нажатия вокруг.
-        children: [
-          IconButton(
-            onPressed: loading ? null : onPlay,
-            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-            icon: loading
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : Icon(playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill),
-          ),
-          if (haveIt)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(Icons.check_circle, color: Afisha.lime, size: 22),
-            )
-          else if (s?.state == 'running')
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-            )
-          else
-            IconButton(
-              onPressed: onAcquire,
-              constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-              icon: Icon(
-                s?.state == 'fail' ? CupertinoIcons.arrow_clockwise : CupertinoIcons.cloud_download,
-                color: s?.state == 'fail' ? Colors.redAccent : null,
+    final active = playing || loading;
+    // Пока качается/если не вышло — вместо исполнителя что именно происходит
+    // (Alex TG 24.09.2026: «нет прогресс бара, качается ли, что делает»).
+    final sub = s != null && s.state != 'done'
+        ? (s.note.isEmpty ? (s.state == 'running' ? 'качаю…' : 'не вышло') : s.note)
+        : artist;
+    final subColor = s != null && s.state == 'fail'
+        ? Colors.redAccent
+        : (s != null && s.state == 'running' ? Afisha.lime : Colors.white.withValues(alpha: 0.55));
+    return InkWell(
+      onTap: loading ? null : onPlay,
+      child: SizedBox(
+        height: 76,
+        child: Row(
+          children: [
+            const SizedBox(width: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CoverThumb(url: '${track['cover_url'] ?? ''}', label: artist, size: 56, radius: 12),
+                    if (active)
+                      ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        child: Center(
+                          child: loading
+                              ? const SizedBox(
+                                  width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Afisha.lime))
+                              : const Icon(CupertinoIcons.speaker_2_fill, color: Afisha.lime, size: 24),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-              tooltip: s?.state == 'fail' ? 'Попробовать снова' : 'Скачать',
             ),
-          IconButton(
-            onPressed: onDismiss,
-            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-            icon: const Icon(CupertinoIcons.xmark, size: 18),
-            tooltip: 'Убрать',
-          ),
-        ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w600, color: active ? Afisha.lime : Afisha.ink)),
+                  const SizedBox(height: 2),
+                  Text(sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: subColor)),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 64,
+              height: 64,
+              child: haveIt
+                  ? const Icon(CupertinoIcons.checkmark_alt_circle_fill, color: Afisha.lime, size: 26)
+                  : s?.state == 'running'
+                      ? const Center(
+                          child: SizedBox(
+                              width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Afisha.lime)))
+                      : IconButton(
+                          onPressed: onAcquire,
+                          icon: Icon(
+                            // закрашенная — тонкий контур терялся на чёрном (вердикт Gemini 26.09.2026)
+                            s?.state == 'fail' ? CupertinoIcons.arrow_clockwise : CupertinoIcons.cloud_download_fill,
+                            color: s?.state == 'fail' ? Colors.redAccent : Colors.white.withValues(alpha: 0.8),
+                            size: 26,
+                          ),
+                          tooltip: s?.state == 'fail' ? 'Попробовать снова' : 'Скачать',
+                        ),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
       ),
     );
   }

@@ -165,3 +165,44 @@ func matches(a, b []rune) int {
 		matches(a[:bestA], b[:bestB]) +
 		matches(a[bestA+bestLen:], b[bestB+bestLen:])
 }
+
+var (
+	// «Гр. «Отпетые мошенники»», «Группа Фристайл», «ВИА «Гра» (Н. Грановская, …)», «Д. Билан».
+	searchPrefix   = regexp.MustCompile(`(?i)^\s*(?:гр\.|гр\s|группа\s|ансамбль\s|виа\s|вокально-инструментальный ансамбль\s)\s*`)
+	searchQuotes   = regexp.MustCompile(`[«»"“”„]`)
+	searchInitials = regexp.MustCompile(`(^|\s)[А-ЯЁA-Z]\.\s+(\p{L}{2,})`)
+	searchSpaces   = regexp.MustCompile(`\s+`)
+)
+
+// SearchArtist — имя исполнителя для запроса к источнику обложек (27.09.2026, Alex: «гр это группа,
+// виа тоже лишнее»): без «Гр.», «ВИА», кавычек, перечня участников в скобках и инициалов.
+// «Гр. «Отпетые мошенники»» → «Отпетые мошенники», «Д. Билан» → «Билан».
+func SearchArtist(raw string) string {
+	s := brackets.ReplaceAllString(raw, " ")
+	// «ВИА Гра» — «ВИА» часть названия: без него остаётся «Гра», которое ни с чем не сверить.
+	// Приставку убираем, только если после неё остаётся имя хотя бы из 4 букв.
+	if rest := searchPrefix.ReplaceAllString(s, ""); len([]rune(Fold(rest))) >= 4 {
+		s = rest
+	}
+	s = searchQuotes.ReplaceAllString(s, " ")
+	s = searchInitials.ReplaceAllString(s, "$1$2") // «Д. Билан» → «Билан», но «A.R.T.» не трогаем
+	s = strings.TrimSpace(searchSpaces.ReplaceAllString(s, " "))
+	if s == "" {
+		return strings.TrimSpace(raw)
+	}
+	return s
+}
+
+// SearchTitle — название для запроса: без скобок («(Ремикс DJ Сканер)», «(Club Mix)») и хвоста
+// « - Remix». У ремикса так находится обложка оригинальной песни — Alex согласился 27.09.2026.
+func SearchTitle(raw string) string {
+	s := brackets.ReplaceAllString(raw, " ")
+	if loc := dashSplit.FindStringIndex(s); loc != nil {
+		s = s[:loc[0]]
+	}
+	s = strings.TrimSpace(searchSpaces.ReplaceAllString(searchQuotes.ReplaceAllString(s, " "), " "))
+	if s == "" {
+		return strings.TrimSpace(raw)
+	}
+	return s
+}

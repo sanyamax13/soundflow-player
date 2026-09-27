@@ -226,3 +226,27 @@ func TestFinderAllSourcesDownIsOffline(t *testing.T) {
 		t.Errorf("ждали nil, nil; получили %+v, %v", res, err)
 	}
 }
+
+// 27.09.2026: имена из сборников ремиксов — «Гр. «…»», «ВИА», инициалы, «(Ремикс DJ …)».
+func TestSearchNames(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Гр. «Отпетые мошенники»", "Отпетые мошенники"},
+		{"ВИА «Гра» (Н. Грановская, А. Джанабаева, В. Брежнева)", "ВИА Гра"},
+		{"Д. Билан", "Билан"},
+		{"В.  Левкин и Гульназ", "Левкин и Гульназ"},
+		{"Группа Фристайл", "Фристайл"},
+		{"Нюша", "Нюша"},
+		{"A.R.T.", "A.R.T."},
+	}
+	for _, c := range cases {
+		if got := SearchArtist(c.in); got != c.want {
+			t.Errorf("SearchArtist(%q) = %q, ждал %q", c.in, got, c.want)
+		}
+	}
+	if got := SearchTitle("Мани-мани (Ремикс DJ Сканер)"); got != "Мани-мани" {
+		t.Errorf("SearchTitle = %q", got)
+	}
+	if got := SearchTitle("Больно (Dj Vengerov Remix)"); got != "Больно" {
+		t.Errorf("SearchTitle = %q", got)
+	}
+}

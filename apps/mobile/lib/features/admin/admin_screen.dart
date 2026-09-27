@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../core/glass_sheet.dart';
+import '../../core/config.dart';
 import '../../core/net_hint.dart';
 import '../../core/notice.dart';
 import '../../core/pulsing_dot.dart';
 import '../../core/theme.dart';
+import '../profile/server_url_screen.dart';
+import '../settings/remote_access_screen.dart';
 
 /// «Сервер» — упрощено до того, что реально нужно Alex на ЭТОМ экране
 /// (Опус-ревью телефона 14.09.2026, пункт 8): связь с компьютером и
@@ -72,7 +76,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Сервер')),
+      appBar: AppBar(title: const Text('Связь с домом')),
       body: RefreshIndicator(
         onRefresh: _load,
         child: _loading
@@ -87,19 +91,19 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     return pending == null
         ? '…'
         : pending == 0
-        ? 'Всё отправлено'
-        : 'Ждут отправки: $pending';
+        ? 'всё передано'
+        : 'ждут связи: $pending';
   }
 
   String _lastSyncText() {
-    String fmt(DateTime? d) {
-      if (d == null) return 'ещё не было';
-      final l = d.toLocal();
-      String two(int n) => n.toString().padLeft(2, '0');
-      return '${two(l.day)}.${two(l.month)}.${l.year} ${two(l.hour)}:${two(l.minute)}';
-    }
-
-    return 'Последняя синхронизация: ${fmt(_lastSync)}';
+    final d = _lastSync;
+    if (d == null) return 'Ещё не обменивались';
+    final l = d.toLocal();
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final time = '${two(l.hour)}:${two(l.minute)}';
+    final today = l.year == now.year && l.month == now.month && l.day == now.day;
+    return today ? 'Обновлено в $time' : 'Обновлено ${two(l.day)}.${two(l.month)} в $time';
   }
 
   // 25.09.2026 (по разбору Gemini, Alex «да меняй всё»): экран был списком
@@ -107,6 +111,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   // пульсирующая точка + крупный статус вместо строки с иконкой, подписи
   // вместо заголовков секций, переключателей тут пока нет (нечего
   // переключать на этом экране — они появятся, если такое понадобится).
+  // 26.09.2026 (разбор Gemini «Профиль», Alex «да»): «Сервер» и «Настройки» слиты в
+  // один экран. Сверху — состояние, ниже — открытыми строками адрес и удалённый
+  // доступ (без раскрывашек: лишнее нажатие), в самом низу красной надписью
+  // «Полный сброс» — без «Показать опасное», случайное нажатие ловит вопрос «Стереть?».
   Widget _body() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
@@ -118,7 +126,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             const SizedBox(width: 16),
             Expanded(
               child: Text(
-                _reachable ? 'На связи' : 'Недоступен',
+                _reachable ? 'На связи' : 'Нет связи',
                 style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: -1),
               ),
             ),
@@ -131,41 +139,118 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           _reachable ? _lastSyncText() : kServerUnreachableHint,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
         ),
-        const SizedBox(height: 48),
-        _dashboardItem('Что уходит на компьютер', _syncTitle()),
-        const SizedBox(height: 12),
-        Text(
-          'Лайки, удаления и что слушал копятся на телефоне и работают без '
-          'сети. Уходят на компьютер сами, как только появляется связь.',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13, height: 1.4),
+        const SizedBox(height: 28),
+        _dashboardItem('История и оценки', _syncTitle(), ok: (_pending ?? 1) == 0),
+        const SizedBox(height: 20),
+        // Новые песни качаются сами дома по Wi-Fi (разбор Gemini 26.09.2026).
+        ListenableBuilder(
+          listenable: ref.read(syncOfferProvider),
+          builder: (context, _) {
+            final offer = ref.read(syncOfferProvider);
+            return SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              activeTrackColor: Afisha.lime,
+              title: const Text('Качать новое само',
+                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w500)),
+              subtitle: Text('дома по Wi-Fi, без вопроса',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13)),
+              value: offer.autoDownload,
+              onChanged: offer.setAutoDownload,
+            );
+          },
         ),
-        const SizedBox(height: 48),
-        // «Полный сброс» лежал рядом с обычной синхронизацией, в два тапа от «стереть всю музыку» (ревизия 20.09.2026,
-        // пункт «убрать вглубь»): теперь спрятан за «Показать опасное», случайно не нажмёшь.
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            key: const Key('danger-zone'),
-            tilePadding: EdgeInsets.zero,
-            iconColor: Afisha.inkDim,
-            collapsedIconColor: Afisha.inkDim,
-            title: const Text(
-              'Показать опасное',
-              style: TextStyle(color: Afisha.inkDim, fontSize: 17, letterSpacing: -0.4),
-            ),
-            children: [_resetBlock()],
+        const SizedBox(height: 12),
+        Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+        _row(
+          icon: CupertinoIcons.wifi,
+          iconColor: Afisha.blue,
+          title: 'Адрес дома',
+          subtitle: apiBase.replaceFirst('http://', ''),
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ServerUrlScreen()),
+            );
+            if (mounted) _load();
+          },
+        ),
+        Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+        _row(
+          icon: CupertinoIcons.globe,
+          iconColor: Afisha.green,
+          title: 'Удалённый доступ',
+          subtitle: 'слушать не из дома',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const RemoteAccessScreen()),
           ),
+        ),
+        Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+        const SizedBox(height: 48),
+        Center(
+          child: TextButton(
+            key: const Key('full-reset'),
+            style: TextButton.styleFrom(
+              foregroundColor: Afisha.red,
+              minimumSize: const Size(200, 56),
+              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            onPressed: _resetBusy ? null : _confirmReset,
+            child: _resetBusy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Полный сброс'),
+          ),
+        ),
+        const Text(
+          'Сотрёт музыку, лайки и историю на этом телефоне. Дома ничего не меняется.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Afisha.inkDim, fontSize: 12),
         ),
       ],
     );
   }
 
-  Widget _dashboardItem(String title, String value) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _row({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+  }) =>
+      InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: iconColor, size: 22),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 3),
+                        Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13)),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(CupertinoIcons.chevron_forward, color: Colors.white.withValues(alpha: 0.3), size: 16),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _dashboardItem(String title, String value, {bool ok = false}) => Row(
         children: [
-          Text(title, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w500)),
+          Expanded(
+            child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w500)),
+          ),
+          Text(value,
+              style: TextStyle(color: ok ? Afisha.green : Afisha.inkDim, fontSize: 15, fontWeight: FontWeight.w500)),
         ],
       );
 
@@ -175,73 +260,16 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   // запись-«призрак» устройства — та самая проблема, что только что чинили).
   bool _resetBusy = false;
 
-  Widget _resetBlock() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Сотрёт всю музыку, лайки и историю на ЭТОМ телефоне — будет как '
-            'после первой установки. На сервере (комп) и на других '
-            'устройствах ничего не меняется. Отменить нельзя.',
-            style: TextStyle(color: Afisha.inkDim, height: 1.35, fontSize: 13),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Afisha.red,
-                minimumSize: const Size(0, 46),
-                side: BorderSide(
-                  color: Afisha.red.withValues(alpha: 0.5),
-                  width: 0.5,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: _resetBusy ? null : _confirmReset,
-              child: _resetBusy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Полный сброс'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _confirmReset() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Полный сброс?'),
-        content: const Text(
-          'Удалит всю скачанную музыку, лайки и историю на этом телефоне. '
-          'Отменить нельзя.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Стереть всё',
-              style: TextStyle(color: Afisha.red),
-            ),
-          ),
-        ],
-      ),
+    // Шторка снизу: «Отмена» лаймом слева, «Стереть всё» красным справа (разбор Gemini и Алисы 27.09.2026).
+    final ok = await confirmSheet(
+      context,
+      title: 'Полный сброс?',
+      body: 'Удалит всю скачанную музыку, лайки и историю на этом телефоне. Отменить нельзя.',
+      okLabel: 'Стереть всё',
+      danger: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     final downloads = ref.read(downloadsProvider);
     setState(() => _resetBusy = true);
     try {

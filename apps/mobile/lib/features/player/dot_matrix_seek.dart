@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import '../../core/theme.dart';
 import 'player_controller.dart';
@@ -73,7 +75,8 @@ class DotMatrixSeek extends StatefulWidget {
   /// apps/server/cmd/soundflow/wavekeeper.go).
   final ValueListenable<List<double>?>? waveform;
 
-  static const _height = 46.0;
+  // 46 → 64: зона захвата пальцем по высоте как у кнопок (разбор Gemini 26.09.2026).
+  static const _height = 64.0;
 
   // Alex TG 25.09.2026 (по разбору Gemini): выразительный геометрический
   // шрифт для крупных цифр таймлайна вместо системного — даёт более
@@ -144,25 +147,36 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
     super.dispose();
   }
 
-  /// Ширина под цифры — по самой длинной записи ЭТОГО трека («4:33» → «0:00»),
-  /// чтобы столбики не «прыгали» по горизонтали, пока секунды и минуты
-  /// меняются. Все цифры табличные (одной ширины), поэтому нули как образец
-  /// подходят.
-  double _digitsWidth(BuildContext context, Duration duration) {
-    final template = formatMmss(duration).replaceAll(RegExp(r'\d'), '0');
-    final painter = TextPainter(
-      text: TextSpan(text: template, style: DefaultTextStyle.of(context).style.merge(DotMatrixSeek._digitStyle)),
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    return painter.width + 2;
+  bool _touching = false;
+  int _lastTick = -1;
+  double? _touchX; // где палец над полосой — для пузыря с временем
+  bool _showRemaining = false; // «/ 3:37» ↔ «/ −2:51» — нажатием на время
+
+  void _setTouching(bool v) {
+    if (_touching != v) setState(() => _touching = v);
+    if (!v) {
+      _lastTick = -1;
+      if (_touchX != null) setState(() => _touchX = null);
+    }
   }
 
   void _seekAt(double dx, double width, int totalMs) {
     if (totalMs <= 0 || width <= 0) return;
-    widget.controller.seek(Duration(milliseconds: (totalMs * (dx / width).clamp(0.0, 1.0)).round()));
+    final frac = (dx / width).clamp(0.0, 1.0);
+    // Лёгкий «щелчок» каждые 5% — перемотка ощущается как колёсико, можно
+    // вести не глядя (разбор Gemini 26.09.2026).
+    final tick = (frac * 20).floor();
+    if (_lastTick != -1 && tick != _lastTick) HapticFeedback.selectionClick();
+    _lastTick = tick;
+    setState(() => _touchX = dx.clamp(0.0, width));
+    widget.controller.seek(Duration(milliseconds: (totalMs * frac).round()));
   }
 
+  // Вариант «5 + 4» разбора Gemini (Alex TG 21761, 26.09.2026):
+  //  • время НАД полосой слева: крупно «0:46», рядом мелко «/ 3:37»; нажатие на время —
+  //    «/ −2:51» (сколько осталось) и обратно; большая зона нажатия — в машине не промахнёшься;
+  //  • полоса-эквалайзер — на всю ширину (раньше её сжимали цифры по бокам);
+  //  • ведёшь пальцем по полосе — над пальцем стеклянный пузырь с временем, палец цифры не закрывает.
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<Duration>(
@@ -172,58 +186,141 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
         builder: (_, pos, _) {
           final totalMs = dur.inMilliseconds;
           final frac = totalMs <= 0 ? 0.0 : (pos.inMilliseconds / totalMs).clamp(0.0, 1.0);
-          final side = switch (widget.total) {
-            DotMatrixTotal.none => null,
-            DotMatrixTotal.small => formatMmss(dur),
-            DotMatrixTotal.remaining => '−${formatMmss(dur - pos < Duration.zero ? Duration.zero : dur - pos)}',
-          };
+          final left = dur - pos < Duration.zero ? Duration.zero : dur - pos;
+          final side = widget.total == DotMatrixTotal.none
+              ? null
+              : (_showRemaining || widget.total == DotMatrixTotal.remaining)
+                  ? '−${formatMmss(left)}'
+                  : formatMmss(dur);
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: SizedBox(
-              height: DotMatrixSeek._height,
-              child: Row(children: [
-                SizedBox(
-                  width: _digitsWidth(context, dur),
-                  child: Text(
-                    formatMmss(pos),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.visible,
-                    style: DotMatrixSeek._digitStyle.copyWith(color: widget.tint),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, c) => GestureDetector(
-                      key: const ValueKey('dot_matrix_seek_area'),
-                      behavior: HitTestBehavior.opaque,
-                      onTapDown: (d) => _seekAt(d.localPosition.dx, c.maxWidth, totalMs),
-                      onHorizontalDragUpdate: (d) => _seekAt(d.localPosition.dx, c.maxWidth, totalMs),
-                      child: AnimatedBuilder(
-                        animation: _ticker,
-                        builder: (context, _) => CustomPaint(
-                          size: Size.infinite,
-                          painter: _EqualizerPainter(
-                            envelopes: _envelopes,
-                            speeds: _speeds,
-                            phases: _phases,
-                            t: _clock.elapsedMicroseconds / 1e6,
-                            progress: frac,
-                          ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                GestureDetector(
+                  key: const ValueKey('dot_matrix_time'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: side == null
+                      ? null
+                      : () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _showRemaining = !_showRemaining);
+                        },
+                  child: SizedBox(
+                    height: 40,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: formatMmss(pos),
+                              style: DotMatrixSeek._digitStyle.copyWith(color: Colors.white),
+                            ),
+                            if (side != null)
+                              TextSpan(
+                                text: '  /  $side',
+                                style: DotMatrixSeek._digitStyle.copyWith(
+                                    fontSize: 16, color: Colors.white.withValues(alpha: 0.5)),
+                              ),
+                          ]),
+                          maxLines: 1,
                         ),
                       ),
                     ),
                   ),
                 ),
-                if (side != null) ...[
-                  const SizedBox(width: 10),
-                  Text(side, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                ],
-              ]),
+                SizedBox(
+                  height: DotMatrixSeek._height,
+                  child: LayoutBuilder(
+                    builder: (context, c) => Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: GestureDetector(
+                            key: const ValueKey('dot_matrix_seek_area'),
+                            behavior: HitTestBehavior.opaque,
+                            onTapDown: (d) {
+                              _setTouching(true);
+                              _seekAt(d.localPosition.dx, c.maxWidth, totalMs);
+                            },
+                            onTapUp: (_) => _setTouching(false),
+                            onTapCancel: () => _setTouching(false),
+                            onHorizontalDragStart: (_) => _setTouching(true),
+                            onHorizontalDragUpdate: (d) => _seekAt(d.localPosition.dx, c.maxWidth, totalMs),
+                            onHorizontalDragEnd: (_) => _setTouching(false),
+                            onHorizontalDragCancel: () => _setTouching(false),
+                            // Под пальцем полоса чуть подрастает — видно, что её «взяли».
+                            child: AnimatedScale(
+                              scale: _touching ? 1.15 : 1.0,
+                              duration: const Duration(milliseconds: 140),
+                              curve: Curves.easeOutQuad,
+                              child: AnimatedBuilder(
+                                animation: _ticker,
+                                builder: (context, _) => CustomPaint(
+                                  size: Size.infinite,
+                                  painter: _EqualizerPainter(
+                                    envelopes: _envelopes,
+                                    speeds: _speeds,
+                                    phases: _phases,
+                                    t: _clock.elapsedMicroseconds / 1e6,
+                                    progress: frac,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (_touchX != null)
+                          Positioned(
+                            left: (_touchX! - 56).clamp(-8.0, c.maxWidth - 104),
+                            top: -64,
+                            child: IgnorePointer(child: _TimeBubble(text: formatMmss(pos))),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Стеклянный пузырь с временем над пальцем при перемотке (вариант 4 разбора Gemini).
+class _TimeBubble extends StatelessWidget {
+  const _TimeBubble({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.7, end: 1),
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutBack,
+      builder: (_, s, child) => Transform.scale(scale: s, child: child),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            width: 112,
+            height: 52,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: Text(text,
+                style: DotMatrixSeek._digitStyle.copyWith(fontSize: 28, color: Afisha.lime)),
+          ),
+        ),
       ),
     );
   }

@@ -92,79 +92,49 @@ void main() {
     expect(find.byIcon(Icons.pause), findsNothing);
   });
 
-  testWidgets('Синхронизация свёрнута в экран «Сервер» (06.09.2026)', (tester) async {
+  // 26.09.2026 (разбор Gemini «Профиль», Alex «да»): «Сервер» и «Настройки» слиты в один
+  // экран «Связь с домом»; на нём состояние, «История и оценки», адрес, удалённый доступ и
+  // «Полный сброс» внизу. Экран с пульсирующей точкой — pumpAndSettle не дождётся конца
+  // анимации, поэтому листаем кадры вручную.
+  Future<void> openHome(WidgetTester tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
-
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    // Отдельной карточки «Синхронизация» в Профиле больше нет.
-    expect(find.text('Синхронизация'), findsNothing);
+    await tester.tap(find.text('Связь с домом'));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
 
-    await tester.tap(find.text('Сервер'));
-    await tester.pumpAndSettle();
-    expect(find.text('Всё отправлено'), findsOneWidget);
-    // Кнопки «Синхронизировать сейчас» больше нет: события уходят сами, а
-    // песни телефон предлагает скачать карточкой (Alex TG 20158, 20167).
-    expect(find.text('Синхронизировать сейчас'), findsNothing);
-  });
-
-  // Экран «Сервер» упрощён (Опус-ревью телефона 14.09.2026, пункт 8): вместо
-  // версий/миграций/устройств/сырого лога — связь и синхронизация. Список
-  // «больше не качать» с 19.09.2026 на телефоне не показывается (Alex TG 19943).
-  testWidgets('в Профиле есть «Сервер», экран показывает состояние', (tester) async {
+  testWidgets('в Профиле одна строка «Связь с домом» вместо «Сервер» и «Настройки»', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
-
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Сервер'), findsOneWidget);
-
-    await tester.tap(find.text('Сервер'));
-    await tester.pumpAndSettle();
-    expect(find.text('Что уходит на компьютер'), findsOneWidget);
-    expect(find.text('Связь с компьютером'), findsOneWidget);
-    expect(find.text('Больше не качать'), findsNothing);
-    expect(find.text('Компьютер на связи'), findsOneWidget);
-  });
-
-  testWidgets('в Профиле вместо «Скачать музыку» — строка «Музыка с компьютера»', (tester) async {
-    await tester.pumpWidget(await _app());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Профиль'));
-    await tester.pumpAndSettle();
-    expect(find.text('Скачать музыку'), findsNothing);
-    expect(find.text('Музыка с компьютера'), findsOneWidget);
-  });
-
-  // Alex TG 19943 (19.09.2026): «убранные только в программе на сервере, а не в
-  // плеере на телефоне, плеер захламляется информацией».
-  testWidgets('в Профиле нет «Убранных»', (tester) async {
-    await tester.pumpWidget(await _app());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Профиль'));
-    await tester.pumpAndSettle();
+    expect(find.text('Связь с домом'), findsOneWidget);
+    expect(find.text('Сервер'), findsNothing);
+    expect(find.text('Настройки'), findsNothing);
     expect(find.text('Убранные'), findsNothing);
     expect(find.text('Скачать музыку'), findsNothing);
-    expect(find.text('Сервер'), findsOneWidget);
   });
 
-  // «Адрес сервера» переехал из Профиля в Настройки (Alex TG 14.09.2026: «в
-  // профиле только статистику, остальное — в настройки»); журнал живёт там же.
-  testWidgets('в Профиле «Настройки» ведут на адрес сервера и журнал', (tester) async {
+  testWidgets('в Профиле карточка «Медиатека»', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
-
     await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
-    expect(find.text('Настройки'), findsOneWidget);
-    expect(find.text('Адрес сервера'), findsNothing);
+    expect(find.text('Медиатека'), findsOneWidget);
+    expect(find.text('Музыка с компьютера'), findsNothing);
+  });
 
-    await tester.tap(find.text('Настройки'));
-    await tester.pumpAndSettle();
-    expect(find.text('Адрес сервера'), findsOneWidget);
-    expect(find.text('Журнал'), findsOneWidget);
+  testWidgets('«Связь с домом»: состояние, история, адрес, удалённый доступ, без журнала', (tester) async {
+    await openHome(tester);
+    expect(find.text('История и оценки'), findsOneWidget);
+    expect(find.text('всё передано'), findsOneWidget);
+    expect(find.text('Адрес дома'), findsOneWidget);
+    expect(find.text('Удалённый доступ'), findsOneWidget);
+    expect(find.text('Журнал'), findsNothing);
+    expect(find.text('Синхронизировать сейчас'), findsNothing);
   });
 }

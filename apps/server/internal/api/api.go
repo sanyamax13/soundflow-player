@@ -36,6 +36,17 @@ type Server struct {
 	// (<id трека>.jpg), 20.09.2026. Смотрим после обложки в самом файле и в
 	// папке альбома. Пусто — не используем.
 	FoundCoversDir string
+	// OriginalCoversDir — родные обложки песен из сборников (origcoverkeeper.go, 26.09.2026):
+	// отдаются РАНЬШЕ зашитой в файл картинки сборника.
+	OriginalCoversDir string
+	// BlackBoxDir — подробный журнал телефонов («чёрный ящик», blackbox.go, 26.09.2026).
+	// Пусто — ручка выключена.
+	BlackBoxDir string
+	// HomeURL — адрес сервера в домашней сети (http://192.168.x.y:порт); отдаётся в /v1/health, чтобы
+	// телефон, пришедший через VDS, узнал, куда ходить напрямую дома. Пусто — не знаем.
+	// Функция, а не строка: телефонный роутер строится дважды (дом и канал через VDS), адрес узнаётся
+	// после того, как сервер начал слушать — оба экземпляра берут его из одного места.
+	HomeURL func() string
 
 	// OnTrackAdded — необязательный крючок: в каталог только что попала НОВАЯ скачанная песня
 	// (по запросу из плеера или замена «плохой версии»). Программа на компьютере кладёт её в план
@@ -92,6 +103,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/cover/{id}", s.cover)
 			r.Get("/generated-covers/{file}", s.generatedCover)
 			r.Get("/waveform/{id}", s.waveform)
+			r.Get("/bass/{id}", s.bass)
 			r.Post("/stream/order", s.streamOrder)
 			r.Post("/sync/events", s.syncEvents)
 			r.Post("/sync/progress", s.syncProgress)
@@ -99,6 +111,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/device/plan", s.devicePlan)
 			r.Post("/device/plan/ack", s.devicePlanAck)
 			r.Post("/client-crash", s.clientCrash)
+			r.Post("/blackbox", s.blackBox)
 			r.Route("/admin", func(r chi.Router) {
 				r.Get("/status", s.adminStatus)
 				r.Get("/devices", s.adminDevices)
@@ -129,11 +142,17 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.Ping(r.Context()); err != nil {
 		dbState = "down"
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	resp := map[string]string{
 		"status":  "alive",
 		"db":      dbState,
 		"service": "soundflow",
-	})
+	}
+	if s.HomeURL != nil {
+		if u := s.HomeURL(); u != "" {
+			resp["home"] = u
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
@@ -155,6 +174,28 @@ func (s *Server) tracks(w http.ResponseWriter, r *http.Request) {
 			if energies, err := s.DB.TrackEnergies(r.Context()); err == nil {
 				for i := range list {
 					list[i].Energy = energies[list[i].ID]
+				}
+			}
+			if revs, err := s.DB.CoverRevs(r.Context()); err == nil {
+				for i := range list {
+					list[i].CoverRev = revs[list[i].ID]
+				}
+			}
+			// Жанр (26.09.2026) — так же необязательный.
+			if genres, err := s.DB.TrackGenres(r.Context()); err == nil {
+				for i := range list {
+					list[i].Genre = genres[list[i].ID]
+				}
+			}
+			// Громкость (26.09.2026) — для выравнивания громкости на телефоне; тоже необязательная.
+			if loud, err := s.DB.TrackLoudness(r.Context()); err == nil {
+				for i := range list {
+					list[i].Loudness = loud[list[i].ID]
+				}
+			}
+			if moods, err := s.DB.TrackMoods(r.Context()); err == nil {
+				for i := range list {
+					list[i].Mood = moods[list[i].ID]
 				}
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"tracks": list})

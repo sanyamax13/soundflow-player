@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -89,8 +90,10 @@ void main() {
     await tester.pumpWidget(_app(_FakeApi()));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Radiohead — Let Down'), findsOneWidget);
-    expect(find.textContaining('Placebo — Special K'), findsOneWidget);
+    // Название сверху, исполнитель снизу (26.09.2026, раньше «Исполнитель — Название» + альбом).
+    expect(find.text('Let Down'), findsOneWidget);
+    expect(find.text('Radiohead'), findsOneWidget);
+    expect(find.text('Special K'), findsOneWidget);
   });
 
   testWidgets('Открытия: переключение на «Вчера» грузит другой список', (tester) async {
@@ -100,7 +103,7 @@ void main() {
     await tester.tap(find.text('Вчера'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Вчерашний — Хит'), findsOneWidget);
+    expect(find.text('Хит'), findsOneWidget);
     expect(find.textContaining('Radiohead'), findsNothing);
   });
 
@@ -109,7 +112,8 @@ void main() {
     await tester.pumpWidget(_app(api));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Убрать').first);
+    // «Убрать» — свайпом строки влево (кнопки ✕ больше нет).
+    await tester.drag(find.text('Let Down'), const Offset(-600, 0));
     await tester.pumpAndSettle();
 
     expect(api.dismissed, isTrue);
@@ -149,7 +153,7 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // второй опрос — «done»
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.checkmark_alt_circle_fill), findsOneWidget);
     expect(find.text('качаю…'), findsNothing);
   });
 
@@ -157,11 +161,14 @@ void main() {
     await tester.pumpWidget(_app(_FakeApi()));
     await tester.pumpAndSettle();
 
+    // Ссылка — под значком 🔗 вверху: шторка с полем (клавиатура сразу) и «Показать».
+    await tester.tap(find.byTooltip('Плейлист по ссылке'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'https://music.yandex.ru/users/x/playlists/1');
     await tester.tap(find.text('Показать'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Массив — Плейлист-трек'), findsOneWidget);
+    expect(find.text('Плейлист-трек'), findsOneWidget);
     expect(find.text('Мой плейлист'), findsOneWidget); // заголовок AppBar
     // Уже есть в каталоге — не кнопка «Скачать», а галочка.
     expect(find.byTooltip('Скачать'), findsNothing);
@@ -183,7 +190,7 @@ void main() {
     await tester.pump(); // первый неудачный заход (WaveBuildingException)
 
     expect(find.textContaining('собирает подборку'), findsOneWidget);
-    expect(find.text('Radiohead — Let Down'), findsNothing);
+    expect(find.text('Let Down'), findsNothing);
 
     await tester.pump(const Duration(seconds: 9)); // вторая попытка (тоже неудачная)
     expect(find.textContaining('собирает подборку'), findsOneWidget);
@@ -192,7 +199,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('собирает подборку'), findsNothing);
-    expect(find.text('Radiohead — Let Down'), findsOneWidget);
+    expect(find.text('Let Down'), findsOneWidget);
     expect(api.waveCalls, 3);
   });
 }

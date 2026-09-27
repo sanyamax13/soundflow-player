@@ -116,15 +116,16 @@ class _NoticeHostState extends State<NoticeHost>
     super.initState();
     _c = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
-      reverseDuration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 520),
+      reverseDuration: const Duration(milliseconds: 300),
     );
     _slide = Tween<Offset>(begin: const Offset(0, -1.6), end: Offset.zero)
         .animate(
           CurvedAnimation(
             parent: _c,
-            curve: Curves.easeOutBack,
-            reverseCurve: Curves.easeInCubic,
+            // Пружина при появлении, плавный уход вверх за 300 мс (разбор Gemini 26.09.2026).
+            curve: const ElasticOutCurve(0.9),
+            reverseCurve: Curves.easeInOut,
           ),
         );
     Notice.current.addListener(_onChange);
@@ -284,10 +285,12 @@ class NoticeCard extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(_radius),
                   child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                    // Стекло: то, что под плашкой, видно размытым (Black 60% + Blur 40,
+                    // разбор Gemini 26.09.2026) — было почти глухое 90%.
+                    filter: ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xE61C1C1E),
+                        color: Colors.black.withValues(alpha: 0.6),
                         borderRadius: BorderRadius.circular(_radius),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.10),

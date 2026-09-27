@@ -26,6 +26,14 @@ class _FakeApi extends Api {
       ];
 }
 
+/// Компьютер уже починил имя (было «??????» на телефоне).
+class _FixedNameApi extends _FakeApi {
+  @override
+  Future<List<Map<String, dynamic>>> tracks({int? limit}) async => [
+        {'id': 'broken', 'artist': 'Земфира', 'title': 'Хочешь?', 'mime_type': 'audio/mpeg'},
+      ];
+}
+
 class _FakePathProvider extends PathProviderPlatform with MockPlatformInterfaceMixin {
   _FakePathProvider(this.dir);
   final Directory dir;
@@ -52,7 +60,9 @@ void main() {
           int? kbps,
           int? sec,
           String? path,
-          double? energy}) =>
+          double? energy,
+          String? album,
+          String? genre}) =>
       DownloadedTrack(
         id: id,
         title: id,
@@ -64,6 +74,8 @@ void main() {
         format: format,
         bitrateKbps: kbps,
         durationSec: sec,
+        album: album,
+        genre: genre,
         energy: energy,
       );
 
@@ -122,10 +134,18 @@ void main() {
       // иначе их снова засчитает как «нуждается в докачке».
       await db.upsertDownloaded(track('empty'));
       await db.upsertDownloaded(track('emptyFormat', format: ''));
-      await db.upsertDownloaded(track('hasFormat', format: 'mp3', energy: 0.5));
-      await db.upsertDownloaded(track('hasKbps', kbps: 320, energy: 0.5));
-      await db.upsertDownloaded(track('hasSec', sec: 200, energy: 0.5));
-      expect((await db.idsNeedingMeta())..sort(), ['empty', 'emptyFormat']);
+      // 26.09.2026: и альбом — NULL значит «ещё не спрашивали сервер», '' — «альбома нет».
+      // И жанр: NULL — не спрашивали, '' — сервер ещё не знает (спросим снова).
+      await db.upsertDownloaded(track('hasFormat', format: 'mp3', energy: 0.5, album: 'X', genre: 'pop'));
+      await db.upsertDownloaded(track('hasKbps', kbps: 320, energy: 0.5, album: '', genre: 'rock'));
+      await db.upsertDownloaded(track('hasSec', sec: 200, energy: 0.5, album: 'Y', genre: 'rusrap'));
+      await db.upsertDownloaded(track('noAlbumYet', sec: 200, energy: 0.5, genre: 'pop'));
+      await db.upsertDownloaded(track('genreUnknownYet', sec: 200, energy: 0.5, album: 'Z', genre: ''));
+      // 26.09.2026: и громкость (loudness IS NULL — ещё не пришла с сервера) — «полным» ставим.
+      for (final id in ['hasFormat', 'hasKbps', 'hasSec', 'noAlbumYet', 'genreUnknownYet']) {
+        await db.updateMeta(id, loudness: -10, mood: 'happy');
+      }
+      expect((await db.idsNeedingMeta())..sort(), ['empty', 'emptyFormat', 'genreUnknownYet', 'noAlbumYet']);
       await db.close();
     });
 
@@ -211,6 +231,20 @@ void main() {
       expect((m?.format, m?.bitrateKbps, m?.durationSec), ('MP3', 320, 201));
       final d = await db.downloadedById('done');
       expect((d?.format, d?.bitrateKbps, d?.durationSec), ('mp3', 128, 100)); // не тронута
+      await db.close();
+    });
+
+    // 27.09.2026: телефон брал имя один раз при скачивании — исправленное на компьютере не доходило.
+    test('backfillMeta: имя, исправленное на компьютере, приходит на телефон', () async {
+      final db = await freshDb();
+      final repo = DownloadsRepo(_FixedNameApi(), db);
+      await db.upsertDownloaded(DownloadedTrack(
+          id: 'broken', title: '??????', artist: '???????', path: '/tmp/broken', bytes: 1, addedAt: 1));
+
+      await repo.backfillMeta(force: true);
+
+      final t = await db.downloadedById('broken');
+      expect((t?.artist, t?.title), ('Земфира', 'Хочешь?'));
       await db.close();
     });
   });

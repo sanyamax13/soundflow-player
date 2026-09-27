@@ -28,7 +28,7 @@ class Db {
         // стали видеть чужие строки. Реальному приложению не мешает — оно
         // открывает свою единственную базу по файловому пути один раз.
         singleInstance: false,
-        version: 8,
+        version: 16,
         onCreate: (db, _) async {
           await _createDownloads(db);
           await _createSync(db);
@@ -52,6 +52,40 @@ class Db {
           if (from < 8) {
             await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN energy REAL');
           }
+          // Альбом (26.09.2026, план по разбору Gemini, Alex «по твоему плану»):
+          // NULL — ещё не спрашивали сервер, '' — у песни альбома нет.
+          if (from < 9) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN album TEXT');
+          }
+          // Жанр по Яндексу (26.09.2026, фильтр радио по жанру): NULL — не спрашивали,
+          // '' — сервер пока не знает (узнает фоном, спросим снова).
+          if (from < 10) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN genre TEXT');
+          }
+          // v11 (26.09.2026) добавляла колонку lyrics — тексты песен; в тот же день Alex решил от них
+          // отказаться («удали, не делай бекапов»). v12 стирает то, что успело скачаться; колонку
+          // не удаляем (DROP COLUMN есть не на всех Android), она просто пустая и не используется.
+          if (from >= 11 && from < 12) {
+            await db.execute('UPDATE downloaded_tracks SET lyrics = NULL');
+          }
+          // Метка обложки с сервера (26.09.2026): поменялась — нашлась родная обложка песни
+          // вместо картинки сборника (origcoverkeeper.go), перекачиваем.
+          if (from < 13) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN cover_rev TEXT');
+          }
+          // Громкость песни в LUFS (26.09.2026, выравнивание громкости): NULL — сервер ещё не
+          // посчитал (спросим снова при следующей докачке характеристик).
+          if (from < 14) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN loudness REAL');
+          }
+          // Когда песня играла в последний раз (26.09.2026) — «забытое» в Потоке.
+          if (from < 15) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN last_played INTEGER');
+          }
+          // Настроение по звуку с сервера (27.09.2026, moodkeeper.go): happy/sad/tender/energetic/aggressive.
+          if (from < 16) {
+            await db.execute('ALTER TABLE downloaded_tracks ADD COLUMN mood TEXT');
+          }
         },
       ),
     );
@@ -71,7 +105,13 @@ class Db {
           bitrate_kbps INTEGER,
           format       TEXT,
           duration_sec INTEGER,
-          energy       REAL
+          energy       REAL,
+          album        TEXT,
+          genre        TEXT,
+          cover_rev    TEXT,
+          loudness     REAL,
+          last_played  INTEGER,
+          mood         TEXT
         )
       ''');
 
@@ -194,11 +234,19 @@ class Db {
   /// характеристик), ИЛИ нет энергии (Alex TG 25.09.2026, фильтр
   /// «Настроение») — новое поле у уже скачанных песен на старых установках
   /// пустое, даже если остальные характеристики давно пришли.
-  Future<List<String>> idsNeedingMeta() async {
+  /// [emptyMood] — ещё и песни с пустым настроением (сервер посчитал его позже, чем телефон спросил).
+  /// [all] — все песни: настроение/жанр на сервере пересчитываются (6-е настроение 27.09.2026),
+  /// а у песен, где всё уже заполнено, телефон иначе никогда бы их не переспросил.
+  Future<List<String>> idsNeedingMeta({bool emptyMood = false, bool all = false}) async {
+    if (all) {
+      final rows = await _db.rawQuery('SELECT id FROM downloaded_tracks');
+      return [for (final r in rows) r['id'] as String];
+    }
     final rows = await _db.rawQuery('SELECT id FROM downloaded_tracks '
         "WHERE ((format IS NULL OR format = '') "
         'AND COALESCE(bitrate_kbps, 0) = 0 AND COALESCE(duration_sec, 0) = 0) '
-        'OR energy IS NULL');
+        "OR energy IS NULL OR album IS NULL OR genre IS NULL OR genre = '' OR loudness IS NULL OR mood IS NULL"
+        "${emptyMood ? " OR mood = ''" : ''}");
     return [for (final r in rows) r['id'] as String];
   }
 
@@ -247,9 +295,44 @@ class Db {
 
   /// Дописать характеристики файла (пришли с сервера позже) — только
   /// непустые значения, чтобы не затирать уже известное.
+  /// Песня заиграла — запомнить когда (для «забытого» в Потоке).
+  Future<void> markPlayed(String id) => _db.update('downloaded_tracks',
+      {'last_played': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+
+  /// Какие песни «забыты»: не играли с [since] или ни разу.
+  Future<Set<String>> forgottenIds(DateTime since) async {
+    final rows = await _db.rawQuery(
+        'SELECT id FROM downloaded_tracks WHERE last_played IS NULL OR last_played < ?',
+        [since.millisecondsSinceEpoch]);
+    return {for (final r in rows) r['id'] as String};
+  }
+
+  /// Громкость песни (LUFS) для выравнивания; null — ещё не знаем.
+  Future<double?> loudnessOf(String id) async {
+    final rows = await _db.rawQuery('SELECT loudness FROM downloaded_tracks WHERE id = ?', [id]);
+    if (rows.isEmpty) return null;
+    return (rows.first['loudness'] as num?)?.toDouble();
+  }
+
+  /// Метки обложек на телефоне: id → cover_rev ('' — обычная).
+  Future<Map<String, String>> coverRevs() async {
+    final rows = await _db.rawQuery('SELECT id, COALESCE(cover_rev, \'\') AS r FROM downloaded_tracks');
+    return {for (final r in rows) r['id'] as String: r['r'] as String};
+  }
+
+  /// Новая обложка песни: только путь и метка, остальные поля строки не трогаем.
+  Future<void> setCover(String id, String path, String rev) => _db.update(
+      'downloaded_tracks', {'cover_path': path, 'cover_rev': rev},
+      where: 'id = ?', whereArgs: [id]);
+
   Future<void> updateMeta(String id,
-      {int? bitrateKbps, String? format, int? durationSec, double? energy}) {
+      {int? bitrateKbps, String? format, int? durationSec, double? energy, String? album, String? genre, double? loudness,
+      String? mood}) {
     final v = <String, Object?>{};
+    if (mood != null && mood.isNotEmpty) v['mood'] = mood;
+    if (loudness != null && loudness != 0) v['loudness'] = loudness;
+    if (album != null) v['album'] = album;
+    if (genre != null) v['genre'] = genre;
     if ((bitrateKbps ?? 0) > 0) v['bitrate_kbps'] = bitrateKbps;
     if ((format ?? '').isNotEmpty) v['format'] = format;
     if ((durationSec ?? 0) > 0) v['duration_sec'] = durationSec;
@@ -373,6 +456,9 @@ class DownloadedTrack {
     this.format,
     this.durationSec,
     this.energy,
+    this.album,
+    this.genre,
+    this.mood,
   });
 
   final String id;
@@ -395,6 +481,15 @@ class DownloadedTrack {
   /// докачает.
   final double? energy;
 
+  /// Альбом с сервера; null — ещё не узнали (backfillMeta докачает), '' — нет альбома.
+  final String? album;
+
+  /// Жанр — код Яндекса (rusrap, pop…), см. core/genres.dart; null/'' — ещё не знаем.
+  final String? genre;
+
+  /// Настроение по звуку (сервер, moodkeeper.go): happy/sad/tender/energetic/aggressive; null — не знаем.
+  final String? mood;
+
   Map<String, Object?> toMap() => {
         'id': id,
         'title': title,
@@ -408,6 +503,9 @@ class DownloadedTrack {
         'format': format,
         'duration_sec': durationSec,
         'energy': energy,
+        'album': album,
+        'genre': genre,
+        'mood': mood,
       };
 
   static DownloadedTrack fromMap(Map<String, Object?> m) => DownloadedTrack(
@@ -423,6 +521,9 @@ class DownloadedTrack {
         format: m['format'] as String?,
         durationSec: m['duration_sec'] as int?,
         energy: (m['energy'] as num?)?.toDouble(),
+        album: m['album'] as String?,
+        genre: m['genre'] as String?,
+        mood: m['mood'] as String?,
       );
 
   /// Короткая строка характеристик: «320k · MP3 · 3:45» (пустые части

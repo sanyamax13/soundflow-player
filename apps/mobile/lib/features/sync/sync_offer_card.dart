@@ -36,10 +36,10 @@ class SyncOfferCard extends ConsumerWidget {
 
   Widget _shell(Widget child, {bool red = false}) => Container(
     margin: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
     decoration: BoxDecoration(
       color: red ? _red.withValues(alpha: 0.14) : Afisha.groupBg,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(20),
       border: red ? Border.all(color: _red.withValues(alpha: 0.55), width: 0.5) : null,
     ),
     child: child,
@@ -59,7 +59,8 @@ class SyncOfferCard extends ConsumerWidget {
           title: o.addTitle,
           subtitle: o.addSubtitle,
           subtitleColor: o.lowSpace ? const Color(0xFFFF7A70) : Afisha.inkDim,
-          button: 'Скачать',
+          // Мало места — предупреждение уже красным на карточке, окна-вопроса больше нет.
+          button: o.lowSpace ? 'Всё равно скачать' : 'Скачать',
           onPressed: () => o.run(adds: true, removes: false),
         ),
       );
@@ -98,6 +99,39 @@ class SyncOfferCard extends ConsumerWidget {
     required Color subtitleColor,
     required String button,
     required VoidCallback onPressed,
+  }) {
+    // Кнопка — огромная таблетка на всю ширину под текстом (разбор Gemini 26.09.2026:
+    // в машине мелкую кнопку справа не попасть).
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _rowHead(icon: icon, tileBg: tileBg, tileFg: tileFg, title: title, subtitle: subtitle, subtitleColor: subtitleColor),
+        const SizedBox(height: 12),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(64),
+            shape: const StadiumBorder(),
+            textStyle: const TextStyle(
+              fontFamily: Afisha.fontFamily,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          onPressed: onPressed,
+          child: Text(button),
+        ),
+      ],
+    );
+  }
+
+  Widget _rowHead({
+    required IconData icon,
+    required Color tileBg,
+    required Color tileFg,
+    required String title,
+    required String subtitle,
+    required Color subtitleColor,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -141,21 +175,6 @@ class SyncOfferCard extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 10),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 38),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            shape: const StadiumBorder(),
-            textStyle: const TextStyle(
-              fontFamily: Afisha.fontFamily,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          onPressed: onPressed,
-          child: Text(button),
         ),
       ],
     );
@@ -219,9 +238,9 @@ class SyncOfferCard extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(3),
           child: LinearProgressIndicator(
-            minHeight: 5,
+            minHeight: 6,
             value: o.total == 0 ? null : o.done / o.total,
             backgroundColor: Afisha.line,
           ),
@@ -233,7 +252,7 @@ class SyncOfferCard extends ConsumerWidget {
   Widget _idle(SyncOffer o) {
     final String text;
     if (o.lastCheckFailed) {
-      text = 'Компьютер не отвечает. Откройте окно SoundFlow на компьютере';
+      text = 'Нет связи с домом — новые песни проверю, когда появится';
     } else if (o.checkedAt == null) {
       text = 'Проверка…';
     } else {
@@ -251,7 +270,9 @@ class SyncOfferCard extends ConsumerWidget {
                 ? CupertinoIcons.wifi_slash
                 : CupertinoIcons.arrow_2_circlepath,
             iconBg: o.lastCheckFailed ? Afisha.red : Afisha.green,
-            title: 'Музыка с компьютера',
+            // «Медиатека» (разбор Gemini 26.09.2026, Alex «да»): вся ли моя музыка уже на
+            // телефоне. Было «Музыка с компьютера».
+            title: 'Медиатека',
             subtitle: text,
             onTap: () => o.refresh(announce: false),
           ),

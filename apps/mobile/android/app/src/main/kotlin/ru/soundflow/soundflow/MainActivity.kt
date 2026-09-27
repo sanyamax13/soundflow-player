@@ -2,6 +2,10 @@ package ru.soundflow.soundflow
 
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.app.ActivityManager
+import android.os.BatteryManager
+import android.os.PowerManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -55,6 +59,10 @@ class MainActivity : AudioServiceFragmentActivity() {
                         })
                         result.success(null)
                     }
+                    // «Чёрный ящик» (26.09.2026): заряд, зарядка, температура, экономия.
+                    "battery" -> result.success(battery())
+                    // Почему система в прошлые разы закрывала приложение (Android 11+).
+                    "exitReasons" -> result.success(exitReasons())
                     "installApk" -> {
                         val path = call.argument<String>("path")
                         if (path == null) {
@@ -113,6 +121,65 @@ class MainActivity : AudioServiceFragmentActivity() {
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile"
             else -> ""
+        }
+    }
+
+    private fun battery(): Map<String, Any?> {
+        val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = i?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = i?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val plugged = i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val temp = i?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+        return mapOf(
+            "battery_pct" to if (level >= 0 && scale > 0) level * 100 / scale else null,
+            "charging" to when (plugged) {
+                BatteryManager.BATTERY_PLUGGED_AC -> "сеть"
+                BatteryManager.BATTERY_PLUGGED_USB -> "usb"
+                BatteryManager.BATTERY_PLUGGED_WIRELESS -> "беспроводная"
+                0 -> "нет"
+                else -> "да"
+            },
+            "battery_temp_c" to temp / 10.0,
+            "current_ua" to bm?.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW),
+            "power_save" to (pm?.isPowerSaveMode ?: false),
+            "screen_on" to (pm?.isInteractive ?: true),
+            "ignoring_battery_opt" to (pm?.isIgnoringBatteryOptimizations(packageName) ?: false),
+        )
+    }
+
+    private fun exitReasons(): List<Map<String, Any?>> {
+        if (Build.VERSION.SDK_INT < 30) return emptyList()
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return emptyList()
+        return am.getHistoricalProcessExitReasons(packageName, 0, 10).map { e ->
+            mapOf(
+                "timestamp" to e.timestamp,
+                "reason" to when (e.reason) {
+                    1 -> "сам вышел"
+                    2 -> "сигнал"
+                    3 -> "нехватка памяти (low memory killer)"
+                    4 -> "сбой Java/Kotlin"
+                    5 -> "сбой нативный"
+                    6 -> "не отвечает (ANR)"
+                    7 -> "ошибка запуска"
+                    8 -> "сменились разрешения"
+                    9 -> "лишний расход ресурсов"
+                    10 -> "по просьбе пользователя"
+                    11 -> "удалили/остановили"
+                    12 -> "зависимость умерла"
+                    13 -> "другое"
+                    14 -> "заморожено"
+                    15 -> "изменилось состояние пакета"
+                    16 -> "обновление приложения"
+                    else -> "неизвестно (${e.reason})"
+                },
+                "status" to e.status,
+                "importance" to e.importance,
+                "pss" to e.pss,
+                "rss" to e.rss,
+                "description" to e.description,
+            )
         }
     }
 }

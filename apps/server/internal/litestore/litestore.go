@@ -111,6 +111,22 @@ func (s *Store) NextLibraryBatch(ctx context.Context, excludeIDs []string, budge
 	return toDBCatalog(list), total, err
 }
 
+func (s *Store) CoverRevs(ctx context.Context) (map[string]string, error) {
+	return s.d.OriginalCoverRevs()
+}
+
+func (s *Store) TrackMoods(ctx context.Context) (map[string]string, error) {
+	return s.d.TrackMoods()
+}
+
+func (s *Store) TrackLoudness(ctx context.Context) (map[string]float64, error) {
+	return s.d.TrackLoudness()
+}
+
+func (s *Store) TrackGenres(ctx context.Context) (map[string]string, error) {
+	return s.d.TrackGenres()
+}
+
 func (s *Store) TrackEnergies(ctx context.Context) (map[string]float64, error) {
 	return s.d.TrackEnergies()
 }
@@ -140,6 +156,10 @@ func (s *Store) TrackCoverURL(ctx context.Context, id string) (string, bool, err
 
 func (s *Store) TrackWaveform(ctx context.Context, id string) ([]byte, bool, error) {
 	return s.d.Waveform(id)
+}
+
+func (s *Store) TrackBass(ctx context.Context, id string) ([]byte, bool, error) {
+	return s.d.Bass(id)
 }
 
 func (s *Store) SetWaveform(ctx context.Context, id string, bars []byte) error {

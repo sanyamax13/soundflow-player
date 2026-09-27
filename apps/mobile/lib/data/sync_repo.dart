@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../core/black_box.dart';
 import '../core/device_info.dart';
 import 'api.dart';
 import 'db.dart';
@@ -15,6 +16,9 @@ class SyncRepo {
   SyncRepo(this._api, this._db);
 
   final Api _api;
+
+  /// Клиент сервера — AutoSync переключает через него дорогу (дом / VDS).
+  Api get api => _api;
   final Db _db;
 
   static const _kDeviceId = 'device_id';
@@ -54,6 +58,7 @@ class SyncRepo {
   /// Записать событие в очередь. Уйдёт на сервер при следующей синхронизации
   /// (авто — как появится связь, либо руками кнопкой).
   Future<void> record(String kind, {String trackId = '', Map<String, Object?>? payload}) async {
+    BlackBox.log('sync_event', {'kind': kind, 'track': trackId, ...?payload});
     await _db.enqueueEvent(
       uuid: _uuid(),
       kind: kind,

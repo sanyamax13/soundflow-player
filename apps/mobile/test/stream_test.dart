@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +43,7 @@ class _SlowPlayer extends PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) =>
       gate.future;
 }
@@ -58,6 +60,7 @@ class _RecordingPlayer extends PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) async {
     streamQueueCount = -1;
     calls.add('playQueue');
@@ -87,11 +90,17 @@ class _PrimeThenHangPlayer extends PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) async {
     streamQueueCount = -1;
     calls.add('playQueue');
+    firstQueue ??= tracks;
+    firstPosition ??= initialPosition;
     now.value = tracks[startIndex];
   }
+
+  List<NowPlaying>? firstQueue;
+  Duration? firstPosition;
 
   @override
   Future<void> takeOverWithStream(List<NowPlaying> stream) async {
@@ -294,10 +303,16 @@ void main() {
     for (final t in _twoTracks()) {
       await db.upsertDownloaded(t);
     }
+    // Файл песни из кэша должен реально лежать на телефоне — иначе кэш её
+    // пропускает (удалённая песня не должна всплывать первой, v110).
+    final dir = Directory.systemTemp.createTempSync('sf_stream_cache');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final aPath = '${dir.path}/a';
+    File(aPath).writeAsBytesSync([0]);
     await db.kvSet(
       'stream_cache_queue',
       jsonEncode([
-        {'id': 'a', 'title': 'Песня А', 'artist': 'Кто-то', 'path': '/tmp/a', 'cover': null},
+        {'id': 'a', 'title': 'Песня А', 'artist': 'Кто-то', 'path': aPath, 'cover': null},
       ]),
     );
     final sync = SyncRepo(api, db);
@@ -325,5 +340,90 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(player.calls, ['playQueue', 'takeOver']);
     expect(player.streamQueueCount, 2);
+  });
+
+  testWidgets('кэш очереди пропускает песню, которой уже нет на телефоне', (tester) async {
+    final player = _PrimeThenHangPlayer();
+    final api = _FakeApi();
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+    addTearDown(db.close);
+    for (final t in _twoTracks()) {
+      await db.upsertDownloaded(t);
+    }
+    await db.kvSet(
+      'stream_cache_queue',
+      jsonEncode([
+        {'id': 'gone', 'title': 'Убранная', 'artist': 'Кто-то', 'path': '/nonexistent/gone', 'cover': null},
+      ]),
+    );
+    final sync = SyncRepo(api, db);
+    final app = ProviderScope(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        dbProvider.overrideWithValue(db),
+        downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
+        playerProvider.overrideWithValue(player),
+        syncProvider.overrideWithValue(sync),
+        syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
+      ],
+      child: const SoundFlowApp(),
+    );
+    await _openStream(tester, app);
+
+    // Из кэша ставить нечего — «Убранная» не играет ни на миг, очередь
+    // собирается обычным путём из того, что реально лежит на телефоне.
+    expect(player.now.value?.id, isNot('gone'));
+    if (!player.hangTakeOver.isCompleted) player.hangTakeOver.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(player.now.value?.id, isNot('gone'));
+  });
+
+  // Чёрный ящик 27.09.2026: Samsung закрыл плеер на паузе — после открытия должна стоять та же
+  // песня и с того же места (resume_point), а не новая очередь.
+  testWidgets('после закрытия системой — та же песня с того же места', (tester) async {
+    final player = _PrimeThenHangPlayer();
+    final api = _FakeApi();
+    final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+    addTearDown(db.close);
+    for (final t in _twoTracks()) {
+      await db.upsertDownloaded(t);
+    }
+    final dir = Directory.systemTemp.createTempSync('sf_stream_resume');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final aPath = '${dir.path}/a';
+    final bPath = '${dir.path}/b';
+    File(aPath).writeAsBytesSync([0]);
+    File(bPath).writeAsBytesSync([0]);
+    await db.kvSet(
+      'stream_cache_queue',
+      jsonEncode([
+        {'id': 'a', 'title': 'Песня А', 'artist': 'Кто-то', 'path': aPath, 'cover': null},
+        {'id': 'b', 'title': 'Песня Б', 'artist': 'Кто-то', 'path': bPath, 'cover': null},
+      ]),
+    );
+    await db.kvSet(
+      'resume_point',
+      jsonEncode({'id': 'b', 'title': 'Песня Б', 'artist': 'Кто-то', 'path': bPath, 'cover': null, 'pos_ms': 83000}),
+    );
+    final sync = SyncRepo(api, db);
+    final app = ProviderScope(
+      overrides: [
+        apiProvider.overrideWithValue(api),
+        dbProvider.overrideWithValue(db),
+        downloadsProvider.overrideWithValue(DownloadsRepo(api, db, sync)),
+        playerProvider.overrideWithValue(player),
+        syncProvider.overrideWithValue(sync),
+        syncOfferProvider.overrideWithValue(SyncOffer(DownloadsRepo(api, db, sync))),
+      ],
+      child: const SoundFlowApp(),
+    );
+    await _openStream(tester, app);
+
+    expect([for (final t in player.firstQueue!) t.id], ['b', 'a']);
+    expect(player.firstPosition, const Duration(milliseconds: 83000));
+    if (!player.hangTakeOver.isCompleted) player.hangTakeOver.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
   });
 }

@@ -9,6 +9,8 @@
 package tagfix
 
 import (
+	"html"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -106,4 +108,100 @@ func hasFullyNonASCIIWord(s string) bool {
 	}
 	flush()
 	return found
+}
+
+var (
+	// «Гр. «Отпетые мошенники»», «Группа «Фристайл»» — приставка «группа» и кавычки лишние
+	// (Alex 27.09.2026: «гр это группа, виа тоже там лишнее»).
+	groupPrefix = regexp.MustCompile(`^(?i:гр\.|гр|группа)\s*«([^»]+)»\s*(.*)$`)
+	// «ВИА «Гра» (Н. Грановская, …)» — «ВИА» часть названия, остаётся; кавычки и перечень
+	// участников в скобках — нет.
+	viaPrefix   = regexp.MustCompile(`^(?i:виа)\s*«([^»]+)»\s*(.*)$`)
+	tailMembers = regexp.MustCompile(`^\([^)]*\)$`)
+	manySpaces  = regexp.MustCompile(`\s{2,}`)
+)
+
+// CleanArtist — имя исполнителя для показа: «Гр. «Отпетые мошенники»» → «Отпетые мошенники»,
+// «ВИА «Гра» (Н. Грановская, …)» → «ВИА Гра», двойные пробелы — в один («В.  Левкин» → «В. Левкин»).
+// Инициалы не трогает — угадать полное имя неоткуда.
+func CleanArtist(s string) string {
+	// «Katherine O&#039;Ryan» — HTML-сущности из тегов сперва раскрыть, иначе «;» внутри них резался бы.
+	s = html.UnescapeString(s)
+	s = strings.TrimSpace(manySpaces.ReplaceAllString(s, " "))
+	if m := groupPrefix.FindStringSubmatch(s); m != nil {
+		s = strings.TrimSpace(m[1] + " " + dropMembers(m[2]))
+	} else if m := viaPrefix.FindStringSubmatch(s); m != nil {
+		s = strings.TrimSpace("ВИА " + m[1] + " " + dropMembers(m[2]))
+	}
+	return joinArtists(s)
+}
+
+var (
+	featWord  = regexp.MustCompile(`(?i)\s+(?:feat\.?|ft\.?|featuring)\s+`)
+	semiSep   = regexp.MustCompile(`\s*;\s*`)
+	xSep      = regexp.MustCompile(`(\S+)\s+[xXхХ]\s+(\S+)`)
+	ruAnd     = regexp.MustCompile(`^(.+?)\s+и\s+(.+)$`)
+	initial   = regexp.MustCompile(`(?:^|\s)\p{Lu}\.`)
+	groupWord = regexp.MustCompile(`(?i)^(?:гр\.|группа)\s`)
+	commaSep  = regexp.MustCompile(`\s*,\s+`)
+	commaNoun = regexp.MustCompile(`(?i),\s*(?:the|los|las|die|el|le)\b`)
+	letters2  = regexp.MustCompile(`^\p{L}[\p{L}\p{N}.'’-]+$`)
+)
+
+// joinArtists — одна запись совместных исполнителей (27.09.2026, Alex: «три разных вида, когда два
+// артиста, давай к одному»): «Noah/Erik Elias», «A; B», «A x B», «A, B» → «A & B»; гость — всегда
+// «feat.» («ft.», «Feat.», «featuring» → «feat.»). Не трогаем названия групп:
+//   - английское «And» («Peter Bjorn And John», «Simon and Garfunkel»);
+//   - русское «и», кроме явных дуэтов — где у кого-то инициал или «гр.» («В. Левкин и Гульназ»,
+//     «С. Пьеха и Г. Лепс»); «Король и Шут», «Время и Стекло», «Потап и Настя» остаются;
+//   - « X » в названиях («TOMORROW X TOGETHER», «X Ambassadors», «Sangre X Sangre»);
+//   - запятую, если «&» уже есть или за ней артикль («Earth, Wind & Fire», «Tyler, The Creator»);
+//   - косую черту между короткими именами («AC/DC», «25/17», «Au/Ra»).
+func joinArtists(s string) string {
+	hadAmp := strings.Contains(s, "&")
+	s = featWord.ReplaceAllString(s, " feat. ")
+	s = semiSep.ReplaceAllString(s, " & ")
+	s = xSep.ReplaceAllStringFunc(s, func(m string) string {
+		p := xSep.FindStringSubmatch(m)
+		l, r := p[1], p[2]
+		switch {
+		case !letters2.MatchString(l) || !letters2.MatchString(r):
+			return m // «V $ X V», «& X Ambassadors»
+		case strings.EqualFold(l, r), strings.HasPrefix(strings.ToLower(r), "feat"):
+			return m // «Sangre X Sangre», «Heritage X feat.»
+		case strings.ToUpper(l) == l && strings.ToUpper(r) == r && len(l) >= 4 && len(r) >= 4:
+			return m // «TOMORROW X TOGETHER»
+		}
+		return l + " & " + r
+	})
+	if m := ruAnd.FindStringSubmatch(s); m != nil &&
+		(initial.MatchString(m[1]) || initial.MatchString(m[2]) || groupWord.MatchString(m[2])) {
+		s = m[1] + " & " + m[2]
+	}
+	if strings.Contains(s, "/") {
+		parts := strings.Split(s, "/")
+		long := true
+		for _, p := range parts {
+			if utf8.RuneCountInString(strings.TrimSpace(p)) < 4 {
+				long = false
+			}
+		}
+		if long {
+			for i := range parts {
+				parts[i] = strings.TrimSpace(parts[i])
+			}
+			s = strings.Join(parts, " & ")
+		}
+	}
+	if !hadAmp && !commaNoun.MatchString(s) {
+		s = commaSep.ReplaceAllString(s, " & ")
+	}
+	return strings.TrimSpace(manySpaces.ReplaceAllString(s, " "))
+}
+
+func dropMembers(tail string) string {
+	if tailMembers.MatchString(strings.TrimSpace(tail)) {
+		return ""
+	}
+	return tail
 }

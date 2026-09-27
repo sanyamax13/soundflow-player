@@ -34,12 +34,28 @@ var (
 // запускать проводник с чужого устройства нельзя. «Свой компьютер» — см. isThisComputer.
 func localOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !fromWindow(r) && !isThisComputer(r.RemoteAddr) {
+		if !fromWindow(r) && !fromTrustedWindow(r) && !isThisComputer(r.RemoteAddr) {
 			host, _, _ := net.SplitHostPort(r.RemoteAddr)
 			http.Error(w, "эта команда только с самого компьютера (запрос пришёл с "+host+")", http.StatusForbidden)
 			return
 		}
 		h(w, r)
+	}
+}
+
+// localOrHomeLAN — как localOnly, но ещё и с телефона из домашней сети (192.168.*, 10.*, 172.16-31.*).
+// Для «удалить насовсем» смахиванием в плеере телефона (26.09.2026, Alex): дома телефон ходит на
+// сервер напрямую, и localOnly отвечал ему 403 — песня стиралась только с телефона (нашла ревизия
+// кода 27.09.2026). Через VDS запрос приходит с 127.0.0.1 и уже проверен ключом удалённого доступа.
+func localOrHomeLAN(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			if ip := net.ParseIP(host).To4(); ip != nil && isHomeLAN(ip) {
+				h(w, r)
+				return
+			}
+		}
+		localOnly(h)(w, r)
 	}
 }
 
@@ -227,13 +243,21 @@ func (s *Service) hDeleteForever(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "сервис ещё поднимается, попробуй через пару секунд", 503)
 		return
 	}
-	res, err := s.deleteForever(r.Context(), body.IDs)
+	// Откуда удаление — для журнала (27.09.2026: удаление смахиванием с телефона подписывалось «из окна»,
+	// и Alex не видел, что программа их получает).
+	src := "с телефона"
+	if fromWindow(r) || fromTrustedWindow(r) {
+		src = "из окна"
+	}
+	res, err := s.deleteForever(context.WithValue(r.Context(), deleteSourceKey{}, src), body.IDs)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	writeJSON(w, res)
 }
+
+type deleteSourceKey struct{}
 
 func (s *Service) deleteForever(ctx context.Context, rawIDs []string) (deleteResult, error) {
 	return s.deleteForeverWith(ctx, rawIDs, true)
@@ -267,6 +291,7 @@ func (s *Service) deleteForeverWith(ctx context.Context, rawIDs []string, withCo
 
 	var removed []string
 	var erasedDirs []string
+	var lastArtist, lastTitle string
 	for _, id := range ids {
 		normKey, canonical, ok, err := s.store.TrackForDeletion(ctx, id)
 		if err != nil {
@@ -279,6 +304,7 @@ func (s *Service) deleteForeverWith(ctx context.Context, rawIDs []string, withCo
 			continue
 		}
 		artist, title, _, _ := s.store.TrackArtistTitle(ctx, id)
+		lastArtist, lastTitle = artist, title
 		local := s.localPath(canonical)
 
 		size, erased, rmErr := eraseFile(local)
@@ -331,9 +357,21 @@ func (s *Service) deleteForeverWith(ctx context.Context, rawIDs []string, withCo
 		}
 		pruneEmptyDirs(erasedDirs, stopAt)
 	}
-	_ = s.db.AddServerLog("info", "", "", fmt.Sprintf(
-		"удалено навсегда из окна: %d песен (файлов стёрто %d, копий стёрто %d, не удалось %d+%d), копия базы: %s",
-		res.Deleted, res.FilesErased, res.Copies, res.Failed, res.CopiesFailed, orDash(res.Backup)), res.Bytes)
+	src, _ := ctx.Value(deleteSourceKey{}).(string)
+	if src == "" {
+		src = "из окна"
+	}
+	// Одна песня — с названием, чтобы в «Что делала программа» было видно, какая.
+	la, lt := "", ""
+	if len(removed) == 1 {
+		la, lt, _, _ = s.store.TrackArtistTitle(ctx, removed[0])
+		if la == "" && lt == "" {
+			la, lt = lastArtist, lastTitle
+		}
+	}
+	_ = s.db.AddServerLog("info", la, lt, fmt.Sprintf(
+		"удалено навсегда %s: %d песен (файлов стёрто %d, копий стёрто %d, не удалось %d+%d), копия базы: %s",
+		src, res.Deleted, res.FilesErased, res.Copies, res.Failed, res.CopiesFailed, orDash(res.Backup)), res.Bytes)
 	return res, nil
 }
 

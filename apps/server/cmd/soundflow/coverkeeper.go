@@ -14,6 +14,7 @@ import (
 	"soundflow/server/internal/coverfind"
 	"soundflow/server/internal/localdb"
 	"soundflow/server/internal/sidecar"
+	"soundflow/server/internal/tagfix"
 )
 
 // Программа сама следит, чтобы у каждой песни была обложка (Alex TG 20152: «найди обложки для
@@ -144,7 +145,8 @@ func (k *coverKeeper) defaultFinder() *coverfind.Finder {
 	if u := k.s.sidecarURL(); u != "" {
 		yandex = coverfind.YandexSource(sidecar.New(u).YandexTrackCandidates)
 	}
-	return &coverfind.Finder{Sources: coverfind.NewWeb().Sources(yandex)}
+	w := coverfind.NewWeb()
+	return &coverfind.Finder{Sources: w.Sources(yandex), ArtistSources: w.ArtistSources()}
 }
 
 // sidecarReady — можно ли уже искать. Качалку программа поднимает сама, и без неё Яндекс не
@@ -178,6 +180,7 @@ func (k *coverKeeper) mark(id, marker string) {
 type coverPassStats struct {
 	embedded, folder, already int // обложка уже была: в файле / в папке / найдена раньше
 	fetched, none             int // поиск: нашла / не нашла
+	artist                    int // обложки песни нет — взяла фото исполнителя
 	failed, offline           int // не смогла записать файл / ни один источник не ответил
 }
 
@@ -188,6 +191,26 @@ func (k *coverKeeper) pass(ctx context.Context) error {
 	}
 	if !k.sidecarReady() {
 		return errSidecarStarting
+	}
+	// Имена исполнителей — сперва почистить (27.09.2026, Alex: «гр это группа, виа тоже лишнее»):
+	// «Гр. «Отпетые мошенники»» → «Отпетые мошенники». Новые песни попадают сюда же — круг
+	// запускается после каждого добавления в каталог.
+	if n, err := s.db.CleanArtistNames(tagfix.CleanArtist); err != nil {
+		log.Printf("хранитель обложек: чистка имён: %v", err)
+	} else if n > 0 {
+		msg := fmt.Sprintf("имена исполнителей: почищено у %d песен (убрала «Гр.», кавычки, лишние пробелы)", n)
+		log.Print("хранитель " + msg)
+		_ = s.db.AddServerLog("info", "", "", msg, 0)
+	}
+	// Поиск стал умнее (27.09.2026: чистка «Гр.», «ВИА», инициалов и «(Ремикс …)», фото исполнителя) —
+	// один раз переспрашиваем все прежние «не нашла», не дожидаясь недели.
+	if v, _, _ := s.db.GetSetting("cover_search_v2"); v == "" {
+		if n, err := s.db.ResetCoverMisses(); err == nil {
+			_ = s.db.SetSetting("cover_search_v2", "done")
+			if n > 0 {
+				log.Printf("хранитель обложек: поиск обновился — переспрошу %d песен без обложки", n)
+			}
+		}
 	}
 	retryBefore := k.now().AddDate(0, 0, -coverRetryDays).Format("2006-01-02")
 	cands, err := s.db.TracksNeedingCoverCheck(retryBefore, 1_000_000)
@@ -230,9 +253,9 @@ func (k *coverKeeper) pass(ctx context.Context) error {
 		k.search(ctx, need, dir, &st)
 	}
 
-	if st.embedded+st.folder+st.already+st.fetched+st.none+st.failed+st.offline > 0 {
-		msg := fmt.Sprintf("обложки: проверено %d — уже были %d (в файле %d, в папке %d, найдены раньше %d), нашла в интернете %d, не нашла %d",
-			len(cands), st.embedded+st.folder+st.already, st.embedded, st.folder, st.already, st.fetched, st.none)
+	if st.embedded+st.folder+st.already+st.fetched+st.artist+st.none+st.failed+st.offline > 0 {
+		msg := fmt.Sprintf("обложки: проверено %d — уже были %d (в файле %d, в папке %d, найдены раньше %d), нашла в интернете %d, фото исполнителя %d, не нашла %d",
+			len(cands), st.embedded+st.folder+st.already, st.embedded, st.folder, st.already, st.fetched, st.artist, st.none)
 		if st.failed > 0 {
 			msg += fmt.Sprintf(", не смогла записать %d", st.failed)
 		}
@@ -306,14 +329,22 @@ func (k *coverKeeper) search(ctx context.Context, need []localdb.CoverCandidate,
 					continue
 				}
 				offlineRun = 0
+				mu.Unlock()
+				marker := "found"
 				if res == nil {
+					// Обложки песни нет нигде — фото исполнителя (27.09.2026, Alex «делай так»).
+					if a, aerr := finder.FindArtist(sctx, c.Artist); aerr == nil && a != nil {
+						res, marker = a, "artist"
+					}
+				}
+				if res == nil {
+					mu.Lock()
 					st.none++
 					mu.Unlock()
 					k.mark(c.ID, "none@"+today)
 					progress(false)
 					continue
 				}
-				mu.Unlock()
 				if err := writeFoundCover(dir, c.ID, res.JPEG); err != nil {
 					log.Printf("хранитель обложек: не записала обложку %s: %v", c.ID, err)
 					mu.Lock()
@@ -322,9 +353,13 @@ func (k *coverKeeper) search(ctx context.Context, need []localdb.CoverCandidate,
 					progress(true)
 					continue
 				}
-				k.mark(c.ID, "found")
+				k.mark(c.ID, marker)
 				mu.Lock()
-				st.fetched++
+				if marker == "artist" {
+					st.artist++
+				} else {
+					st.fetched++
+				}
 				mu.Unlock()
 				progress(false)
 			}
@@ -341,7 +376,7 @@ feed:
 	close(work)
 	wg.Wait()
 
-	note := fmt.Sprintf("нашла %d, не нашла %d", st.fetched, st.none)
+	note := fmt.Sprintf("нашла %d, фото исполнителя %d, не нашла %d", st.fetched, st.artist, st.none)
 	if st.offline > 0 {
 		note += fmt.Sprintf(", без ответа %d", st.offline)
 	}

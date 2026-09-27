@@ -1,15 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart' show CupertinoScrollBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/providers.dart';
 import 'app/shell.dart';
+import 'core/black_box.dart';
 import 'core/config.dart';
 import 'core/crash_log.dart';
+import 'core/device_info.dart';
 import 'core/notice.dart';
 import 'core/server_discovery.dart';
 import 'core/theme.dart';
@@ -28,9 +33,30 @@ Future<void> main() async {
   // приложения не оставлял никакого следа (Alex TG 19028). Запуск целиком —
   // внутри одной зоны, иначе часть ошибок мимо.
   runZonedGuarded(_boot, (error, stack) {
+    if (_isNetworkError(error)) {
+      _logNetworkError(error, 'zone');
+      return;
+    }
     CrashLog.write(error, stack, where: 'zone');
   });
 }
+
+/// Пропала связь (нет интернета, не нашёлся адрес vdsmusic.ru, сервер не ответил) — это не падение
+/// приложения: музыка играет дальше. Раньше такая непойманная ошибка показывалась в Профиле как
+/// «Приложение падало» (Alex, скрин 27.09.2026: «Failed host lookup: 'vdsmusic.ru'»). Пишем в
+/// «чёрный ящик» как «нет сети», чтобы найти, откуда она пришла.
+bool _isNetworkError(Object e) =>
+    e is SocketException ||
+    e is HttpException ||
+    e is HandshakeException ||
+    (e is DioException &&
+        (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.sendTimeout));
+
+void _logNetworkError(Object e, String where) =>
+    BlackBox.log('net_error', {'where': where, 'error': e.toString().split('\n').first});
 
 Future<void> _boot() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,10 +64,17 @@ Future<void> _boot() async {
     FlutterError.presentError(details);
     // Обложка не подгрузилась по сети (не дома, нет связи) — это не падение
     // приложения; раньше такое попадало в «Последний сбой» (Alex TG 20169).
-    if (isHarmlessImageError(details)) return;
+    if (isHarmlessImageError(details)) {
+      BlackBox.log('image_error', {'error': details.exceptionAsString()});
+      return;
+    }
     CrashLog.write(details.exception, details.stack, where: 'flutter');
   };
   ui.PlatformDispatcher.instance.onError = (error, stack) {
+    if (_isNetworkError(error)) {
+      _logNetworkError(error, 'platform');
+      return true;
+    }
     CrashLog.write(error, stack, where: 'platform');
     return true;
   };
@@ -76,22 +109,48 @@ Future<void> _boot() async {
     final relayKey = await db.kvGet('relay_key');
     if (relayUrl != null && relayUrl.isNotEmpty && relayKey != null && relayKey.isNotEmpty) {
       api.setRelayTransport(relayUrl, relayKey);
+      // Дома — напрямую, не через VDS (сам выбирает дорогу; см. Api.pickRoute).
+      final home = await db.kvGet('server_url');
+      if (home != null && home.isNotEmpty) api.setHomeUrl(home);
+      api.onHomeUrlLearned = (url) => unawaited(db.kvSet('server_url', url));
+      // Не ждём: вне дома проверка «дом отвечает?» тянулась до 4 с на заставке (ревизия кода
+      // 27.09.2026). Пока не выбрали — идём через VDS, как раньше; дальше AutoSync перепроверяет.
+      unawaited(api.pickRoute().catchError((Object _) => false));
     }
   }
   final sync = SyncRepo(api, db);
+  // Подробный «чёрный ящик» (Alex TG 21786): всё пишется в файл дня и само уходит на
+  // домашний сервер (core/black_box.dart).
+  BlackBox.start(upload: (gz) async => api.uploadBlackBox(await sync.deviceId(), gz));
   final downloads = DownloadsRepo(api, db, sync);
   // late — onMissingFile ссылается на player, чтобы вернуть трек в очередь
   // после докачки (см. PlayerController.requeueTrack); замыкание просто
   // держит ссылку, вызовется уже после присвоения ниже.
   late final PlayerController player;
   player = PlayerController(
-    onPlay: (m) => sync.record('play', trackId: m.id),
+    onPlay: (m) {
+      unawaited(sync.record('play', trackId: m.id));
+      unawaited(db.markPlayed(m.id)); // для «забытого» в Потоке
+    },
     onSkip: (m, pos, total) => sync.record('skip', trackId: m.id, payload: {
       'position_ms': pos.inMilliseconds,
       'duration_ms': total.inMilliseconds,
     }),
     onComplete: (m) => sync.record('complete', trackId: m.id),
     onDuration: (id, total) => downloads.noteFileMeta(id, total),
+    // Выравнивание громкости (26.09.2026): громкость песни с сервера лежит в базе телефона.
+    loudnessOf: db.loudnessOf,
+    // Где остановились — для продолжения после закрытия приложения системой (stream_screen.dart).
+    onResumePoint: (t, pos) => unawaited(db.kvSet(
+        'resume_point',
+        jsonEncode({
+          'id': t.id,
+          'title': t.title,
+          'artist': t.artist,
+          'path': t.path,
+          'cover': t.coverPath,
+          'pos_ms': pos.inMilliseconds,
+        }))),
     // Файл трека пропал, плеер его пропустил (не падает, но и не играет) —
     // Alex TG 15.09.2026 «давай чинить, а не пропускать»: докачиваем заново
     // и возвращаем в очередь. Не вышло (сеть моргнула / трек правда стёрли
@@ -128,6 +187,7 @@ Future<void> _boot() async {
         downloads.backfillCovers,
         downloads.backfillMeta,
         downloads.backfillVectors,
+        downloads.backfillCoverRevs,
       ];
       for (final step in steps) {
         try {
@@ -140,16 +200,28 @@ Future<void> _boot() async {
   });
   // Сам отправляет накопленные лайки/удаления на сервер, как появится связь
   // (06.09.2026). Живёт всё время работы приложения.
-  final offer = SyncOffer(downloads);
+  // Новые песни качаются сами дома по Wi-Fi (26.09.2026, разбор Gemini «плашки»);
+  // переключатель — в «Связи с домом». Через удалённый доступ сами НЕ качаем.
+  final offer = SyncOffer(
+    downloads,
+    autoDownload: await db.kvGet('auto_download') != '0',
+    onAutoChanged: (v) => unawaited(db.kvSet('auto_download', v ? '1' : '0')),
+    atHome: () async {
+      if (api.relayHeaders.isNotEmpty) return false;
+      final t = (await DeviceInfo.read()).transport;
+      return t == 'wifi' || t == 'ethernet';
+    },
+  );
   AutoSync(sync, downloads, offer).start();
   // Было падение в прошлый раз — отправить его текст на компьютер (в ленту
-  // «что делал сервер»). Файл не стираем: он ещё покажется в Профиле, Alex
-  // уберёт кнопкой. Нет связи — попробуем при следующем запуске.
+  // «что делал сервер») и стереть: окна «Последний сбой» в Профиле больше нет (27.09.2026,
+  // разбор Gemini и Алисы — сбои уходят домой сами). Нет связи — попробуем при следующем запуске.
   unawaited(() async {
     final crash = await CrashLog.read();
     if (crash == null) return;
     try {
       await api.reportCrash(await sync.deviceId(), crash);
+      await CrashLog.clear();
     } catch (_) {}
   }());
   runApp(
@@ -179,9 +251,12 @@ class SoundFlowApp extends StatelessWidget {
       // Прокрутка как на iPhone: списки чуть «пружинят» на краях (Alex TG 20345).
       scrollBehavior: const CupertinoScrollBehavior(),
       navigatorKey: rootNavigatorKey,
+      navigatorObservers: [BlackBoxNavObserver()],
       // Плашка сообщений (core/notice.dart) — над всеми экранами и окнами.
-      builder: (context, child) =>
-          NoticeHost(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => NotificationListener<ScrollEndNotification>(
+            onNotification: blackBoxScroll,
+            child: NoticeHost(child: child ?? const SizedBox.shrink()),
+          ),
       // Входа нет — сразу вкладки. Плеер личный, сервер в домашней сети.
       home: const Shell(),
     );

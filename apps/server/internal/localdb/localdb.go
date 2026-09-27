@@ -50,6 +50,14 @@ func Open(path string) (*DB, error) {
 		// «научи программу её смотреть спектр и прогони по всем песням»).
 		// NULL = ещё не проверяли, 0 = проверили, не определили (тишина/ошибка).
 		`ALTER TABLE tracks ADD COLUMN spectral_cutoff_hz INTEGER`,
+		// Громкость песни по EBU R128 (LUFS) — для выравнивания громкости на телефоне (26.09.2026,
+		// общий вывод пяти разборов). NULL = ещё не считали, LoudnessUnknown = посчитать не вышло.
+		`ALTER TABLE tracks ADD COLUMN loudness_lufs REAL`,
+		// Настроение по звуку и угаданный жанр (27.09.2026, moodkeeper.go).
+		`ALTER TABLE tracks ADD COLUMN mood TEXT`,
+		`ALTER TABLE tracks ADD COLUMN genre_guess TEXT`,
+		// Удары баса (20 отметок в секунду) — пульсация кнопки «играть» (27.09.2026, basskeeper.go).
+		`ALTER TABLE tracks ADD COLUMN bass_env BLOB`,
 		`CREATE TABLE IF NOT EXISTS sync_plans (
 			device_id TEXT PRIMARY KEY, add_ids TEXT NOT NULL DEFAULT '[]',
 			remove_ids TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT '')`,
@@ -100,6 +108,13 @@ func Open(path string) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS phone_inventory (
 			device_id TEXT NOT NULL, track_id TEXT NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (device_id, track_id))`,
+		// Тексты песен пробовали 26.09.2026 и в тот же день убрали по слову Alex («избавиться от
+		// идеи с текстом… удали, не делай бекапов») — таблица, если успела появиться, стирается.
+		`DROP TABLE IF EXISTS track_lyrics`,
+		// Родные обложки песен из сборников (26.09.2026, cmd/soundflow/origcoverkeeper.go):
+		// state 'found' — лежит в original_covers/<id>.jpg; 'none' — не нашлась (повтор через 30 дней).
+		`CREATE TABLE IF NOT EXISTS track_original_cover (
+			track_id TEXT PRIMARY KEY, state TEXT NOT NULL DEFAULT '', checked_at TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE IF NOT EXISTS phone_inventory_meta (
 			device_id TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '',
 			count INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0)`,

@@ -98,6 +98,13 @@ func (s *Service) buildPhoneRouter() chi.Router {
 		StartedAt:          s.startedAt,
 		GeneratedCoversDir: gcov,
 		FoundCoversDir:     s.foundCoversDir(),
+		OriginalCoversDir:  s.originalCoversDir(),
+		BlackBoxDir:        filepath.Join(filepath.Dir(s.dbPath), "blackbox"),
+		HomeURL: func() string {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.homeURL
+		},
 		// Новая скачанная песня сама ложится в план телефона (см. autoplan.go).
 		OnTrackAdded: s.onTrackAdded,
 		// Убранное на телефоне не стирается само, а ждёт подтверждения в окне
@@ -145,6 +152,15 @@ func (s *Service) startPhoneServer() {
 	s.phoneBoundAddr = boundAddr
 	s.phoneListenErr = ""
 	s.mu.Unlock()
+	// Домашний адрес сервера — в ответ /v1/health: телефон, пришедший через VDS, так узнаёт, куда
+	// ходить напрямую дома (26.09.2026: у Alex в телефоне остался адрес brain, сервер переехал).
+	if _, port, err := net.SplitHostPort(boundAddr); err == nil {
+		if ip := hostIP(); ip != "" {
+			s.mu.Lock()
+			s.homeURL = "http://" + net.JoinHostPort(ip, port)
+			s.mu.Unlock()
+		}
+	}
 	if boundAddr != s.phoneAddr {
 		_ = s.db.AddServerLog("info", "", "", "порт "+s.phoneAddr+" занят другой программой, встал на "+boundAddr, 0)
 	}

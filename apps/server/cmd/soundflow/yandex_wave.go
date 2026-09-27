@@ -347,6 +347,17 @@ func (s *Service) hYandexWave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !s.waveMu.TryLock() {
+		// Сборка идёт (утром это ~10 минут: Яндекс + отпечатки). Раньше окно получало ошибку «пересобирается»
+		// и «Открытия» выглядели сломанными (Alex TG 21949, 27.09.2026). Теперь — последний готовый список
+		// (вчерашний), пока собирается сегодняшний.
+		days := s.loadWaveDays()
+		for n := 1; n <= waveHistoryDays; n++ {
+			if items := days[waveDate(now.AddDate(0, 0, -n))]; len(items) > 0 {
+				w.Header().Set("X-Wave-Building", "1")
+				writeJSON(w, s.filterWave(items))
+				return
+			}
+		}
 		http.Error(w, "волна уже пересобирается — подожди минуту", http.StatusConflict)
 		return
 	}

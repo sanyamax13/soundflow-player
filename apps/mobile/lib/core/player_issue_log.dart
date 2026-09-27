@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
+
+import 'black_box.dart';
 
 /// Тихий лог сбоев ВОСПРОИЗВЕДЕНИЯ (плеер пропустил битый/недоступный файл и
 /// сам поехал дальше) — ОТДЕЛЬНО от [CrashLog] (core/crash_log.dart), который
@@ -22,6 +25,11 @@ class PlayerIssueLog {
   }
 
   static Future<void> write(Object error, StackTrace? stack, {String where = ''}) async {
+    BlackBox.log('player_issue', {
+      'where': where,
+      'error': error.toString(),
+      if (stack != null) 'stack': stack.toString().split('\n').take(15).join('\n'),
+    });
     try {
       final f = await _f();
       final buf = StringBuffer()

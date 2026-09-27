@@ -142,7 +142,7 @@ void main() {
     // InkWell key: 'radio_button'; переехал с таблетки наверху 25.09.2026,
     // Alex TG). Пункт «радио по этой» из меню долгого нажатия убран как
     // дубль (план упрощения, п.1, Alex TG 15.09.2026).
-    await tester.tap(find.byKey(const ValueKey('radio_button')));
+    await tester.tap(find.byKey(const ValueKey('mode_similar')));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('похожее по звуку'), findsOneWidget);
@@ -184,7 +184,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.byKey(const ValueKey('radio_button')));
+    await tester.tap(find.byKey(const ValueKey('mode_similar')));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(player.similarTailCalls, hasLength(1));
@@ -221,7 +221,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.byKey(const ValueKey('radio_button')));
+    await tester.tap(find.byKey(const ValueKey('mode_similar')));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('нет звукового отпечатка'), findsOneWidget);
@@ -256,7 +256,7 @@ void main() {
     player.now.value = const NowPlaying(id: 'd', title: 'D', artist: 'Artist3');
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('radio_button')));
+    await tester.tap(find.byKey(const ValueKey('mode_similar')));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(api.trackVectorsCalls.first, ['d']); // подтянули только один недостающий

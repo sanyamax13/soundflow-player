@@ -37,27 +37,39 @@ void main() {
   });
 
   testWidgets('показывает сколько прошло и общую длину; цифры идут за позицией', (tester) async {
+    // Время над полосой одной строкой «1:12  /  4:33» (вариант «5 + 4», 26.09.2026).
     final player = await _pump(tester);
-    expect(find.text('1:12'), findsOneWidget);
-    expect(find.text('4:33'), findsOneWidget);
+    expect(find.textContaining('1:12', findRichText: true), findsOneWidget);
+    expect(find.textContaining('4:33', findRichText: true), findsOneWidget);
 
     player.position.value = const Duration(minutes: 2, seconds: 5);
     await tester.pump();
-    expect(find.text('2:05'), findsOneWidget);
-    expect(find.text('1:12'), findsNothing);
+    expect(find.textContaining('2:05', findRichText: true), findsOneWidget);
+    expect(find.textContaining('1:12', findRichText: true), findsNothing);
   });
 
   testWidgets('режим «убрать общую длину»: только крупные цифры', (tester) async {
     await _pump(tester, total: DotMatrixTotal.none);
-    expect(find.text('1:12'), findsOneWidget);
-    expect(find.text('4:33'), findsNothing);
+    expect(find.textContaining('1:12', findRichText: true), findsOneWidget);
+    expect(find.textContaining('4:33', findRichText: true), findsNothing);
   });
 
   testWidgets('режим «сколько осталось»: минус и оставшееся время', (tester) async {
     await _pump(tester, total: DotMatrixTotal.remaining);
-    expect(find.text('1:12'), findsOneWidget);
-    expect(find.text('−3:21'), findsOneWidget); // 4:33 - 1:12
-    expect(find.text('4:33'), findsNothing);
+    expect(find.textContaining('1:12', findRichText: true), findsOneWidget);
+    expect(find.textContaining('−3:21', findRichText: true), findsOneWidget); // 4:33 - 1:12
+    expect(find.textContaining('4:33', findRichText: true), findsNothing);
+  });
+
+  testWidgets('нажатие на время переключает «общая длина» ↔ «сколько осталось»', (tester) async {
+    await _pump(tester);
+    expect(find.textContaining('4:33', findRichText: true), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('dot_matrix_time')));
+    await tester.pump();
+    expect(find.textContaining('−3:21', findRichText: true), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('dot_matrix_time')));
+    await tester.pump();
+    expect(find.textContaining('4:33', findRichText: true), findsOneWidget);
   });
 
   testWidgets('тап по середине точек перематывает на середину песни', (tester) async {

@@ -5,8 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../core/apple.dart';
-import '../../core/crash_log.dart';
-import '../../core/net_hint.dart';
 import '../../core/notice.dart';
 import '../../core/theme.dart';
 import '../../core/update_check.dart';
@@ -14,193 +12,34 @@ import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
 import '../discover/discover_screen.dart';
 import '../sync/sync_offer_card.dart';
-import '../settings/settings_screen.dart';
-import '../taste_review/taste_review_screen.dart';
 
-/// Профиль: синхронизация, статистика, настройки. Оформление — как «Настройки»
-/// на iPhone (Alex TG 20345, 21.09.2026): крупный заголовок, который при
-/// прокрутке сворачивается, и сгруппированные ряды на серых плашках.
-class ProfileScreen extends StatelessWidget {
+/// Профиль. 26.09.2026 (разбор Gemini + Alex «да»): сверху вниз —
+/// обновление (только когда есть) · «Медиатека» (вся ли музыка на телефоне) ·
+/// «Открытия» · «Связь с домом» с живым статусом прямо в строке (бывшие
+/// «Сервер» и «Настройки» слиты в один экран) · «О программе» маленькой строкой.
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: AppleLargeTitle('Профиль'),
-            ),
-            const _CrashCard(),
-            const SyncOfferCard(showIdle: true),
-            const SizedBox(height: 18),
-            AppleSection(
-              dividerInset: 58,
-              children: [
-                AppleRow(
-                  icon: CupertinoIcons.wand_stars,
-                  iconBg: Afisha.lime,
-                  title: 'Открытия',
-                  subtitle: 'волна по вкусу, плейлист по ссылке — Яндекс и торренты',
-                  chevron: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const DiscoverScreen()),
-                  ),
-                ),
-                AppleRow(
-                  icon: CupertinoIcons.slider_horizontal_3,
-                  iconBg: Afisha.blue,
-                  title: 'Разбор коллекции',
-                  subtitle: 'послушать и почистить — от менее твоего к более',
-                  chevron: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const TasteReviewScreen()),
-                  ),
-                ),
-                AppleRow(
-                  icon: CupertinoIcons.desktopcomputer,
-                  iconBg: Afisha.blue,
-                  title: 'Сервер',
-                  subtitle: 'связь с компьютером, полный сброс',
-                  chevron: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
-                  ),
-                ),
-                AppleRow(
-                  icon: CupertinoIcons.gear_solid,
-                  iconBg: Afisha.gray,
-                  title: 'Настройки',
-                  subtitle: 'адрес сервера, журнал',
-                  chevron: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 22),
-            const AppleSection(dividerInset: 58, children: [_UpdateRow()]),
-            const SizedBox(height: 28),
-          ],
-        ),
-      ),
-    );
-  }
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-/// Показывается только если в прошлый раз приложение упало (Alex TG 19028).
-/// Тап — весь текст сбоя: можно прочитать, отправить на компьютер, убрать.
-class _CrashCard extends ConsumerStatefulWidget {
-  const _CrashCard();
-
-  @override
-  ConsumerState<_CrashCard> createState() => _CrashCardState();
-}
-
-class _CrashCardState extends ConsumerState<_CrashCard> {
-  String? _text;
-
-  @override
-  void initState() {
-    super.initState();
-    CrashLog.read().then((t) {
-      if (mounted) setState(() => _text = t);
-    });
-  }
-
-  Future<void> _open() async {
-    final text = _text;
-    if (text == null) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Последний сбой'),
-        content: SingleChildScrollView(child: SelectableText(text)),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              try {
-                await ref
-                    .read(apiProvider)
-                    .reportCrash(await ref.read(syncProvider).deviceId(), text);
-                Notice.show('Отправлено на компьютер', kind: NoticeKind.done);
-              } catch (_) {
-                showServerUnreachable(lead: 'Компьютер сейчас недоступен');
-              }
-            },
-            child: const Text('Отправить на компьютер'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await CrashLog.clear();
-              if (mounted) setState(() => _text = null);
-            },
-            child: const Text('Убрать'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final text = _text;
-    if (text == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: AppleSection(
-        dividerInset: 58,
-        children: [
-          AppleRow(
-            icon: CupertinoIcons.exclamationmark_triangle_fill,
-            iconBg: Afisha.red,
-            title: 'Приложение падало',
-            // Человеческая строка вместо сырого стека (Опус-ревью телефона
-            // 14.09.2026, пункт 2) — сам текст сбоя всё ещё доступен по тапу.
-            subtitle: 'Есть запись о сбое — нажмите, чтобы посмотреть или отправить',
-            chevron: true,
-            onTap: _open,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// «О программе» — версия + автопроверка обновления при открытии Профиля
-/// (тихо, без всплывающих окон) + тап ставит скачанную версию (Alex,
-/// 12.09.2026 — канал vdsmusic.ru, см. core/update_check.dart).
-class _UpdateRow extends StatefulWidget {
-  const _UpdateRow();
-
-  @override
-  State<_UpdateRow> createState() => _UpdateRowState();
-}
-
-class _UpdateRowState extends State<_UpdateRow> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   static const _channel = MethodChannel('soundflow/device');
 
   String _installed = '…';
-  UpdateInfo? _available;
-  bool _busy = false;
+  UpdateInfo? _update;
+  bool _updating = false;
+  bool? _online; // null — ещё проверяем
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadVersion();
+    _checkOnline();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadVersion() async {
     int code;
     try {
       code = await _channel.invokeMethod<int>('appVersionCode') ?? 0;
@@ -209,43 +48,167 @@ class _UpdateRowState extends State<_UpdateRow> {
     }
     if (!mounted) return;
     setState(() => _installed = 'v$code');
-    final update = await checkForUpdate();
-    if (mounted) setState(() => _available = update);
+    final u = await checkForUpdate();
+    if (mounted) setState(() => _update = u);
+  }
+
+  Future<void> _checkOnline() async {
+    try {
+      await ref.read(apiProvider).health();
+      if (mounted) setState(() => _online = true);
+    } catch (_) {
+      if (mounted) setState(() => _online = false);
+    }
   }
 
   Future<void> _install() async {
-    final u = _available;
-    if (u == null || _busy) return;
-    setState(() => _busy = true);
+    final u = _update;
+    if (u == null || _updating) return;
+    setState(() => _updating = true);
     try {
       await downloadAndInstallUpdate(u.apkUrl);
     } catch (_) {
       Notice.show('Не получилось скачать обновление',
           subtitle: 'Проверьте интернет и нажмите ещё раз', kind: NoticeKind.error);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _updating = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final u = _available;
-    if (u == null) {
-      return AppleRow(
-        icon: CupertinoIcons.info,
-        iconBg: Afisha.gray,
-        title: 'О программе',
-        value: _installed,
-        onTap: _busy ? null : _load,
-      );
-    }
-    return AppleRow(
-      icon: CupertinoIcons.arrow_down_circle_fill,
-      iconBg: Afisha.green,
-      title: _busy ? 'Скачивание…' : 'Доступно обновление v${u.versionCode}',
-      subtitle: u.changelog.isEmpty ? 'нажмите, чтобы поставить' : u.changelog,
-      chevron: !_busy,
-      onTap: _busy ? null : _install,
+    final u = _update;
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await Future.wait([_loadVersion(), _checkOnline()]);
+          },
+          child: ListView(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: AppleLargeTitle('Профиль'),
+              ),
+              if (u != null) _UpdateCard(info: u, busy: _updating, onTap: _install),
+              const SyncOfferCard(showIdle: true),
+              const SizedBox(height: 18),
+              AppleSection(
+                dividerInset: 58,
+                children: [
+                  AppleRow(
+                    icon: CupertinoIcons.wand_stars,
+                    iconBg: Afisha.lime,
+                    title: 'Открытия',
+                    subtitle: 'новая музыка по вкусу — Яндекс и торренты',
+                    chevron: true,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const DiscoverScreen()),
+                    ),
+                  ),
+                  AppleRow(
+                    icon: CupertinoIcons.house_fill,
+                    iconBg: Afisha.blue,
+                    title: 'Связь с домом',
+                    trailing: _OnlineBadge(online: _online),
+                    chevron: true,
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => const AdminScreen()),
+                      );
+                      _checkOnline();
+                    },
+                  ),
+                ],
+              ),
+              if (u == null) ...[
+                const SizedBox(height: 22),
+                AppleSection(dividerInset: 58, children: [
+                  AppleRow(
+                    icon: CupertinoIcons.info,
+                    iconBg: Afisha.gray,
+                    title: 'О программе',
+                    value: _installed,
+                    onTap: _loadVersion,
+                  ),
+                ]),
+              ],
+              const SizedBox(height: 28),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
+
+/// «На связи ●» / «Нет связи ●» прямо в строке «Связь с домом» — видно без захода внутрь.
+class _OnlineBadge extends StatelessWidget {
+  const _OnlineBadge({required this.online});
+
+  final bool? online;
+
+  @override
+  Widget build(BuildContext context) {
+    final o = online;
+    final color = o == null ? Afisha.inkDim : (o ? Afisha.green : Afisha.red);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(o == null ? 'проверяю…' : (o ? 'На связи' : 'Нет связи'),
+            style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w500)),
+        const SizedBox(width: 6),
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      ],
+    );
+  }
+}
+
+/// Обновление — наверху, одной строкой с кнопкой (разбор Gemini 26.09.2026). Показывается,
+/// только когда новая версия есть; иначе внизу тихая строка «О программе».
+class _UpdateCard extends StatelessWidget {
+  const _UpdateCard({required this.info, required this.busy, required this.onTap});
+
+  final UpdateInfo info;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      constraints: const BoxConstraints(minHeight: 76),
+      padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Afisha.lime.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Afisha.lime.withValues(alpha: 0.4), width: 0.5),
+      ),
+      child: Row(
+        children: [
+          const Icon(CupertinoIcons.arrow_down_circle_fill, color: Afisha.lime, size: 32),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Новая версия v${info.versionCode}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Afisha.ink, fontSize: 17, fontWeight: FontWeight.w600)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              shape: const StadiumBorder(),
+            ),
+            onPressed: busy ? null : onTap,
+            child: busy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Обновить'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

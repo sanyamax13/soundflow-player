@@ -30,7 +30,7 @@ const activityMax = 100 // строк «Сегодня» отдаём не бо�
 var (
 	reActScan      = regexp.MustCompile(`^скан завершён: добавлено (\d+), пропущено \d+, ошибок (\d+)`)
 	reActPlan      = regexp.MustCompile(`^(?:из меню окна: в план телефона|план синхронизации сохранён:) \+(\d+) −(\d+)`)
-	reActDeleted   = regexp.MustCompile(`^удалено навсегда из окна: (\d+) песен`)
+	reActDeleted   = regexp.MustCompile(`^удалено навсегда (из окна|с телефона): (\d+) песен`)
 	reActReconcile = regexp.MustCompile(`^каталог сверен с диском[^:]*: убрано песен (\d+)`)
 	reActWave      = regexp.MustCompile(`^волна на сегодня собрана сама: (\d+) песен`)
 	reActCovers    = regexp.MustCompile(`^обложки: проверено \d+.*?нашла в интернете (\d+)`)
@@ -130,7 +130,12 @@ func humanizeRow(r localdb.ServerLogRow) (activityItem, bool) {
 		}
 		return it, true
 	case "info":
-		return humanizeInfo(it, d)
+		it.Note = who // humanizeInfo подставит название песни, где оно есть (удаление одной песни)
+		out, ok := humanizeInfo(it, d)
+		if out.Note == who && !strings.Contains(out.Text, who) {
+			out.Note = ""
+		}
+		return out, ok
 	}
 	return it, false
 }
@@ -175,7 +180,16 @@ func humanizeInfo(it activityItem, d string) (activityItem, bool) {
 		return it, true
 	}
 	if m := reActDeleted.FindStringSubmatch(d); m != nil {
-		it.Text = "Стёрто из окна: " + songsN(atoiAct(m[1]))
+		where := "из окна"
+		if m[1] == "с телефона" {
+			where = "с телефона"
+		}
+		if n := atoiAct(m[2]); n == 1 && it.Note != "" {
+			it.Text = "Удалено насовсем " + where + ": " + it.Note
+			it.Note = ""
+		} else {
+			it.Text = "Стёрто " + where + ": " + songsN(n)
+		}
 		return it, true
 	}
 	if strings.HasPrefix(d, "удалён полностью из окна") {

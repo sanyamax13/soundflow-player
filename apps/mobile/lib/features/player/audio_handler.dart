@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 
 import '../../core/app_log.dart';
+import '../../core/black_box.dart';
 import '../../core/crash_log.dart';
 import 'player_controller.dart';
 
@@ -73,10 +74,16 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() {
+    BlackBox.log('media_btn', {'cmd': 'play'});
+    return _player.play();
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() {
+    BlackBox.log('media_btn', {'cmd': 'pause'});
+    return _player.pause();
+  }
 
   // Alex TG 15.09.2026: «сломалось блютуз управление, не переключается» (в
   // приложении кнопки вперёд/назад работают, значит дело либо в том, что
@@ -86,21 +93,27 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
   // строки — Android/гарнитура не доносят команду, дело не в SoundFlow.
   @override
   Future<void> skipToNext() {
+    BlackBox.log('media_btn', {'cmd': 'next'});
     AppLog.event('bt_skip_next');
     return _player.next();
   }
 
   @override
   Future<void> skipToPrevious() {
+    BlackBox.log('media_btn', {'cmd': 'prev'});
     AppLog.event('bt_skip_prev');
     return _player.prev();
   }
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) {
+    BlackBox.log('media_btn', {'cmd': 'seek', 'to_ms': position.inMilliseconds});
+    return _player.seek(position);
+  }
 
   @override
   Future<void> stop() async {
+    BlackBox.log('media_btn', {'cmd': 'stop'});
     await _player.pause();
     // Убирает уведомление и снимает foreground-сервис — иначе он висит и
     // держит приложение живым в фоне.
@@ -119,6 +132,8 @@ class SoundFlowAudioHandler extends BaseAudioHandler with QueueHandler, SeekHand
   /// какой из двух случаев это был, без USB-кабеля и логов Android.
   @override
   Future<void> onTaskRemoved() async {
+    BlackBox.log('task_removed');
+    await BlackBox.flush();
     unawaited(AppLog.event('task_removed_start'));
     try {
       await stop();

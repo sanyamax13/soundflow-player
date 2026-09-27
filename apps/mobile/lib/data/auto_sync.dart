@@ -64,6 +64,10 @@ class AutoSync with WidgetsBindingObserver {
   }
 
   Future<void> _trySync() async {
+    // Пришёл домой / ушёл из дома — переключить дорогу к серверу (напрямую или через VDS).
+    try {
+      await _sync.api.pickRoute();
+    } catch (_) {}
     try {
       // Раньше дёргали сервер, только когда pendingCount()>0 — из-за этого
       // запись устройства (когда/как на связи) на компе не обновлялась

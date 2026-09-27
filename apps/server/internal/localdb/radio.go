@@ -14,7 +14,7 @@ import (
 //   − просадка исполнителей с отрицательной оценкой
 //   − просадка недавно пропущенных
 //   антипузырь: примерно каждый 8-й слот — трек далеко от вкуса
-//   ≤ 2 трека одного исполнителя подряд
+//   исполнитель — не раньше, чем через 3 других (было ≤ 2 подряд)
 // Полный запрет — только блок-лист (дизлайк/удаление), он и так вне выборки.
 
 const radioSkipDays = 14
@@ -266,29 +266,38 @@ func (d *DB) OrderRadio(seedID string, candidateIDs []string) (ordered []string,
 		mi++
 	}
 
-	// ≤ 2 трека одного исполнителя подряд
+	// Исполнитель — не раньше, чем через 3 других (26.09.2026, общий вывод пяти разборов; было «≤ 2
+	// подряд»). Остались только те же исполнители — правило мягко ослабляется, песни не теряются.
+	// То же правило на телефоне: apps/mobile/lib/core/local_taste.dart (_limitConsecutiveArtist).
 	reordered = true
-	var lastArtist string
-	run := 0
+	const artistGap = 3
+	artistOf := map[string]string{}
 	for len(merged) > 0 {
 		pick := 0
-		if run >= 2 {
+		for gap := artistGap; gap > 0; gap-- {
+			found := -1
 			for i, c := range merged {
-				if !strings.EqualFold(c.artist, lastArtist) {
-					pick = i
+				clash := false
+				for j := len(ordered) - 1; j >= 0 && j >= len(ordered)-gap; j-- {
+					if strings.EqualFold(artistOf[ordered[j]], c.artist) {
+						clash = true
+						break
+					}
+				}
+				if !clash {
+					found = i
 					break
 				}
+			}
+			if found >= 0 {
+				pick = found
+				break
 			}
 		}
 		c := merged[pick]
 		ordered = append(ordered, c.id)
+		artistOf[c.id] = c.artist
 		merged = append(merged[:pick], merged[pick+1:]...)
-		if strings.EqualFold(c.artist, lastArtist) {
-			run++
-		} else {
-			lastArtist = c.artist
-			run = 1
-		}
 	}
 
 	// кандидаты без отпечатка — в хвост в исходном порядке

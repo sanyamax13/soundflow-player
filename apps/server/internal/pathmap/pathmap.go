@@ -77,16 +77,32 @@ func (m Mapper) ToCanonical(local string) string {
 
 // swapRoot меняет корневой префикс fromRoot на toRoot, сохраняя хвост как есть.
 // ok=false — путь не внутри fromRoot. Сравнение регистронезависимое (Windows fs).
+//
+// Разделитель берётся по виду самого корня, а не по системе, где запущена программа
+// (27.09.2026: сервер переехал на Linux, а канонические пути в базе — вида `E:\...`;
+// раньше на Linux такие пути не узнавались вовсе). Хвост переводится в разделитель
+// целевого корня: `E:\music\a\b.mp3` → `/srv/soundflow/E/music/a/b.mp3` и обратно.
 func swapRoot(path, fromRoot, toRoot string) (string, bool) {
-	p := filepath.Clean(path)
-	if strings.EqualFold(p, fromRoot) {
+	fs, ts := sepOf(fromRoot), sepOf(toRoot)
+	p := strings.TrimRight(path, `/\`)
+	from := strings.TrimRight(fromRoot, `/\`)
+	if strings.EqualFold(p, from) {
 		return toRoot, true
 	}
-	prefix := fromRoot + string(filepath.Separator)
+	prefix := from + string(fs)
 	if len(p) > len(prefix) && strings.EqualFold(p[:len(prefix)], prefix) {
-		return filepath.Join(toRoot, p[len(prefix):]), true
+		rest := strings.NewReplacer(`\`, string(ts), "/", string(ts)).Replace(p[len(prefix):])
+		return strings.TrimRight(toRoot, `/\`) + string(ts) + rest, true
 	}
 	return path, false
+}
+
+// sepOf — разделитель, которым записан корень: Windows-вид (`D:\…` или с `\`) — `\`, иначе `/`.
+func sepOf(root string) byte {
+	if strings.Contains(root, `\`) || (len(root) >= 2 && root[1] == ':') {
+		return '\\'
+	}
+	return '/'
 }
 
 // MoveToTrash переносит файл в «_trash» рядом с тем корнем библиотеки, под

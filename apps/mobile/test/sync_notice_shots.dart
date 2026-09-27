@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:soundflow/app/providers.dart';
+import 'package:soundflow/core/net_hint.dart';
 import 'package:soundflow/core/notice.dart';
 import 'package:soundflow/data/api.dart';
 import 'package:soundflow/data/db.dart';
@@ -36,6 +37,7 @@ class _QuietPlayer extends PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) async {}
 }
 
@@ -49,10 +51,25 @@ Future<void> _loadFonts() async {
   for (final p in [
     r'E:\flutter\bin\cache\artifacts\material_fonts\materialicons-regular.otf',
     r'E:\flutter\bin\cache\artifacts\material_fonts\MaterialIcons-Regular.otf',
+    '/opt/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
   ]) {
     final f = File(p);
     if (f.existsSync()) {
       await (FontLoader('MaterialIcons')..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer)))).load();
+      break;
+    }
+  }
+  // Значки Cupertino (нижнее меню, плашки) — иначе в картинках квадратики.
+  final home = Platform.environment['HOME'] ?? '';
+  for (final p in [
+    '$home/.pub-cache/hosted/pub.dev/cupertino_icons-1.0.9/assets/CupertinoIcons.ttf',
+    '/home/alex/.pub-cache/hosted/pub.dev/cupertino_icons-1.0.9/assets/CupertinoIcons.ttf',
+  ]) {
+    final f = File(p);
+    if (f.existsSync()) {
+      await (FontLoader('packages/cupertino_icons/CupertinoIcons')
+            ..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer))))
+          .load();
       break;
     }
   }
@@ -117,7 +134,7 @@ void main() {
     addTearDown(t.view.reset);
   }
 
-  testWidgets('карточка «12 новых песен» + плашка-предложение при заходе', (t) async {
+  testWidgets('карточка «12 новых песен» + точка + плашка «Скачано» без кнопок', (t) async {
     phone(t);
     final (app, offer, db) = await _app(t);
     await t.pumpWidget(app);
@@ -128,12 +145,9 @@ void main() {
       preview: const PlanPreview(addCount: 12, addBytes: 85 * _mb),
       freeBytes: 48 * _gb,
     );
-    Notice.show(
-      offer.addTitle,
-      subtitle: offer.addSubtitle,
-      duration: const Duration(seconds: 12),
-      actions: [NoticeAction('Скачать', () {}), NoticeAction('Не сейчас', () {}, primary: false)],
-    );
+    // 26.09.2026: плашки-предложения нет — только карточка и точка на «Моей музыке»
+    // (сверху — плашка без кнопок после автоскачивания).
+    Notice.show('Скачано 12 новых песен', kind: NoticeKind.done, duration: const Duration(seconds: 12));
     await t.pump();
     await t.pump(const Duration(milliseconds: 700));
     await shot(t, 'sync_1_offer');
@@ -208,7 +222,7 @@ void main() {
     await db.close();
   });
 
-  testWidgets('нет связи: плашка с кнопкой «Проверить связь»', (t) async {
+  testWidgets('нет связи: плашка без кнопки', (t) async {
     phone(t);
     final (app, _, db) = await _app(t);
     await t.pumpWidget(app);
@@ -216,11 +230,10 @@ void main() {
     await t.tap(find.text('Профиль'));
     await t.pumpAndSettle();
     Notice.show(
-      'Сервер не ответил',
-      subtitle: 'Открой окно SoundFlow на компьютере — телефон отвечает только пока оно открыто.',
+      'Нет связи с домом',
+      subtitle: kServerUnreachableHint,
       kind: NoticeKind.error,
       duration: const Duration(seconds: 7),
-      actions: [NoticeAction('Проверить связь', () {})],
     );
     await t.pump();
     await t.pump(const Duration(milliseconds: 700));

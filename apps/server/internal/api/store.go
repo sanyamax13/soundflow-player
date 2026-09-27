@@ -24,6 +24,14 @@ type Store interface {
 	// TrackEnergies — средняя громкость 0..1 по треку (из waveform), для
 	// фильтра «Настроение» на телефоне. Пустая карта на Postgres-пути.
 	TrackEnergies(ctx context.Context) (map[string]float64, error)
+	// TrackGenres — жанр по треку (код Яндекса), для фильтра радио по жанру.
+	TrackGenres(ctx context.Context) (map[string]string, error)
+	// CoverRevs — метки сменённых обложек (родные вместо сборника).
+	CoverRevs(ctx context.Context) (map[string]string, error)
+	// TrackLoudness — громкость песни (LUFS, EBU R128) для выравнивания на телефоне.
+	TrackLoudness(ctx context.Context) (map[string]float64, error)
+	// TrackMoods — настроение песни по звуку (happy/sad/tender/energetic/aggressive).
+	TrackMoods(ctx context.Context) (map[string]string, error)
 	// TasteReviewQueue — очередь «разбор коллекции» (Alex TG 25.09.2026):
 	// нерешённые треки от «меньше похоже на вкус» к «больше». Пустой список
 	// на Postgres-пути.
@@ -33,6 +41,8 @@ type Store interface {
 	TrackFilePath(ctx context.Context, trackID string) (string, bool, error)
 	TrackCoverURL(ctx context.Context, id string) (url string, found bool, err error)
 	TrackWaveform(ctx context.Context, id string) (bars []byte, found bool, err error)
+	// TrackBass — удары баса (20 байт на секунду) для пульсации кнопки «играть» (27.09.2026).
+	TrackBass(ctx context.Context, id string) (env []byte, found bool, err error)
 	TrackArtistTitle(ctx context.Context, trackID string) (artist, title string, ok bool, err error)
 	TrackForDeletion(ctx context.Context, trackID string) (normKey, filePath string, ok bool, err error)
 	DeleteTrack(ctx context.Context, trackID string) error

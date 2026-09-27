@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'black_box.dart';
 
 /// Ошибка загрузки/разбора КАРТИНКИ (обложка по сети без связи, битый файл) —
 /// Flutter присылает её в общий обработчик с пометкой «image resource service».
@@ -30,6 +33,12 @@ class CrashLog {
   /// Записать падение. [where] — грубая пометка, откуда пришло (flutter /
   /// platform / zone / player), помогает понять слой.
   static Future<void> write(Object error, StackTrace? stack, {String where = ''}) async {
+    BlackBox.log('crash', {
+      'where': where,
+      'error': error.toString(),
+      if (stack != null) 'stack': stack.toString().split('\n').take(15).join('\n'),
+    });
+      unawaited(BlackBox.flush());
     try {
       final f = await _f();
       final buf = StringBuffer()

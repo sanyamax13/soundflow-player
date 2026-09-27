@@ -21,6 +21,7 @@ class _FakePlayerController extends PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) async {
     lastQueue = tracks;
     lastStartIndex = startIndex;
@@ -163,5 +164,20 @@ void main() {
 
     expect(find.text('Zax'), findsOneWidget);
     expect(find.text('Aax'), findsNothing);
+  });
+
+  // Баг из разбора дизайна 26.09.2026: после «Скачать» список «Моей музыки» оставался пустым до
+  // перезапуска. Докачалась песня (changes++) — список перечитывается сам.
+  testWidgets('докачалась песня — «Моя музыка» показывает её без перезапуска', (tester) async {
+    final (db, _) = await _openMyMusic(tester, tracks: const []);
+    expect(find.text('Beatles'), findsNothing);
+
+    await db.upsertDownloaded(_t('y', 'Beatles', 'Yesterday', 1));
+    final container = ProviderScope.containerOf(tester.element(find.byType(MaterialApp).first));
+    container.read(downloadsProvider).changes.value++;
+    await tester.pump(const Duration(seconds: 1)); // пачка событий сводится в одно обновление
+    await tester.pumpAndSettle();
+
+    expect(find.text('Beatles'), findsOneWidget);
   });
 }

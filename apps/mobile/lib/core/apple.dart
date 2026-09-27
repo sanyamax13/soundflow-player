@@ -334,3 +334,119 @@ class AppleSegmented<T> extends StatelessWidget {
     );
   }
 }
+
+/// Пункт меню-шторки [showAppleActionSheet].
+class SheetAction<T> {
+  const SheetAction(this.value, this.label, this.icon, {this.destructive = false});
+
+  final T value;
+  final String label;
+  final IconData icon;
+
+  /// Опасное действие (удалить): красное, отделено от остальных отступом снизу
+  /// списка и с сильной вибрацией при нажатии.
+  final bool destructive;
+}
+
+/// Меню «•••» — нижняя шторка вместо окошка у кнопки (разбор Gemini 26.09.2026,
+/// «Моя музыка»): крупные строки 64pt под палец в машине, значок 28pt, текст 18pt,
+/// опасные пункты внизу, красным, после отступа. Возвращает выбранное значение.
+Future<T?> showAppleActionSheet<T>(
+  BuildContext context, {
+  String? title,
+  required List<SheetAction<T>> actions,
+}) {
+  final safe = actions.where((a) => !a.destructive).toList();
+  final danger = actions.where((a) => a.destructive).toList();
+  Widget group(BuildContext ctx, List<SheetAction<T>> list, {String? head}) => ClipRRect(
+    borderRadius: BorderRadius.circular(20),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+      child: ColoredBox(
+        color: Afisha.groupBg.withValues(alpha: 0.96),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Заголовок внутри блока, по центру (вердикт Gemini 26.09.2026: над
+            // плашками он «висел в пустоте»).
+            if (head != null) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                child: Text(
+                  head,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.55)),
+                ),
+              ),
+              const Divider(height: 0.5, thickness: 0.5, color: Afisha.sep),
+            ],
+            for (var i = 0; i < list.length; i++) ...[
+              if (i > 0) const Divider(height: 0.5, thickness: 0.5, indent: 60, color: Afisha.sep),
+              _SheetRow(
+                action: list[i],
+                onTap: () {
+                  list[i].destructive ? HapticFeedback.heavyImpact() : HapticFeedback.selectionClick();
+                  Navigator.pop(ctx, list[i].value);
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+  return showModalBottomSheet<T>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (safe.isNotEmpty) group(ctx, safe, head: title),
+            if (safe.isNotEmpty && danger.isNotEmpty) const SizedBox(height: 16),
+            if (danger.isNotEmpty) group(ctx, danger, head: safe.isEmpty ? title : null),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _SheetRow extends StatelessWidget {
+  const _SheetRow({required this.action, required this.onTap});
+
+  final SheetAction<Object?> action;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = action.destructive ? Afisha.red : Afisha.ink;
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 64,
+        child: Row(
+          children: [
+            const SizedBox(width: 18),
+            Icon(action.icon, size: 28, color: action.destructive ? Afisha.red : Afisha.lime),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                action.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

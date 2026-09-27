@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import '../core/black_box.dart';
 import '../core/config.dart';
 
 /// Заказ трека не удался — текст уже человеческий, можно показывать как есть.
@@ -38,6 +39,54 @@ class Api {
           connectTimeout: const Duration(seconds: 8),
         )) {
     apiBase = _dio.options.baseUrl; // держим глобальный адрес в согласии с клиентом
+    // «Чёрный ящик»: каждый запрос к серверу — куда, что ответил, сколько ждали.
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (o, h) {
+        o.extra['bb_t0'] = DateTime.now().millisecondsSinceEpoch;
+        h.next(o);
+      },
+      onResponse: (r, h) {
+        _bbHttp(r.requestOptions, r.statusCode, r.headers.value('content-length'), null);
+        h.next(r);
+      },
+      onError: (e, h) {
+        _bbHttp(e.requestOptions, e.response?.statusCode, null, e.type.name);
+        h.next(e);
+      },
+    ));
+  }
+
+  static void _bbHttp(RequestOptions o, int? status, String? bytes, String? error) {
+    if (o.path.startsWith('/v1/blackbox')) return;
+    final t0 = o.extra['bb_t0'] as int?;
+    BlackBox.log('http', {
+      'method': o.method,
+      'path': o.path,
+      if (o.queryParameters.isNotEmpty) 'query': o.queryParameters.toString(),
+      'status': status,
+      if (t0 != null) 'ms': DateTime.now().millisecondsSinceEpoch - t0,
+      'bytes': ?bytes,
+      'error': ?error,
+      'via': o.headers.containsKey(_kRelayKeyHeader) ? 'vds' : 'home',
+    });
+  }
+
+  /// Кусок «чёрного ящика» (строки JSON, сжатые gzip) — на домашний сервер.
+  Future<void> uploadBlackBox(String deviceId, List<int> gz) async {
+    await _dio.post<Object>(
+      '/v1/blackbox',
+      queryParameters: {'device': deviceId},
+      data: Stream.fromIterable([gz]),
+      options: Options(
+        headers: {
+          'Content-Encoding': 'gzip',
+          'Content-Type': 'application/x-ndjson',
+          Headers.contentLengthHeader: gz.length,
+        },
+        sendTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
   }
 
   final Dio _dio;
@@ -64,15 +113,74 @@ class Api {
   /// обрежет путь. Секретный ключ уходит на каждый запрос отдельным
   /// заголовком, как ждёт relayAuth на сервере.
   void setRelayTransport(String relayUrl, String relayKey) {
-    _dio.options.baseUrl = relayUrl;
-    _dio.options.headers[_kRelayKeyHeader] = relayKey;
-    apiBase = relayUrl;
+    _relayUrl = relayUrl;
+    _relayKey = relayKey;
+    _useRelay();
   }
 
   /// Вернуться с удалённого доступа на обычный (домашний Wi-Fi/USB) адрес.
   void disableRelay(String localUrl) {
+    _relayUrl = null;
+    _relayKey = null;
     _dio.options.headers.remove(_kRelayKeyHeader);
     setBaseUrl(localUrl);
+  }
+
+  // Удалённый доступ включён, но дома через VDS ходить незачем: «чёрный ящик» 26.09.2026 показал,
+  // что с включённым удалённым доступом телефон и дома ходил через интернет — 0,8–4 с на запрос, и
+  // автоскачивание не срабатывало. Теперь дорога выбирается сама: дом отвечает напрямую — напрямую,
+  // иначе через VDS ([pickRoute] — при запуске и в каждом заходе AutoSync).
+  String? _relayUrl;
+  String? _relayKey;
+  String? _homeUrl;
+
+  /// Домашний адрес сервера (сохранённый «Адрес дома») — для выбора дороги.
+  void setHomeUrl(String url) => _homeUrl = normalizeServerUrl(url);
+
+  /// Сервер сообщил новый домашний адрес и он ответил — сохранить (main.dart пишет в базу).
+  void Function(String url)? onHomeUrlLearned;
+
+  void _useRelay() {
+    final url = _relayUrl, key = _relayKey;
+    if (url == null || key == null) return;
+    _dio.options.baseUrl = url;
+    _dio.options.headers[_kRelayKeyHeader] = key;
+    apiBase = url;
+  }
+
+  /// Выбрать дорогу к серверу. Удалённый доступ выключен — ничего не делает. Возвращает true, если
+  /// сейчас идём напрямую (дома).
+  Future<bool> pickRoute() async {
+    if (_relayUrl == null) return true;
+    final wasRelay = relayHeaders.isNotEmpty;
+    var home = _homeUrl;
+    var atHome = home != null && await ping(home, timeout: const Duration(milliseconds: 1500));
+    if (!atHome) {
+      // Сохранённый адрес дома молчит — может, сервер переехал (26.09.2026: в телефоне остался адрес
+      // brain). Спросить сервер через VDS, где он дома, и проверить этот адрес напрямую.
+      try {
+        _useRelay();
+        final r = await _dio.get<Map<String, dynamic>>('/v1/health',
+            options: Options(receiveTimeout: const Duration(seconds: 5)));
+        final learned = r.data?['home'] as String?;
+        if (learned != null && learned.isNotEmpty && learned != home &&
+            await ping(learned, timeout: const Duration(milliseconds: 1500))) {
+          home = _homeUrl = normalizeServerUrl(learned);
+          atHome = true;
+          onHomeUrlLearned?.call(home);
+          BlackBox.log('route_home_learned', {'home': home});
+        }
+      } catch (_) {}
+    }
+    if (atHome && home != null) {
+      _dio.options.headers.remove(_kRelayKeyHeader);
+      _dio.options.baseUrl = home;
+      apiBase = home;
+    } else {
+      _useRelay();
+    }
+    if (wasRelay == atHome) BlackBox.log('route', {'via': atHome ? 'home' : 'vds'});
+    return atHome;
   }
 
   /// Заголовок с секретным ключом удалённого доступа (пусто — доступ не
@@ -86,12 +194,12 @@ class Api {
 
   /// Проверить сервер по адресу, НЕ переключаясь на него (кнопка «Проверить»
   /// в настройке адреса). true — ответил на /v1/health.
-  static Future<bool> ping(String raw) async {
+  static Future<bool> ping(String raw, {Duration timeout = const Duration(seconds: 5)}) async {
     try {
       final dio = Dio(BaseOptions(
         baseUrl: normalizeServerUrl(raw),
-        connectTimeout: const Duration(seconds: 5),
-        receiveTimeout: const Duration(seconds: 5),
+        connectTimeout: timeout,
+        receiveTimeout: timeout,
       ));
       final r = await dio.get<Map<String, dynamic>>('/v1/health');
       return r.statusCode == 200;
@@ -289,6 +397,19 @@ class Api {
       final bars = (res.data?['bars'] as List?)?.cast<num>();
       if (bars == null || bars.isEmpty) return null;
       return [for (final b in bars) (b.toDouble() / 255.0).clamp(0.0, 1.0)];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Удары баса песни — 20 отметок 0..255 на секунду (сервер, basskeeper.go, 27.09.2026): по ним
+  /// кнопка «играть» вспыхивает в такт. Нет (ещё не посчитано / нет связи) — null.
+  Future<Uint8List?> bass(String id) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/v1/bass/$id');
+      final env = res.data?['env'] as String?;
+      if (env == null || env.isEmpty) return null;
+      return base64Decode(env);
     } catch (_) {
       return null;
     }
@@ -586,22 +707,6 @@ class Api {
     };
     final qs = q.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&');
     return '$baseUrl/api/yandex/preview?$qs';
-  }
-
-  // ---- «Разбор коллекции» (Alex TG 25.09.2026: «пройдись по всем песням,
-  // подскажи, что моё, что нет») — очередь несыгранных/неоценённых песен
-  // каталога, отсортированная от «меньше похоже на вкус» к «больше». Жёсткой
-  // метки «не моё» НЕТ (звук на реальных данных ненадёжен, см. память
-  // taste-playlists-request-2026-09-25) — только порядок. ----
-
-  /// Очередь «разбор коллекции» — id/артист/название/альбом/score (0..1).
-  Future<List<Map<String, dynamic>>> tasteReview({int? limit}) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      '/v1/taste/review',
-      queryParameters: limit == null ? null : {'limit': limit},
-    );
-    final list = (res.data?['tracks'] as List?) ?? const [];
-    return list.cast<Map<String, dynamic>>();
   }
 
   /// Прямая ссылка на файл трека каталога компьютера — играть без скачивания

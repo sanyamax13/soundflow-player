@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/app_log.dart';
@@ -49,6 +51,11 @@ class DownloadsRepo {
   final Api _api;
   final Db _db;
   final SyncRepo? _sync;
+
+  /// Растёт при каждом изменении набора песен на телефоне (скачали / убрали).
+  /// «Моя музыка» слушает и сама перечитывает список — раньше после «Скачать»
+  /// он оставался пустым до перезапуска приложения (найдено 26.09.2026).
+  final ValueNotifier<int> changes = ValueNotifier(0);
 
   Future<Directory> _musicDir() async {
     final base = await getApplicationDocumentsDirectory();
@@ -134,8 +141,16 @@ class DownloadsRepo {
       format: formatFromMime(track['mime_type'] as String?),
       durationSec: (track['duration_sec'] as num?)?.toInt(),
       energy: (track['energy'] as num?)?.toDouble(),
+      album: '${track['album'] ?? ''}'.trim(),
+      genre: '${track['genre'] ?? ''}'.trim(),
     ));
+    // Метка обложки: сервер уже отдал родную обложку, если нашёл (origcoverkeeper.go).
+    if (coverPath != null) await _db.setCover(id, coverPath, '${track['cover_rev'] ?? ''}');
+    // Громкость (LUFS) для выравнивания — если сервер уже посчитал (loudkeeper.go).
+    final loud = (track['loudness'] as num?)?.toDouble();
+    await _db.updateMeta(id, loudness: loud, mood: '${track['mood'] ?? ''}');
     await _sync?.record('download', trackId: id);
+    changes.value++;
     // Был в избранном старого плеера — ставим сердечко (только добавляем).
     if (track['favorite'] == true) {
       await _db.setFavorite(id, true);
@@ -171,6 +186,7 @@ class DownloadsRepo {
       if (f.existsSync()) f.deleteSync();
     }
     await _db.deleteDownloaded(id);
+    changes.value++;
     await _sync?.record('delete',
         trackId: id, payload: reason == null ? null : {'reason': reason});
   }
@@ -187,6 +203,7 @@ class DownloadsRepo {
       if (f.existsSync()) f.deleteSync();
     }
     await _db.deleteDownloaded(id);
+    changes.value++;
   }
 
   /// Поправить нечитаемые теги скачанной песни (кнопка «Исправить имя»,
@@ -216,13 +233,44 @@ class DownloadsRepo {
       for (final r in rows)
         if (r.coverPath != null) r.coverPath!,
     ]);
+    // У ~300 песен обложки нет вообще (сервер отвечает 404) — раньше телефон переспрашивал их при
+    // КАЖДОМ запуске («чёрный ящик» 26.09.2026: 500 запросов за полторы минуты, 312 — впустую).
+    // Теперь «нет обложки» помним 6 часов (kv cover_misses: id → когда спрашивали). Было сутки —
+    // 27.09.2026 программа на компьютере научилась находить обложки таким песням (умный поиск, фото
+    // исполнителя), и найденное доходило бы до телефона только назавтра.
+    final misses = await _coverMisses();
+    final dayAgo = DateTime.now().subtract(const Duration(hours: 6)).millisecondsSinceEpoch;
     final pending = [
       for (final r in rows)
-        if (r.coverPath == null || !have.contains(r.coverPath)) r.id,
+        if ((r.coverPath == null || !have.contains(r.coverPath)) && (misses[r.id] ?? 0) < dayAgo) r.id,
     ];
     for (var i = 0; i < pending.length; i += concurrency) {
       await Future.wait(pending.skip(i).take(concurrency).map(_fetchCoverForId));
     }
+    await _saveCoverMisses();
+  }
+
+  Map<String, int>? _misses;
+
+  Future<Map<String, int>> _coverMisses() async {
+    final cached = _misses;
+    if (cached != null) return cached;
+    final m = <String, int>{};
+    try {
+      final raw = await _db.kvGet('cover_misses');
+      if (raw != null && raw.isNotEmpty) {
+        (jsonDecode(raw) as Map).forEach((k, v) => m['$k'] = (v as num).toInt());
+      }
+    } catch (_) {}
+    return _misses = m;
+  }
+
+  Future<void> _saveCoverMisses() async {
+    final m = _misses;
+    if (m == null) return;
+    try {
+      await _db.kvSet('cover_misses', jsonEncode(m));
+    } catch (_) {}
   }
 
   Future<void> _fetchCoverForId(String id) async {
@@ -230,26 +278,77 @@ class DownloadsRepo {
     if (t != null) await _fetchCoverFor(t);
   }
 
-  Future<void> _fetchCoverFor(DownloadedTrack t) async {
+  Future<void> _fetchCoverFor(DownloadedTrack t, {String rev = ''}) async {
     try {
-      final cp = '${(await _coversDir()).path}/${t.id}.jpg';
+      // С меткой — новое имя файла: картинку под старым именем телефон держит в памяти и
+      // показывал бы старую.
+      final dir = (await _coversDir()).path;
+      final cp = rev.isEmpty ? '$dir/${t.id}.jpg' : '$dir/${t.id}_$rev.jpg';
       await _api.downloadCover(coverUrlFor(t.id), cp);
-      await _db.upsertDownloaded(DownloadedTrack(
-        id: t.id,
-        title: t.title,
-        artist: t.artist,
-        path: t.path,
-        bytes: t.bytes,
-        addedAt: t.addedAt,
-        favorite: t.favorite,
-        coverPath: cp,
-        bitrateKbps: t.bitrateKbps,
-        format: t.format,
-        durationSec: t.durationSec,
-      ));
+      // Раньше тут перезаписывалась вся строка — и терялись энергия/альбом/жанр
+      // (их потом заново докачивал backfillMeta). Теперь меняем только обложку.
+      await _db.setCover(t.id, cp, rev);
+      final old = t.coverPath;
+      if (old != null && old != cp) {
+        try {
+          File(old).deleteSync();
+        } catch (_) {}
+      }
+      _misses?.remove(t.id);
     } catch (_) {
-      // не нашлась — не страшно, попробуем в другой раз при следующем запуске
+      // не нашлась — не страшно, спросим снова не раньше чем через сутки (см. backfillCovers)
+      (await _coverMisses())[t.id] = DateTime.now().millisecondsSinceEpoch;
     }
+  }
+
+  // Весь каталог (~12 тыс. песен) нужен при запуске и backfillMeta, и backfillCoverRevs —
+  // раньше качался дважды подряд (нашёл «чёрный ящик» 26.09.2026). Держим один ответ
+  // 2 минуты: оба шага идут друг за другом, второй берёт готовое.
+  Future<List<Map<String, dynamic>>>? _catalog;
+  DateTime? _catalogAt;
+
+  Future<List<Map<String, dynamic>>> _catalogOnce() {
+    final at = _catalogAt;
+    final cached = _catalog;
+    if (cached != null && at != null && DateTime.now().difference(at) < const Duration(minutes: 2)) {
+      return cached;
+    }
+    _catalogAt = DateTime.now();
+    final f = _api.tracks(limit: 30000);
+    _catalog = f;
+    // Ошибка не кэшируется: следующий вызов попробует снова.
+    f.catchError((Object _) {
+      if (identical(_catalog, f)) _catalog = null;
+      return const <Map<String, dynamic>>[];
+    });
+    return f;
+  }
+
+  /// Сервер нашёл родную обложку песне вместо картинки сборника (origcoverkeeper.go) — метка
+  /// cover_rev в каталоге изменилась; перекачиваем такие обложки. Фоном при запуске.
+  Future<void> backfillCoverRevs({int concurrency = 5}) async {
+    final local = await _db.coverRevs();
+    if (local.isEmpty) return;
+    List<Map<String, dynamic>> catalog;
+    try {
+      catalog = await _catalogOnce();
+    } catch (_) {
+      return;
+    }
+    final pending = <(String, String)>[];
+    for (final m in catalog) {
+      final id = '${m['id']}';
+      final rev = '${m['cover_rev'] ?? ''}';
+      final have = local[id];
+      if (have != null && have != rev) pending.add((id, rev));
+    }
+    for (var i = 0; i < pending.length; i += concurrency) {
+      await Future.wait(pending.skip(i).take(concurrency).map((p) async {
+        final t = await _db.downloadedById(p.$1);
+        if (t != null) await _fetchCoverFor(t, rev: p.$2);
+      }));
+    }
+    if (pending.isNotEmpty) changes.value++;
   }
 
   Future<void> setFavorite(String id, bool value) async {
@@ -282,26 +381,66 @@ class DownloadsRepo {
   /// при старте, как backfillCovers. Было limit: 10000 — каталог 25.09.2026
   /// дорос до 11671, старые (по дате добавления) скачанные песни отваливались
   /// от ответа и не получали новые поля; серверный потолок тоже поднят.
-  Future<void> backfillMeta() async {
-    final need = await _db.idsNeedingMeta();
+  ///
+  /// [force] — без 12-часовой паузы и с песнями без настроения: кнопка «Настроение» нашла
+  /// пусто (чёрный ящик 27.09.2026: телефон спросил каталог в 09:04, сервер разметил
+  /// настроение в 09:25 — и до вечера кнопка отвечала «ещё считается»).
+  ///
+  /// Раз в сутки (и при [force]) — все песни целиком: сервер пересчитывает настроение и жанр
+  /// (27.09.2026 добавились «Танцевальное» и «Альтернатива и инди»), а заполненные поля иначе не
+  /// переспрашиваются никогда.
+  Future<void> backfillMeta({bool force = false}) async {
+    final fullAt = int.tryParse(await _db.kvGet('meta_full_at') ?? '') ?? 0;
+    final full = force || DateTime.now().millisecondsSinceEpoch - fullAt > const Duration(hours: 24).inMilliseconds;
+    final need = await _db.idsNeedingMeta(emptyMood: force, all: full);
     if (need.isEmpty) return;
+    // У части песен жанр/громкость на сервере так и не появятся (Яндекс не знает, файл не
+    // измерился) — они всегда «нужны», и каталог из ~12 тыс. песен качался при КАЖДОМ запуске
+    // (ревизия кода 27.09.2026). Досчитываем не чаще раза в 12 часов.
+    final last = int.tryParse(await _db.kvGet('meta_backfill_at') ?? '') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (!force && now - last < const Duration(hours: 12).inMilliseconds) return;
+    await _db.kvSet('meta_backfill_at', '$now');
     List<Map<String, dynamic>> catalog;
     try {
-      catalog = await _api.tracks(limit: 30000);
+      catalog = await _catalogOnce();
     } catch (_) {
       return; // нет сети — попробуем в следующий раз
     }
     final byId = {for (final m in catalog) '${m['id']}': m};
+    // Имена — тоже с компьютера (27.09.2026, Alex: «песни с битыми именами надо исправить и понять,
+    // почему они битые»). Причина: телефон брал исполнителя и название один раз, при скачивании, а
+    // программа на компьютере потом сама чинит кривые теги (кодировка, «??????») — до телефона
+    // исправленное не доходило никогда. Теперь при полной сверке раз в сутки имена подтягиваются.
+    final local = full ? {for (final t in await _db.allDownloaded()) t.id: t} : const <String, DownloadedTrack>{};
+    var updated = 0;
+    var renamed = 0;
     for (final id in need) {
       final m = byId[id];
       if (m == null) continue;
+      final cur = local[id];
+      final artist = '${m['artist'] ?? ''}'.trim();
+      final title = '${m['title'] ?? ''}'.trim();
+      if (cur != null && title.isNotEmpty && (cur.artist != artist || cur.title != title)) {
+        await _db.updateTags(id, artist: artist, title: title);
+        renamed++;
+      }
       final fmt = formatFromMime(m['mime_type'] as String?);
       final br = (m['bitrate_kbps'] as num?)?.toInt();
       final dur = (m['duration_sec'] as num?)?.toInt();
       final energy = (m['energy'] as num?)?.toDouble();
-      if ((fmt ?? '').isEmpty && (br ?? 0) == 0 && (dur ?? 0) == 0 && energy == null) continue;
-      await _db.updateMeta(id, bitrateKbps: br, format: fmt, durationSec: dur, energy: energy);
+      // Альбом пишем всегда (пустая строка — «альбома нет»), чтобы не спрашивать снова.
+      final album = '${m['album'] ?? ''}'.trim();
+      final genre = '${m['genre'] ?? ''}'.trim();
+      final loudness = (m['loudness'] as num?)?.toDouble();
+      await _db.updateMeta(id,
+          bitrateKbps: br, format: fmt, durationSec: dur, energy: energy, album: album, genre: genre,
+          loudness: loudness, mood: '${m['mood'] ?? ''}');
+      updated++;
     }
+    if (full) await _db.kvSet('meta_full_at', '${DateTime.now().millisecondsSinceEpoch}');
+    if (renamed > 0) unawaited(AppLog.event('names_synced', {'renamed': renamed}));
+    if (updated > 0) changes.value++; // «Моя музыка» перечитает список один раз
   }
 
   /// Докачать отпечатки уже скачанным трекам, у которых их ещё нет — для

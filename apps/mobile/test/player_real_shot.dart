@@ -31,10 +31,11 @@ import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/features/player/player_view.dart';
 
-Future<Widget> _app() async {
+Future<Widget> _app({Future<void> Function(Db db)? seed}) async {
   final api = Api();
   final db = await Db.open(
       path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
+  if (seed != null) await seed(db);
   final sync = SyncRepo(api, db);
   final player = PlayerController()
     ..now.value = const NowPlaying(
@@ -96,13 +97,26 @@ void main() {
     // Family должна совпадать с тем, во что Flutter резолвит IconData с
     // package: 'cupertino_icons' — 'packages/cupertino_icons/CupertinoIcons'.
     final cupertino = File(
-        r'C:\Users\brain\AppData\Local\Pub\Cache\hosted\pub.dev\cupertino_icons-1.0.9\assets\CupertinoIcons.ttf');
+        '/home/alex/.pub-cache/hosted/pub.dev/cupertino_icons-1.0.9/assets/CupertinoIcons.ttf');
     if (cupertino.existsSync()) {
       await (FontLoader('packages/cupertino_icons/CupertinoIcons')
             ..addFont(Future.value(
                 ByteData.view(cupertino.readAsBytesSync().buffer))))
           .load();
     }
+  });
+
+  testWidgets('плеер — лайк: сердечко и искры (27.09.2026)', (t) async {
+    await t.binding.setSurfaceSize(const Size(400, 860));
+    await t.pumpWidget(await _app());
+    await t.pump(const Duration(milliseconds: 300));
+    await t.tap(find.byKey(const ValueKey('player_fav')));
+    // Лайк пишется в базу по-настоящему — даём ей ответить, потом кадр посреди вспышки.
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 220));
+    await expectLater(
+        find.byType(MaterialApp), matchesGoldenFile('goldens/player_heart_sparks.png'));
   });
 
   testWidgets('плеер 4.2 — обычный вид', (t) async {
@@ -113,34 +127,39 @@ void main() {
         find.byType(MaterialApp), matchesGoldenFile('goldens/player_real.png'));
   });
 
-  testWidgets('плеер 4.2 — лист «Играть дальше» (долгое нажатие на радио)', (t) async {
+  testWidgets('плеер — включён режим «Любимое» (кнопки режимов внизу, 27.09.2026)', (t) async {
     await t.binding.setSurfaceSize(const Size(400, 860));
     await t.pumpWidget(await _app());
     await t.pump(const Duration(milliseconds: 300));
-    await t.longPress(find.byKey(const ValueKey('radio_button')));
-    // Не pumpAndSettle — у эквалайзера бесконечный AnimationController.repeat(),
-    // «устояться» ему нечем, тест провисит до таймаута. Лист открывается за
-    // ~250мс (Material bottom sheet), фиксированного pump хватает.
-    await t.pump(const Duration(milliseconds: 400));
-    await expectLater(find.byType(MaterialApp),
-        matchesGoldenFile('goldens/player_radio_filter.png'));
-  });
-
-  testWidgets('плеер 4.2 — лист «Настроение» (Играть дальше → Настроение)', (t) async {
-    await t.binding.setSurfaceSize(const Size(400, 860));
-    await t.pumpWidget(await _app());
-    await t.pump(const Duration(milliseconds: 300));
-    await t.longPress(find.byKey(const ValueKey('radio_button')));
-    await t.pump(const Duration(milliseconds: 400));
-    await t.tap(find.text('Настроение'));
-    // Цепочка await'ов до открытия второго листа (dbProvider →
-    // downloadsProvider.list() → showModalBottomSheet) длиннее одного кадра —
-    // несколько отдельных pump вместо одного большого, чтобы каждый шаг
-    // цепочки успел пройти микротаском.
+    await t.tap(find.byKey(const ValueKey('mode_favorite')));
     for (var i = 0; i < 5; i++) {
       await t.pump(const Duration(milliseconds: 100));
     }
-    await expectLater(find.byType(MaterialApp),
-        matchesGoldenFile('goldens/player_radio_mood.png'));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/player_modes.png'));
   });
+
+  // Окна выбора «Настроение» и «Жанр» — для разбора дизайна (27.09.2026).
+  Future<void> seedMoods(Db db) async {
+    const moods = ['happy', 'energetic', 'tender', 'sad', 'aggressive', 'dance'];
+    const genres = ['pop', 'dance', 'rock', 'alternative', 'rusrap', 'estrada', 'lounge', 'folk', 'rnb', 'metal', 'soundtrack', 'jazz'];
+    for (var i = 0; i < 240; i++) {
+      await db.upsertDownloaded(DownloadedTrack(
+          id: 'm$i', title: 'Песня $i', artist: 'Исполнитель ${i % 9}', path: '/tmp/m$i', bytes: 1, addedAt: i));
+      await db.updateMeta('m$i', mood: moods[i % 6], genre: genres[(i * 5 + i ~/ 12) % 12]);
+    }
+  }
+
+  for (final mode in ['mood', 'genre']) {
+    testWidgets('окно выбора — $mode', (t) async {
+      await t.binding.setSurfaceSize(const Size(400, 860));
+      await t.runAsync(() async => t.pumpWidget(await _app(seed: seedMoods)));
+      await t.pump(const Duration(milliseconds: 300));
+      await t.tap(find.byKey(ValueKey('mode_$mode')));
+      for (var i = 0; i < 4; i++) {
+        await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+        await t.pump(const Duration(milliseconds: 150));
+      }
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/picker_$mode.png'));
+    });
+  }
 }

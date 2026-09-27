@@ -37,6 +37,7 @@ class _QuietPlayer extends PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) async {}
 }
 

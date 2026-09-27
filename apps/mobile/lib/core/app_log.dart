@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'black_box.dart';
+
 /// Общий журнал событий приложения — не сбои (см. [CrashLog]/[PlayerIssueLog]),
 /// а обычная работа: нажал радио — сколько реально прошло миллисекунд,
 /// сколько кандидатов обработал, что скачивалось. Нужен, чтобы разбирать
@@ -32,6 +34,7 @@ class AppLog {
   /// строки (elapsed_ms, count, id и т.п.) — просто текст, не JSON: этот файл
   /// читает человек (Alex или я), не парсер.
   static Future<void> event(String what, [Map<String, Object?>? data]) async {
+    BlackBox.log('app', {'what': what, ...?data});
     try {
       final line = StringBuffer()
         ..write(DateTime.now().toIso8601String())

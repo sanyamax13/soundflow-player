@@ -1,6 +1,9 @@
 package coverfind
 
-import "context"
+import (
+	"context"
+	"sort"
+)
 
 // YandexAlbum / YandexItem — то, что качалка (Python, Яндекс.Музыка) отдаёт про
 // найденные треки: исполнители, название, обложка трека и обложки его альбомов.
@@ -31,9 +34,10 @@ func YandexSource(fetch func(ctx context.Context, artist, title string) ([]Yande
 			return nil, err
 		}
 		var out []Candidate
+		var ranks []int
 		for _, it := range items {
 			img, album := it.CoverURL, ""
-			best := 9
+			best := 9 // меньше — лучше
 			for _, a := range it.Albums {
 				if a.CoverURL == "" {
 					continue
@@ -41,6 +45,11 @@ func YandexSource(fetch func(ctx context.Context, artist, title string) ([]Yande
 				own := ArtistOK(artist, a.Artists)
 				rank := 3
 				switch {
+				// Сингл/альбом исполнителя с тем же названием, что у песни, — это её родная обложка.
+				// Раньше «BTS — Film Out» получал обложку «BTS, The Best» (26.09.2026): свой альбом,
+				// но сборник лучшего, а не сингл.
+				case own && !a.Compilation && TitleOK(title, a.Title):
+					rank = -1
 				case own && !a.Compilation:
 					rank = 0
 				case own:
@@ -53,7 +62,19 @@ func YandexSource(fetch func(ctx context.Context, artist, title string) ([]Yande
 				}
 			}
 			out = append(out, Candidate{Artists: it.Artists, Title: it.Title, Image: img, Album: album})
+			ranks = append(ranks, best)
 		}
-		return out, nil
+		// Finder берёт первый подходящий вариант — ставим впереди тот, у кого обложка «роднее»
+		// (сингл с тем же названием, потом альбом исполнителя…), а не как Яндекс выдал поиском.
+		idx := make([]int, len(out))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.SliceStable(idx, func(a, b int) bool { return ranks[idx[a]] < ranks[idx[b]] })
+		sorted := make([]Candidate, len(out))
+		for i, j := range idx {
+			sorted[i] = out[j]
+		}
+		return sorted, nil
 	}
 }

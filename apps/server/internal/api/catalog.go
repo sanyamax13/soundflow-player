@@ -188,6 +188,12 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	local := s.PathMap.ToLocal(canonical)
+	// Родная обложка песни из сборника — главнее картинки сборника в файле (Alex TG 21750).
+	if p, ok := coverart.Found(s.OriginalCoversDir, id); ok {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.ServeFile(w, r, p)
+		return
+	}
 	if data, mime, ok := coverart.Embedded(local); ok {
 		w.Header().Set("Content-Type", mime)
 		w.Header().Set("Cache-Control", "public, max-age=604800") // неделя — обложка файла не меняется
@@ -243,6 +249,18 @@ func (s *Server) waveform(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=604800")
 	writeJSON(w, http.StatusOK, map[string]any{"bars": ints})
+}
+
+// GET /v1/bass/{id} — удары баса песни: {"fps":20,"env":"<base64>"}; нет — 204 (телефон тогда
+// просто спокойно «дышит» кнопкой).
+func (s *Server) bass(w http.ResponseWriter, r *http.Request) {
+	env, found, err := s.DB.TrackBass(r.Context(), chi.URLParam(r, "id"))
+	if err != nil || !found || len(env) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=604800")
+	writeJSON(w, http.StatusOK, map[string]any{"fps": 20, "env": env})
 }
 
 // GET /v1/generated-covers/{file} — отдаёт ИИ-нарисованную обложку (этап 28,

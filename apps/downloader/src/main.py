@@ -364,6 +364,131 @@ async def musify_find(req: MusifyFindRequest) -> MusifyFindResponse:
         return MusifyFindResponse(found=False, error=str(e))
 
 
+# ───────── восстановлено 26.09.2026 (рабочая копия качалки на brain пропала, см. providers/yandex.py) ─────────
+class YandexTrackCandidatesRequest(BaseModel):
+    artist: str
+    title: str
+
+
+class YandexCandidateAlbum(BaseModel):
+    title: str = ""
+    artists: list[str] = []
+    compilation: bool = False
+    cover_url: str = ""
+
+
+class YandexCandidate(BaseModel):
+    artists: list[str] = []
+    title: str = ""
+    cover_url: str = ""
+    albums: list[YandexCandidateAlbum] = []
+
+
+class YandexTrackCandidatesResponse(BaseModel):
+    items: list[YandexCandidate] = []
+
+
+@app.post("/yandex/track-candidates", response_model=YandexTrackCandidatesResponse)
+async def yandex_track_candidates(req: YandexTrackCandidatesRequest) -> YandexTrackCandidatesResponse:
+    from .providers.yandex import track_candidates
+    items = await track_candidates(req.artist, req.title)
+    return YandexTrackCandidatesResponse(items=[YandexCandidate(**i) for i in items])
+
+
+class YandexStreamResponse(BaseModel):
+    url: str | None = None
+    bitrate_kbps: int | None = None
+    error: str | None = None
+
+
+@app.get("/yandex/stream-url", response_model=YandexStreamResponse)
+async def yandex_stream_url(track_id: str = "", artist: str = "", title: str = "") -> YandexStreamResponse:
+    from .providers.yandex import stream_url
+    url, bitrate, err = await stream_url(track_id, artist, title)
+    return YandexStreamResponse(url=url, bitrate_kbps=bitrate, error=err)
+
+
+class YandexLikeItem(BaseModel):
+    yandex_id: str
+    artist: str = ""
+    title: str = ""
+    album: str = ""
+    cover_url: str | None = None
+    duration_sec: int | None = None
+
+
+class YandexPlaylistResponse(BaseModel):
+    title: str = ""
+    items: list[YandexLikeItem] = []
+    error: str | None = None
+
+
+@app.get("/yandex/playlist", response_model=YandexPlaylistResponse)
+async def yandex_playlist(url: str = "") -> YandexPlaylistResponse:
+    """Песни плейлиста Яндекс.Музыки по ссылке, которую Alex вставил сам (TG 20117–20122)."""
+    from .providers.yandex import playlist_by_link
+    title, items, err = await playlist_by_link(url)
+    return YandexPlaylistResponse(title=title, items=[YandexLikeItem(**i) for i in items], error=err)
+
+
+class YandexDislikeItem(BaseModel):
+    artist: str = ""
+    title: str = ""
+
+
+class YandexDislikesResponse(BaseModel):
+    items: list[YandexDislikeItem] = []
+    error: str | None = None
+
+
+@app.get("/yandex/dislikes", response_model=YandexDislikesResponse)
+async def yandex_dislikes() -> YandexDislikesResponse:
+    from .providers.yandex import dislikes
+    items, err = await dislikes()
+    return YandexDislikesResponse(items=[YandexDislikeItem(**i) for i in items], error=err)
+
+
+class YandexWaveItem(BaseModel):
+    yandex_id: str
+    artist: str = ""
+    title: str = ""
+    album: str = ""
+    cover_url: str = ""
+    duration_sec: int = 0
+    genre: str = ""
+    source: str = ""
+
+
+class YandexWaveResponse(BaseModel):
+    items: list[YandexWaveItem] = []
+    error: str | None = None
+
+
+@app.get("/yandex/wave-candidates", response_model=YandexWaveResponse)
+async def yandex_wave_candidates(extra_artists: str = "") -> YandexWaveResponse:
+    from .providers.yandex import wave_candidates
+    extra = [a.strip() for a in extra_artists.split(",") if a.strip()]
+    items, err = await wave_candidates(extra)
+    return YandexWaveResponse(items=[YandexWaveItem(**i) for i in items], error=err)
+
+
+class YandexGenreRequest(BaseModel):
+    artist: str
+    title: str
+
+
+class YandexGenreResponse(BaseModel):
+    genre: str = ""          # код Яндекса (rusrap, pop…); "" — искали, не нашли
+    error: str | None = None  # не удалось спросить (нет сети/токена) — повторить позже
+
+
+@app.post("/yandex/track-genre", response_model=YandexGenreResponse)
+async def yandex_track_genre(req: YandexGenreRequest) -> YandexGenreResponse:
+    from .providers.yandex import track_genre
+    g, err = await track_genre(req.artist, req.title)
+    return YandexGenreResponse(genre=g or "", error=err)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.main:app", host=config.sidecar_host, port=config.sidecar_port)

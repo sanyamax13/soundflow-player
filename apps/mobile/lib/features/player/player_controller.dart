@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/black_box.dart';
 import '../../core/notice.dart';
 import '../../core/player_issue_log.dart';
 
@@ -69,6 +70,8 @@ class PlayerController {
     this.onComplete,
     this.onDuration,
     this.onMissingFile,
+    this.loudnessOf,
+    this.onResumePoint,
   }) {
     _initSession();
   }
@@ -89,7 +92,21 @@ class PlayerController {
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
+      session.becomingNoisyEventStream.listen((_) {
+        BlackBox.log('audio_noisy', {'playing': playing.value});
+      });
+      session.devicesChangedEventStream.listen((e) {
+        BlackBox.log('audio_devices', {
+          'added': [for (final d in e.devicesAdded) '${d.type.name}:${d.name}'],
+          'removed': [for (final d in e.devicesRemoved) '${d.type.name}:${d.name}'],
+        });
+      });
       session.interruptionEventStream.listen((event) {
+        BlackBox.log('audio_interruption', {
+          'begin': event.begin,
+          'type': event.type.name,
+          'playing': playing.value,
+        });
         if (event.begin) {
           _resumeAfterInterruption = playing.value &&
               (event.type == AudioInterruptionType.pause ||
@@ -102,6 +119,19 @@ class PlayerController {
     } catch (_) {
       // Нет плагина аудиосессии (виджет-тест / рендер макета) — не критично.
     }
+  }
+
+  /// Где остановились: песня и место в ней — на паузе, при смене песни и раз в 15 с во
+  /// время игры. Сохраняется, чтобы после того как система закрыла приложение (Samsung
+  /// «заморозил» плеер на паузе — чёрный ящик 27.09.2026) продолжить с того же места.
+  final void Function(NowPlaying track, Duration position)? onResumePoint;
+  DateTime _resumeSavedAt = DateTime(2000);
+
+  void _saveResume(Duration pos) {
+    final t = now.value;
+    if (t == null || onResumePoint == null) return;
+    _resumeSavedAt = DateTime.now();
+    onResumePoint!(t, pos);
   }
 
   /// Вызывается, когда трек начал играть (в т.ч. авто-переход к следующему) —
@@ -129,6 +159,48 @@ class PlayerController {
   /// `requeueTrack` — тогда гейт снимается).
   final void Function(NowPlaying meta)? onMissingFile;
 
+  /// Громкость песни в LUFS (с сервера, loudkeeper.go) — для выравнивания громкости: сборники,
+  /// mp3 и FLAC разных лет звучат на 6–10 дБ по-разному, в машине тянешься к ручке (общий вывод
+  /// пяти разборов, 26.09.2026). null — не знаем, играем как есть.
+  final Future<double?> Function(String trackId)? loudnessOf;
+
+  /// Целевая громкость и пределы поправки. Громкое приглушаем громкостью плеера, тихое поднимаем
+  /// системным усилителем Android (AndroidLoudnessEnhancer, just_audio — по документации context7).
+  static const _targetLufs = -12.0;
+  static const _maxBoostDb = 6.0;
+  static const _maxCutDb = 12.0;
+  final _enhancer = AndroidLoudnessEnhancer();
+
+  /// Поправка громкости в дБ для песни с громкостью [lufs] (минус — тише, плюс — громче).
+  static double loudnessGainDb(double? lufs) {
+    if (lufs == null || lufs == 0) return 0;
+    return (_targetLufs - lufs).clamp(-_maxCutDb, _maxBoostDb).toDouble();
+  }
+
+  Future<void> _applyLoudness(String id) async {
+    final p = _player;
+    final f = loudnessOf;
+    if (p == null || f == null) return;
+    try {
+      final gain = loudnessGainDb(await f(id));
+      if (now.value?.id != id) return; // пока считали, песня уже сменилась
+      // Усилитель включаем ТОЛЬКО для тихих песен: пока он включён, Android не отдаёт звук
+      // экономному аудиочипу (offload) — лишняя батарея при выключенном экране (видно в logcat:
+      // «non offloadable effect Loudness Enhancer»). Громкое приглушаем громкостью плеера.
+      if (gain > 0.5) {
+        await p.setVolume(1.0);
+        await _enhancer.setTargetGain(gain);
+        await _enhancer.setEnabled(true);
+      } else {
+        await _enhancer.setEnabled(false);
+        await p.setVolume(pow(10, gain / 20).toDouble());
+      }
+      BlackBox.log('loudness', {'track': id, 'gain_db': double.parse(gain.toStringAsFixed(1))});
+    } catch (_) {
+      // Эффект недоступен (не Android / тест) — играем как есть.
+    }
+  }
+
   AudioPlayer? _player;
   ConcatenatingAudioSource? _source;
   List<NowPlaying> _queue = const [];
@@ -145,6 +217,10 @@ class PlayerController {
   /// «Радио по этой песне» активно — хвост очереди выстроен по близости
   /// звучания к той песне, с которой радио запустили (06.09.2026).
   final ValueNotifier<bool> radio = ValueNotifier(false);
+
+  /// Какой режим «что играть дальше» включён (кнопки внизу плеера, 27.09.2026): similar / artist /
+  /// favorite / mood / genre; null — обычный Поток.
+  final ValueNotifier<String?> radioMode = ValueNotifier(null);
 
   /// Растёт на каждый успешный `_reloadFrom` (радио, дозапись новых треков,
   /// докачка пропавшего файла и т.п.) — `SoundFlowAudioHandler` слушает это,
@@ -224,10 +300,19 @@ class PlayerController {
   AudioPlayer _ensure() {
     final p = _player;
     if (p != null) return p;
-    final np = AudioPlayer();
+    final np = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_enhancer]));
+    // Громкость — на КАЖДУЮ смену песни. Раньше только по currentIndexStream, а он не шлёт
+    // повтор того же номера: новая очередь с той же позиции 0 оставалась с громкостью прошлой
+    // песни (ревизия кода 27.09.2026).
+    now.addListener(() {
+      final id = now.value?.id;
+      if (id != null) unawaited(_applyLoudness(id));
+    });
     _subs.add(np.playbackEventStream.listen((_) {}, onError: _onPlaybackError));
     _subs.add(np.playingStream.listen((v) {
+      BlackBox.log(v ? 'playing' : 'paused', {'track': now.value?.id, 'pos_ms': np.position.inMilliseconds});
       playing.value = v;
+      if (!v) _saveResume(np.position);
       // Событие «слушал» — по факту начала воспроизведения (в т.ч. первый
       // play по заряженной на паузе очереди «Потока»). Дедуп по _lastPlayId.
       if (v) {
@@ -238,7 +323,10 @@ class PlayerController {
         }
       }
     }));
-    _subs.add(np.positionStream.listen((v) => position.value = v));
+    _subs.add(np.positionStream.listen((v) {
+      position.value = v;
+      if (np.playing && DateTime.now().difference(_resumeSavedAt) > const Duration(seconds: 15)) _saveResume(v);
+    }));
     _subs.add(np.durationStream.listen((v) {
       duration.value = v ?? Duration.zero;
       final id = now.value?.id;
@@ -250,11 +338,22 @@ class PlayerController {
       if (i != _prevIndex && _prevIndex >= 0 && _prevIndex < _queue.length) {
         if (!_userSeek) onComplete?.call(_queue[_prevIndex]);
       }
+      final changed = i != _prevIndex; // первая отдача новой очереди — не смена (место не затираем)
+      final auto = !_userSeek; // до сброса — иначе в журнале всегда «сам» (ревизия кода 27.09.2026)
       _userSeek = false;
       _prevIndex = i;
       _index = i;
       final track = _queue[i];
-      now.value = track;
+      BlackBox.log('track', {
+        'id': track.id,
+        'title': track.title,
+        'artist': track.artist,
+        'index': i,
+        'queue': _queue.length,
+        'auto': auto,
+      });
+      now.value = track; // громкость подстроит слушатель now (см. _ensure)
+      if (changed) _saveResume(Duration.zero);
       // Авто-переход к следующему во время игры — тоже «слушал». На паузе
       // (зарядка очереди «Потока») не пишем — это сделает playingStream по
       // нажатию play. Дедуп по _lastPlayId.
@@ -264,6 +363,7 @@ class PlayerController {
       }
     }));
     _subs.add(np.processingStateStream.listen((s) {
+      BlackBox.log('player_state', {'state': s.name, 'track': now.value?.id});
       if (s == ProcessingState.completed) playing.value = false;
     }));
     _player = np;
@@ -279,7 +379,15 @@ class PlayerController {
     bool shuffle = false,
     bool loop = true,
     bool autoplay = true,
+    Duration initialPosition = Duration.zero,
   }) async {
+    BlackBox.log('play_queue', {
+      'count': tracks.length,
+      'start': startIndex,
+      'shuffle': shuffle,
+      'autoplay': autoplay,
+      'first': tracks.isEmpty ? null : tracks[startIndex.clamp(0, tracks.length - 1)].id,
+    });
     if (tracks.isEmpty) return;
     // Любая заряженная очередь считается чужой для Потока: свою он после этого
     // заявит сам (stream_screen.dart _fillQueue ставит счётчик уже ПОСЛЕ вызова).
@@ -296,6 +404,7 @@ class PlayerController {
     _lastPlayId = null;
     _consecutiveErrors = 0;
     radio.value = false;
+    radioMode.value = null; // включил сам — режим радио сбрасывается в обычный Поток
     _preRadioTail = null;
     final p = _ensure();
     final src = ConcatenatingAudioSource(
@@ -306,8 +415,9 @@ class PlayerController {
       await p.setLoopMode(loop ? LoopMode.all : LoopMode.off);
       await p.setShuffleModeEnabled(false);
       this.shuffle.value = shuffle;
-      await p.setAudioSource(src, initialIndex: _index, initialPosition: Duration.zero);
+      await p.setAudioSource(src, initialIndex: _index, initialPosition: initialPosition);
       now.value = _queue[_index];
+      _saveResume(initialPosition);
       // currentIndexStream отдаст этот же индекс и запишет play — второй раз тут не зовём.
       if (autoplay) await p.play();
     } catch (e, st) {
@@ -328,15 +438,23 @@ class PlayerController {
         p?.position ?? Duration.zero, p?.duration ?? Duration.zero);
   }
 
-  Future<void> next() async {
+  /// [reportSkip] = false — не писать «пропуск» (сигнал «не нравится» для вкуса): для смахиваний
+  /// «оставить»/«удалить» в плеере, где решение и так записано лайком/удалением.
+  Future<void> next({bool reportSkip = true}) async {
     final p = _player;
+    BlackBox.log('cmd_next', {'track': now.value?.id, 'pos_ms': p?.position.inMilliseconds});
     if (p == null) return;
-    _reportSkip();
+    if (reportSkip) {
+      _reportSkip();
+    } else {
+      _userSeek = true; // смена трека — наша, не «дослушал до конца»
+    }
     await p.seekToNext();
   }
 
   Future<void> prev() async {
     final p = _player;
+    BlackBox.log('cmd_prev', {'track': now.value?.id, 'pos_ms': p?.position.inMilliseconds});
     if (p == null) return;
     // Первые секунды — «в начало трека», дальше — предыдущий.
     if (p.position > const Duration(seconds: 3)) {
@@ -347,7 +465,10 @@ class PlayerController {
     await p.seekToPrevious();
   }
 
-  Future<void> seek(Duration to) async => _player?.seek(to);
+  Future<void> seek(Duration to) async {
+    BlackBox.log('cmd_seek', {'track': now.value?.id, 'from_ms': _player?.position.inMilliseconds, 'to_ms': to.inMilliseconds});
+    await _player?.seek(to);
+  }
 
   /// Очередь целиком (для листа «Дальше» в плеере) и позиция в ней.
   List<NowPlaying> get queueView => List.unmodifiable(_queue);
@@ -443,6 +564,7 @@ class PlayerController {
     _preRadioTail = null;
     shuffle.value = true;
     radio.value = false;
+    radioMode.value = null;
   }
 
   /// «Радио по этой песне»: заменить хвост очереди (всё после текущей) на
@@ -506,6 +628,7 @@ class PlayerController {
     _index = 0;
     _prevIndex = 0; // новая очередь — не считаем сменой трека
     radio.value = false;
+    radioMode.value = null;
     _preRadioTail = null;
     shuffle.value = false;
     await p.setLoopMode(LoopMode.all);
@@ -567,10 +690,23 @@ class PlayerController {
   /// (Bluetooth-магнитола, наушники, экран блокировки — см. audio_handler.dart,
   /// 05.09.2026), которое присылает раздельные команды play/pause, а не тап
   /// по одной кнопке.
-  Future<void> play() async => _player?.play();
+  Future<void> play() async {
+    BlackBox.log('cmd_play', {'track': now.value?.id});
+    try {
+      await _player?.play();
+    } catch (e, st) {
+      // Файл не открылся (убрали, повреждён) — это та же ошибка, что приходит в поток плеера:
+      // её разруливает _onPlaybackError (перескок на следующую). Здесь только тихо пишем, а не
+      // роняем в «Последний сбой» (Alex, скриншот 26.09.2026: «Source error» из toggle).
+      PlayerIssueLog.write(e, st, where: 'play');
+    }
+  }
 
   /// Строго "пауза" — см. play().
-  Future<void> pause() async => _player?.pause();
+  Future<void> pause() async {
+    BlackBox.log('cmd_pause', {'track': now.value?.id});
+    await _player?.pause();
+  }
 
   Future<void> toggle() async {
     final p = _player;

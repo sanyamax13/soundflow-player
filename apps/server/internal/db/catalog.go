@@ -28,6 +28,18 @@ type CatalogTrack struct {
 	// посчитана/недоступна (Postgres-путь). Фильтр «Настроение» на телефоне
 	// (Alex TG 25.09.2026), см. Store.TrackEnergies.
 	Energy float64 `json:"energy"`
+
+	// Genre — жанр по Яндексу (код: rusrap, pop, rock…), "" если не знаем (хранитель жанров,
+	// cmd/soundflow/genrekeeper.go, 26.09.2026). Фильтр радио по жанру на телефоне.
+	Genre string `json:"genre"`
+
+	// CoverRev — метка обложки: поменялась (нашлась родная обложка вместо обложки сборника,
+	// origcoverkeeper.go) — телефон перекачивает обложку. "" — обычная.
+	CoverRev string `json:"cover_rev,omitempty"`
+	// Loudness — громкость песни (LUFS), 0 — не знаем (хранитель громкости, loudkeeper.go).
+	Loudness float64 `json:"loudness,omitempty"`
+	// Mood — настроение по звуку (moodkeeper.go): happy/sad/tender/energetic/aggressive, "" — не знаем.
+	Mood string `json:"mood,omitempty"`
 }
 
 // TasteReviewTrack — трек в очереди «разбор коллекции» (Alex TG 25.09.2026),
@@ -567,10 +579,35 @@ func (d *Pool) TrackWaveform(ctx context.Context, id string) (bars []byte, found
 	return nil, false, nil
 }
 
+// TrackBass — удары баса Postgres-каталог не хранит.
+func (d *Pool) TrackBass(ctx context.Context, id string) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
 // TrackEnergies — тот же случай, что TrackWaveform: Postgres-каталог waveform
 // не хранит, считать среднюю громкость не из чего. Пустая карта — фильтр
 // «Настроение» на телефоне просто не увидит энергию ни у одного трека.
 func (d *Pool) TrackEnergies(ctx context.Context) (map[string]float64, error) {
+	return nil, nil
+}
+
+// CoverRevs — родных обложек в Postgres-варианте нет.
+func (d *Pool) CoverRevs(ctx context.Context) (map[string]string, error) {
+	return nil, nil
+}
+
+// TrackMoods — настроения в Postgres-варианте нет.
+func (d *Pool) TrackMoods(ctx context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+// TrackLoudness — громкости в Postgres-варианте нет.
+func (d *Pool) TrackLoudness(ctx context.Context) (map[string]float64, error) {
+	return map[string]float64{}, nil
+}
+
+// TrackGenres — жанров в Postgres-варианте нет (их собирает только SQLite-сервер).
+func (d *Pool) TrackGenres(ctx context.Context) (map[string]string, error) {
 	return nil, nil
 }
 

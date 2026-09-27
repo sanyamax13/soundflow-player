@@ -335,6 +335,22 @@ func (c *Client) YandexStreamURL(ctx context.Context, trackID, artist, title str
 	return out.URL, nil
 }
 
+// YandexTrackGenre — жанр песни по Яндексу (код: rusrap, pop…). "" без ошибки — Яндекс эту песню
+// не знает; ошибка — спросить не получилось (нет сети/токена), спросим в следующий раз.
+func (c *Client) YandexTrackGenre(ctx context.Context, artist, title string) (string, error) {
+	var out struct {
+		Genre string `json:"genre"`
+		Error string `json:"error"`
+	}
+	if err := c.post(ctx, "/yandex/track-genre", map[string]any{"artist": artist, "title": title}, &out); err != nil {
+		return "", err
+	}
+	if out.Error != "" {
+		return "", fmt.Errorf("sidecar yandex/track-genre: %s", out.Error)
+	}
+	return out.Genre, nil
+}
+
 func (c *Client) YandexDislikes(ctx context.Context) ([]YandexDislikeItem, error) {
 	var out struct {
 		Items []YandexDislikeItem `json:"items"`

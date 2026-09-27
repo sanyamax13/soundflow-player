@@ -87,10 +87,16 @@ void main() {
   Future<(SyncOffer, _FakeApi, Db)> make({
     required _FakeApi api,
     int? free = 48 * _gb,
+    bool home = true,
+    bool auto = true,
   }) async {
     final db = await Db.open(path: inMemoryDatabasePath, factory: databaseFactoryFfiNoIsolate);
     final repo = DownloadsRepo(api, db, SyncRepo(api, db));
-    return (SyncOffer(repo, freeSpace: () async => free), api, db);
+    return (
+      SyncOffer(repo, freeSpace: () async => free, atHome: () async => home, autoDownload: auto),
+      api,
+      db,
+    );
   }
 
   test('есть новое — предложение с числом, размером и свободным местом', () async {
@@ -133,38 +139,48 @@ void main() {
     await db.close();
   });
 
-  test('при заходе — плашка с кнопками «Скачать» / «Не сейчас»; ничего не качается само', () async {
-    final (offer, api, db) = await make(api: _FakeApi(add: [_card('a', 10 * _mb)]));
+  // 26.09.2026 (разбор Gemini «плашки»): плашки-предложения с кнопками больше нет —
+  // дома по Wi-Fi новое качается само, после — короткая плашка без кнопок.
+  test('дома по Wi-Fi новое качается само, плашка «Скачано …» без кнопок', () async {
+    final (offer, api, db) = await make(api: _FakeApi(add: [_card('a', 10 * _mb), _card('b', 10 * _mb)]));
 
     await offer.refresh();
 
+    expect(api.downloads, 2);
     final n = Notice.current.value!;
-    expect(n.title, contains('1 новая песня'));
-    expect(n.actions.map((a) => a.label), ['Скачать', 'Не сейчас']);
-    expect(api.downloads, 0, reason: 'без нажатия ничего не качается');
+    expect(n.title, 'Скачано 2 новые песни');
+    expect(n.actions, isEmpty);
     await db.close();
   });
 
-  test('одно и то же предложение не повторяется; после «Не сейчас» молчим', () async {
-    final (offer, _, db) = await make(api: _FakeApi(add: [_card('a', 10 * _mb)]));
+  test('не дома, выключено или мало места — само не качает и плашек не показывает', () async {
+    final (o1, a1, d1) = await make(api: _FakeApi(add: [_card('a', 10 * _mb)]), home: false);
+    await o1.refresh();
+    expect(a1.downloads, 0);
+    expect(Notice.current.value, isNull);
+
+    final (o2, a2, d2) = await make(api: _FakeApi(add: [_card('a', 10 * _mb)]), auto: false);
+    await o2.refresh();
+    expect(a2.downloads, 0);
+    expect(o2.hasOffer, isTrue, reason: 'карточка с кнопкой остаётся');
+
+    final (o3, a3, d3) = await make(api: _FakeApi(add: [_card('a', 10 * _gb)]), free: 2 * _gb);
+    await o3.refresh();
+    expect(a3.downloads, 0);
+    expect(o3.lowSpace, isTrue);
+    await d1.close();
+    await d2.close();
+    await d3.close();
+  });
+
+  test('убранное на компьютере само не стирается', () async {
+    final (offer, api, db) = await make(api: _FakeApi(remove: ['x1']));
+    await db.upsertDownloaded(DownloadedTrack(
+        id: 'x1', title: 'x1', artist: 'X', path: '${tmp.path}/x1', bytes: 1, addedAt: 1));
     await offer.refresh();
-    Notice.hide();
-
-    await offer.refresh(); // то же самое, полчаса не прошло
-    expect(Notice.current.value, isNull);
-
-    // «Не сейчас» — молчим, пока предложение не изменится
-    final (offer2, api2, db2) = await make(api: _FakeApi(add: [_card('a', 10 * _mb)]));
-    await offer2.refresh();
-    Notice.current.value!.actions.last.onPressed();
-    Notice.hide();
-    await offer2.refresh();
-    expect(Notice.current.value, isNull);
-    api2.add = [_card('a', 10 * _mb), _card('b', 10 * _mb)];
-    await offer2.refresh();
-    expect(Notice.current.value, isNotNull);
+    expect(offer.preview.removeCount, 1);
+    expect(await db.downloadedById('x1'), isNotNull);
     await db.close();
-    await db2.close();
   });
 
   test('«Скачать» качает, счётчик прогонов растёт, план закрывается', () async {
@@ -182,13 +198,17 @@ void main() {
     await db.close();
   });
 
-  test('места мало и подтвердить негде — не качаем', () async {
+  // 27.09.2026 (разбор Gemini и Алисы): окна «Мало места» больше нет — карточка сама пишет красным,
+  // сколько не хватает, а кнопка называется «Всё равно скачать» и качает без второго вопроса.
+  test('мало места — карточка пишет, сколько не хватает; «Всё равно скачать» качает без вопроса', () async {
     final (offer, api, db) = await make(api: _FakeApi(add: [_card('a', 10 * _gb)]), free: 2 * _gb);
     await offer.refresh(announce: false);
 
+    expect(offer.lowSpace, isTrue);
+    expect(offer.addSubtitle, startsWith('Не хватит места: нужно ещё'));
     await offer.run(adds: true, removes: false);
 
-    expect(api.downloads, 0);
+    expect(api.downloads, 1);
     await db.close();
   });
 

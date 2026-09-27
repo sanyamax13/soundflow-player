@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
@@ -87,31 +88,56 @@ class CoverPalette {
       if (bytes == null) return CoverColors.fallback;
 
       final data = bytes.buffer.asUint8List();
-      var r = 0.0, g = 0.0, b = 0.0, count = 0.0;
+      // Главный цвет — самый заметный ЯРКИЙ оттенок обложки, а не среднее всех точек (27.09.2026,
+      // Alex: «задний фон коричневый, а на обложке его нет»). Среднее тёмно-синей обложки с лицами
+      // давало грязно-бурый, а растяжка насыщенности и сдвиг оттенка делали из него коричневый.
+      // Теперь: оттенки по 24 корзинам, вес точки — насыщенность × яркость, берём корзину с
+      // наибольшим весом и средний цвет внутри неё. Обложка почти без цвета (ч/б, серая) — фон
+      // тоже остаётся почти серым, цвет не выдумываем.
+      const bins = 24;
+      final wSum = List<double>.filled(bins, 0);
+      final sSum = List<double>.filled(bins, 0);
+      final vSum = List<double>.filled(bins, 0);
+      final hx = List<double>.filled(bins, 0);
+      final hy = List<double>.filled(bins, 0);
+      var total = 0.0, px = 0.0, vAll = 0.0;
       for (var i = 0; i + 3 < data.length; i += 4) {
         if (data[i + 3] < 128) continue;
-        r += data[i];
-        g += data[i + 1];
-        b += data[i + 2];
-        count++;
+        final hsv = HSVColor.fromColor(Color.fromARGB(255, data[i], data[i + 1], data[i + 2]));
+        px++;
+        vAll += hsv.value;
+        final w = hsv.saturation * hsv.value;
+        if (w < 0.04) continue;
+        final k = (hsv.hue / 360 * bins).floor() % bins;
+        wSum[k] += w;
+        sSum[k] += hsv.saturation * w;
+        vSum[k] += hsv.value * w;
+        hx[k] += math.cos(hsv.hue * math.pi / 180) * w;
+        hy[k] += math.sin(hsv.hue * math.pi / 180) * w;
+        total += w;
       }
-      if (count == 0) return CoverColors.fallback;
-      final avg = Color.fromARGB(
-          255, (r / count).round(), (g / count).round(), (b / count).round());
-
-      final h = HSLColor.fromColor(avg);
+      if (px == 0) return CoverColors.fallback;
+      var best = 0;
+      for (var k = 1; k < bins; k++) {
+        if (wSum[k] > wSum[best]) best = k;
+      }
+      final vivid = total / px; // сколько в обложке цвета вообще (0 — ч/б)
+      final hue = wSum[best] > 0 ? (math.atan2(hy[best], hx[best]) * 180 / math.pi + 360) % 360 : 0.0;
+      final sat = wSum[best] > 0 ? sSum[best] / wSum[best] : 0.0;
+      // Мало цвета — насыщенность фона пропорционально меньше (серая обложка → почти серый фон).
+      final colorful = (vivid / 0.12).clamp(0.0, 1.0);
+      final h = HSLColor.fromAHSL(1, hue, (sat * colorful).clamp(0.0, 1.0), (vAll / px).clamp(0.2, 0.5));
       final base = h
-          .withSaturation((h.saturation * 0.9).clamp(0.22, 0.62))
-          .withLightness(h.lightness.clamp(0.20, 0.40))
+          .withSaturation((h.saturation * 0.9).clamp(0.04, 0.62))
+          .withLightness(0.30)
           .toColor();
       final glow = h
-          .withHue((h.hue + 28) % 360)
-          .withSaturation((h.saturation * 1.5).clamp(0.35, 0.8))
+          .withSaturation((h.saturation * 1.2).clamp(0.05, 0.8))
           .withLightness(0.5)
           .toColor();
       final deep = h
-          .withHue((h.hue - 18) % 360)
-          .withSaturation((h.saturation * 0.8).clamp(0.2, 0.6))
+          .withHue((h.hue - 10) % 360)
+          .withSaturation((h.saturation * 0.8).clamp(0.03, 0.6))
           .withLightness(0.12)
           .toColor();
       return CoverColors(base, glow, deep);

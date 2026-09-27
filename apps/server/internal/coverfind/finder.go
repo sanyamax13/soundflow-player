@@ -43,8 +43,11 @@ type Result struct {
 // побеждает.
 type Finder struct {
 	Sources []Source
-	HTTP    *http.Client
-	MaxPx   int // по умолчанию 600
+	// ArtistSources — фото исполнителя, когда обложки самой песни нет нигде (27.09.2026). Title в
+	// Search не используется.
+	ArtistSources []Source
+	HTTP          *http.Client
+	MaxPx         int // по умолчанию 600
 
 	mu   sync.Mutex
 	last map[string]time.Time
@@ -57,13 +60,17 @@ var ErrOffline = errors.New("ни один источник обложек не 
 // Find — nil, nil означает «источники ответили, но подходящей обложки нет»; ErrOffline — ответа
 // не было ни от одного.
 func (f *Finder) Find(ctx context.Context, artist, title string) (*Result, error) {
+	// Спрашиваем очищенное имя и название (SearchArtist/SearchTitle), а сверяем — с очищенным
+	// исполнителем: у «Гр. «Отпетые мошенники»» источник отвечает просто «Отпетые мошенники».
+	artist = SearchArtist(artist)
 	q := LeadArtist(artist)
+	qt := SearchTitle(title)
 	answered := 0
 	for _, src := range f.Sources {
 		if err := f.throttle(ctx, src.Name, src.Gap); err != nil {
 			return nil, err
 		}
-		cands, err := src.Search(ctx, q, title)
+		cands, err := src.Search(ctx, q, qt)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -89,6 +96,44 @@ func (f *Finder) Find(ctx context.Context, artist, title string) (*Result, error
 		}
 	}
 	if len(f.Sources) > 0 && answered == 0 {
+		return nil, ErrOffline
+	}
+	return nil, nil
+}
+
+// FindArtist — фото исполнителя вместо обложки песни: имя из ответа должно совпасть с нашим
+// (ArtistOK). nil, nil — не нашлось; ErrOffline — никто не ответил.
+func (f *Finder) FindArtist(ctx context.Context, artist string) (*Result, error) {
+	artist = SearchArtist(artist)
+	q := LeadArtist(artist)
+	answered := 0
+	for _, src := range f.ArtistSources {
+		if err := f.throttle(ctx, src.Name, src.Gap); err != nil {
+			return nil, err
+		}
+		cands, err := src.Search(ctx, q, "")
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		answered++
+		for _, c := range cands {
+			if c.Image == "" || !ArtistOK(artist, c.Artists) {
+				continue
+			}
+			img, err := f.fetchImage(ctx, c.Image)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				continue
+			}
+			return &Result{Source: src.Name + "-artist", ImageURL: c.Image, CandArtist: strings.Join(c.Artists, ", "), JPEG: img}, nil
+		}
+	}
+	if len(f.ArtistSources) > 0 && answered == 0 {
 		return nil, ErrOffline
 	}
 	return nil, nil
@@ -232,6 +277,37 @@ func (w *Web) Sources(yandex func(ctx context.Context, artist, title string) ([]
 		Source{Name: "audiodb", Gap: 600 * time.Millisecond, Search: w.audiodb},
 		Source{Name: "musicbrainz", Gap: 1100 * time.Millisecond, Search: w.musicbrainz},
 	)
+}
+
+// ArtistSources — фото исполнителя (Deezer отдаёт его без ключа).
+func (w *Web) ArtistSources() []Source {
+	return []Source{{Name: "deezer", Gap: 250 * time.Millisecond, Search: w.deezerArtist}}
+}
+
+func (w *Web) deezerArtist(ctx context.Context, artist, _ string) ([]Candidate, error) {
+	var j struct {
+		Data []struct {
+			Name      string `json:"name"`
+			PictureXL string `json:"picture_xl"`
+			Picture   string `json:"picture_big"`
+		} `json:"data"`
+	}
+	if err := getJSON(ctx, w.HTTP, w.DeezerURL+"/search/artist?limit=5&q="+url.QueryEscape(artist), &j); err != nil {
+		return nil, err
+	}
+	var out []Candidate
+	for _, d := range j.Data {
+		img := d.PictureXL
+		if img == "" {
+			img = d.Picture
+		}
+		// У Deezer без фото — серый силуэт по адресу с «/artist//»; такое не берём.
+		if strings.Contains(img, "/artist//") {
+			continue
+		}
+		out = append(out, Candidate{Artists: []string{d.Name}, Image: img})
+	}
+	return out, nil
 }
 
 func (w *Web) deezer(ctx context.Context, artist, title string) ([]Candidate, error) {

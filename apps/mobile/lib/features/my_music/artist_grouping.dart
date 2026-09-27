@@ -23,6 +23,8 @@ final RegExp _sep = RegExp(
   caseSensitive: false,
 );
 
+final RegExp _amp = RegExp(r'\s+&\s+');
+
 final RegExp _trimEnds = RegExp(r'^[\s\-–—./\\]+|[\s\-–—./\\]+$');
 
 /// Номер трека, прилипший к имени исполнителя: «01 Vengaboys», «09. Steps».
@@ -189,6 +191,20 @@ class ArtistFolder {
     }
   }
 
+  // «Noah & Erik Elias» рядом с «Noah» — совместная песня, кладём к Noah (27.09.2026: программа на
+  // компьютере теперь пишет всех совместных через «&» вместо «/», «;», «,»). Без сольного двойника
+  // («Simon & Garfunkel») «&» — часть названия дуэта, папка остаётся своей.
+  for (final key in byKey.keys.toList()) {
+    final tracks = byKey[key];
+    if (tracks == null) continue;
+    final lead = primaryArtist(tracks.first.artist).split(_amp).first;
+    if (lead == primaryArtist(tracks.first.artist)) continue;
+    final twin = artistKey(lead);
+    if (twin != key && byKey.containsKey(twin)) {
+      byKey[twin]!.addAll(byKey.remove(key)!);
+    }
+  }
+
   // Алфавит: латиница, затем кириллица, затем «#» (цифры и значки) — как в
   // списке с полоской букв справа (Alex 20.09.2026, вид «Б»).
   final folders = [
@@ -220,4 +236,29 @@ String _pickDisplay(List<DownloadedTrack> tracks) {
       return a.key.length.compareTo(b.key.length);
     });
   return ranked.first.key;
+}
+
+/// Все исполнители строки по отдельности — для выбора «кого слушать дальше» в плеере (Alex
+/// 27.09.2026: «может будет давать выбор, кого из исполнителей выбрать?»). Здесь режем и по «&», и
+/// по « x » / « и »: «ILLENIUM feat. Tom Grennan & Alna» → ILLENIUM, Tom Grennan, Alna.
+final RegExp _sepAll = RegExp(r'\s+(?:&|x|и|and)\s+', caseSensitive: false);
+
+List<String> artistsOf(String raw) {
+  final out = <String>[];
+  final seen = <String>{};
+  for (final part in raw.split(_sep)) {
+    for (final p in part.split(_sepAll)) {
+      final name = p.replaceFirst(_trackNo, '').replaceAll(_trimEnds, '').trim();
+      final k = artistPartKey(name);
+      if (name.isEmpty || k.isEmpty || !seen.add(k)) continue;
+      out.add(name);
+    }
+  }
+  return out;
+}
+
+/// Ключ одного имени (без регистра, точек, дефисов) — чтобы «Tom Grennan» и «TOM GRENNAN» совпали.
+String artistPartKey(String name) {
+  final loose = foldName(name).replaceAll(_nonAlnum, '');
+  return loose.length >= 3 ? loose : name.toLowerCase().trim();
 }

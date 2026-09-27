@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,6 +63,9 @@ class _RemoteAccessScreenState extends ConsumerState<RemoteAccessScreen> {
       final key = _relayKey;
       if (url == null || key == null) return;
       api.setRelayTransport(url, key);
+      final home = await db.kvGet('server_url');
+      if (home != null && home.isNotEmpty) api.setHomeUrl(home);
+      unawaited(api.pickRoute());
     } else {
       api.disableRelay(_localUrl ?? kDefaultApiBase);
     }

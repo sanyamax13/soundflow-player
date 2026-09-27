@@ -102,18 +102,8 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
       );
       return;
     }
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Найден компьютер'),
-        content: Text('${info.name.isEmpty ? found : info.name}. Подключиться?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Подключиться')),
-        ],
-      ),
-    );
-    if (yes != true || !mounted) return;
+    // Без вопроса «Подключиться?» (27.09.2026, разбор Gemini и Алисы): согласие уже дано — на
+    // компьютере открыто окно «Подключить телефон» (info.open выше), второй вопрос здесь лишний.
     final confirm = await Api.pairingConfirm(found);
     if (!mounted) return;
     if (!confirm.ok) {
@@ -123,7 +113,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
     await _persist(found);
     await _persistRelay(confirm.relayUrl, confirm.relayKey);
     if (!mounted) return;
-    Notice.show('Подключено', subtitle: found, kind: NoticeKind.done);
+    Notice.show('Связь с домом установлена', subtitle: info.name.isEmpty ? found : info.name, kind: NoticeKind.done);
   }
 
   Future<void> _persist(String raw) async {

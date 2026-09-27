@@ -7,7 +7,12 @@ import "log"
 func (s *Service) onTrackAdded(trackID string) {
 	s.autoPlanAdd(trackID)
 	s.covers.Kick()
+	s.genres.Kick()
+	s.origCovers.Kick()
 	s.waveforms.Kick()
+	s.bass.Kick()
+	s.loudness.Kick() // и громкость для выравнивания (loudkeeper.go)
+	s.moods.Kick() // и настроение/жанр (moodkeeper.go)
 	s.spectrum.Kick()
 }
 
