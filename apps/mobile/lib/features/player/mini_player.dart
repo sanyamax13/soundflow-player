@@ -1,7 +1,7 @@
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:flutter/services.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../../core/config.dart';
 import '../../core/cover_thumb.dart';
@@ -105,7 +105,7 @@ class MiniPlayer extends StatelessWidget {
                           HapticFeedback.selectionClick();
                           controller.toggle();
                         },
-                        icon: Icon(playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+                        icon: Icon(playing ? SolarIconsBold.pause : SolarIconsBold.play,
                             color: Afisha.ink),
                         iconSize: 28,
                       ),
@@ -113,7 +113,7 @@ class MiniPlayer extends StatelessWidget {
                     IconButton(
                       constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                       onPressed: controller.next,
-                      icon: const Icon(CupertinoIcons.forward_fill, color: Afisha.ink),
+                      icon: const Icon(SolarIconsBold.skipNext, color: Afisha.ink),
                       iconSize: 26,
                     ),
                   ],

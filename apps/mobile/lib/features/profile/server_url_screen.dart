@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
@@ -118,7 +119,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
               icon: _scanning
                   ? const SizedBox(
                       height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.wifi_find),
+                  : const Icon(SolarIconsOutline.magnifier),
               label: Text(_scanning ? 'Поиск в сети…' : 'Найти сервер самому'),
             ),
           ),
@@ -139,7 +140,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
             Row(
               children: [
                 Icon(
-                  _reachable! ? Icons.check_circle : Icons.error_outline,
+                  _reachable! ? SolarIconsBold.checkCircle : SolarIconsOutline.dangerCircle,
                   color: _reachable! ? Afisha.lime : Colors.redAccent,
                   size: 20,
                 ),

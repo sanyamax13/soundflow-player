@@ -1,8 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
+import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../../app/providers.dart';
 import '../../core/apple.dart';
@@ -102,7 +103,7 @@ class _RemoteAccessScreenState extends ConsumerState<RemoteAccessScreen> {
                     dividerInset: 58,
                     children: [
                       AppleRow(
-                        icon: CupertinoIcons.globe,
+                        icon: SolarIconsOutline.global,
                         iconBg: Afisha.gray,
                         title: 'Пока недоступно',
                         subtitle:
@@ -121,7 +122,7 @@ class _RemoteAccessScreenState extends ConsumerState<RemoteAccessScreen> {
                         : null,
                     children: [
                       AppleRow(
-                        icon: CupertinoIcons.globe,
+                        icon: SolarIconsOutline.global,
                         iconBg: Afisha.green,
                         title: 'Удалённый доступ',
                         subtitle: _enabled

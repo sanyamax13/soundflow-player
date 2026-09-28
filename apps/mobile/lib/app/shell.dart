@@ -1,9 +1,9 @@
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../core/black_box.dart';
 import '../core/theme.dart';
@@ -38,14 +38,14 @@ class _ShellState extends ConsumerState<Shell> {
 
   static const _labels = ['Поток', 'Моя музыка', 'Профиль'];
   static const _icons = [
-    CupertinoIcons.dot_radiowaves_left_right,
-    CupertinoIcons.music_albums,
-    CupertinoIcons.person_crop_circle,
+    SolarIconsBold.radioMinimalistic,
+    SolarIconsOutline.musicLibrary2,
+    SolarIconsOutline.userCircle,
   ];
   static const _iconsOn = [
-    CupertinoIcons.dot_radiowaves_left_right,
-    CupertinoIcons.music_albums_fill,
-    CupertinoIcons.person_crop_circle_fill,
+    SolarIconsBold.radioMinimalistic,
+    SolarIconsBold.musicLibrary2,
+    SolarIconsBold.userCircle,
   ];
 
   // Экран строим только когда вкладку открыли — не дёргаем сеть на старте.

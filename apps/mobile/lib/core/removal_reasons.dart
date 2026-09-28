@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:flutter/services.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import 'glass_sheet.dart';
 import 'theme.dart';
@@ -55,7 +56,7 @@ Widget _reasonRow(BuildContext ctx, String label, String value) => InkWell(
         child: Row(
           children: [
             const SizedBox(width: 8),
-            const Icon(Icons.delete_outline, color: Afisha.red, size: 26),
+            const Icon(SolarIconsOutline.trashBinTrash, color: Afisha.red, size: 26),
             const SizedBox(width: 14),
             Expanded(
               child: Text(label,

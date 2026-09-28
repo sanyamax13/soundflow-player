@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../../app/providers.dart';
 import '../../app/shell.dart';
@@ -45,7 +46,7 @@ class _ConnectScreenState extends ConsumerState<ConnectScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.computer_rounded, size: 56, color: Afisha.lime),
+              const Icon(SolarIconsOutline.monitor, size: 56, color: Afisha.lime),
               const SizedBox(height: 24),
               const Text('Подключите компьютер',
                   style: TextStyle(color: Afisha.ink, fontSize: 30, fontWeight: FontWeight.w700, height: 1.15)),

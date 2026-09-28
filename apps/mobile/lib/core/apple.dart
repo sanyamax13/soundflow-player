@@ -1,8 +1,8 @@
 import 'dart:ui';
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import 'theme.dart';
 
@@ -238,7 +238,7 @@ class AppleRow extends StatelessWidget {
             if (chevron) ...[
               const SizedBox(width: 6),
               const Icon(
-                CupertinoIcons.chevron_forward,
+                SolarIconsOutline.altArrowRight,
                 size: 15,
                 color: Afisha.chevron,
               ),

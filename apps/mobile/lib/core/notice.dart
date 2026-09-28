@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import 'theme.dart';
 
@@ -229,27 +230,27 @@ class NoticeCard extends StatelessWidget {
 
   ({IconData icon, Color bg, Color fg}) _look() => switch (data.kind) {
     NoticeKind.done => (
-      icon: Icons.check_rounded,
+      icon: SolarIconsBold.checkCircle,
       bg: const Color(0xFF34C759),
       fg: Colors.white,
     ),
     NoticeKind.removed => (
-      icon: Icons.delete_outline_rounded,
+      icon: SolarIconsOutline.trashBinTrash,
       bg: const Color(0xFFFF453A),
       fg: Colors.white,
     ),
     NoticeKind.warn => (
-      icon: Icons.priority_high_rounded,
+      icon: SolarIconsBold.dangerCircle,
       bg: const Color(0xFFFF9F0A),
       fg: Colors.black,
     ),
     NoticeKind.error => (
-      icon: Icons.wifi_off_rounded,
+      icon: SolarIconsOutline.cloudCross,
       bg: const Color(0xFFFF453A),
       fg: Colors.white,
     ),
     NoticeKind.info => (
-      icon: Icons.graphic_eq,
+      icon: SolarIconsBold.soundwave,
       bg: Afisha.lime,
       fg: Colors.black,
     ),

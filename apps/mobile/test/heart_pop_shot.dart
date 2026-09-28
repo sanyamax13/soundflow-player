@@ -10,6 +10,7 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:solar_icons/solar_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:soundflow/app/providers.dart';
@@ -75,7 +76,7 @@ void main() {
     await t.pump();
     await t.pump(const Duration(milliseconds: 300));
 
-    await t.tap(find.byIcon(CupertinoIcons.heart));
+    await t.tap(find.byIcon(SolarIconsOutline.heart));
     await t.pump();
     await t.pump(const Duration(milliseconds: 230));
 

@@ -1,7 +1,7 @@
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../../app/providers.dart';
 import '../../core/glass_sheet.dart';
@@ -162,7 +162,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         const SizedBox(height: 12),
         Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
         _row(
-          icon: CupertinoIcons.wifi,
+          icon: SolarIconsOutline.wifiRouterMinimalistic,
           iconColor: Afisha.blue,
           title: 'Адрес дома',
           subtitle: apiBase.replaceFirst('http://', ''),
@@ -175,7 +175,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         ),
         Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
         _row(
-          icon: CupertinoIcons.globe,
+          icon: SolarIconsOutline.global,
           iconColor: Afisha.green,
           title: 'Удалённый доступ',
           subtitle: 'слушать не из дома',
@@ -237,7 +237,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     ],
                   ),
                 ),
-                Icon(CupertinoIcons.chevron_forward, color: Colors.white.withValues(alpha: 0.3), size: 16),
+                Icon(SolarIconsOutline.altArrowRight, color: Colors.white.withValues(alpha: 0.3), size: 16),
               ],
             ),
           ),

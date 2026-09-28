@@ -65,6 +65,15 @@ Future<Widget> _app({Future<void> Function(Db db)? seed}) async {
 void main() {
   setUpAll(() async {
     sqfliteFfiInit();
+    // Значки Solar (шрифт пакета solar_icons) — иначе на картинке вместо них квадраты.
+    for (final w in ['Bold', 'Outline']) {
+      final f = File('${Platform.environment['HOME']}/.pub-cache/hosted/pub.dev/solar_icons-0.1.0/fonts/SolarIcons$w.ttf');
+      if (f.existsSync()) {
+        await (FontLoader('packages/solar_icons/SolarIcons$w')
+              ..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer))))
+            .load();
+      }
+    }
     for (final w in ['Regular', 'Medium', 'SemiBold', 'Bold']) {
       final f = File('assets/fonts/Inter-$w.ttf');
       if (f.existsSync()) {
