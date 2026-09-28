@@ -32,6 +32,16 @@ class BlackBox {
   static Directory? _dir;
   static int _seq = 0;
   static bool _started = false;
+  static bool _live = false; // режим отладки: частая отправка логов разработчику (по согласию)
+
+  /// Включить/выключить живую отладку. On — сразу отправить накопленное.
+  static void setLive(bool on) {
+    _live = on;
+    log('debug_live', {'on': on});
+    if (on) unawaited(flush().then((_) => uploadNow()));
+  }
+
+  static bool get live => _live;
   static bool _flushing = false;
   static bool _uploading = false;
 
@@ -104,6 +114,10 @@ class BlackBox {
     Timer.periodic(const Duration(seconds: 15), (_) => unawaited(flush()));
     Timer.periodic(const Duration(minutes: 5), (_) => unawaited(_pulse()));
     Timer.periodic(const Duration(minutes: 10), (_) => unawaited(uploadNow()));
+    // Режим отладки (Alex 28.09.2026): по согласию — частая отправка, чтобы разработчик видел «в моменте».
+    Timer.periodic(const Duration(seconds: 6), (_) {
+      if (_live) unawaited(flush().then((_) => uploadNow()));
+    });
     Timer(const Duration(seconds: 20), () => unawaited(uploadNow()));
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     SchedulerBinding.instance.addTimingsCallback(_onFrames);

@@ -1,0 +1,70 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Inter;src:url("Inter-SemiBold.ttf")}
+body{margin:0;background:#0b0b0d;color:#f4f4f5;font-family:Inter,sans-serif;width:1600px;padding:26px 30px}
+h1{font-size:26px;margin:0 0 4px} .sub{color:#9b9b9b;font-size:14px;margin:0 0 20px}
+.cols{display:flex;gap:0;align-items:stretch}
+.col{flex:1;padding:0 14px}
+.ct{font-size:13px;color:#B2FF00;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:0 0 10px;text-align:center}
+.box{background:#161618;border:1px solid #2a2a2e;border-radius:14px;padding:12px 14px;margin:0 0 12px}
+.box b{font-size:15px} .box .d{color:#9b9b9b;font-size:12.5px;margin-top:3px;line-height:1.4}
+.box.acc{border-color:#B2FF00;background:rgba(178,255,0,.07)}
+.box.ext{border-color:#4DA3FF} .box.vds{border-color:#FFB84D}
+.arrow{color:#6e7681;font-size:12px;text-align:center;margin:-6px 0 6px}
+.legend{margin-top:18px;color:#9b9b9b;font-size:12.5px;display:flex;gap:22px;flex-wrap:wrap}
+.tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;margin-left:6px}
+.home{background:#1e3a1e;color:#7ED957} .away{background:#3a2f14;color:#FFB84D}
+.pill{display:inline-block;background:#1c1c1f;border:1px solid #2a2a2e;border-radius:8px;padding:2px 8px;margin:2px 3px 0 0;font-size:11.5px;color:#c9d1d9}
+</style></head><body>
+<h1>SoundFlow — как ходят данные</h1>
+<p class="sub">Карта для быстрой ориентации: что откуда берётся, где напрямую, где через посредника. 28.09.2026.</p>
+<div class="cols">
+
+  <div class="col">
+    <div class="ct">Откуда берётся музыка</div>
+    <div class="box ext"><b>Бесплатные источники</b><div class="d">musify.club, mp3party.net — ищутся первыми</div></div>
+    <div class="box ext"><b>Торренты</b><div class="d">nnmclub, rutor и др. → qBittorrent (порт 8080)</div></div>
+    <div class="box ext"><b>Яндекс Музыка</b><div class="d">последним; вход по токену. Плюс: лайки/плейлисты → вкус, «Волна», эталон длины</div></div>
+  </div>
+
+  <div class="col">
+    <div class="ct">Качалка (Python)</div>
+    <div class="arrow">↓ находит и качает</div>
+    <div class="box"><b>downloader (sidecar :8001)</b><div class="d">audio_chain: musify→mp3party→Яндекс. Кладёт файлы в<br>G:\Музыка\Яндекс и \Торренты</div></div>
+    <div class="arrow">↓ запускает и опрашивает</div>
+    <div class="box acc"><b>Сервер сам держит качалку</b><div class="d">запускает процесс, отдаёт ей токен/пути через окружение</div></div>
+  </div>
+
+  <div class="col">
+    <div class="ct">Сервер на ПК (Go)</div>
+    <div class="box acc"><b>SoundFlow.exe</b><div class="d">окно (WebView2) + сервер в одном. Слушает :8090</div></div>
+    <div class="box"><b>Каталог + метки</b><div class="d">SQLite soundflow.db<br>(%LocalAppData%\SoundFlow)</div></div>
+    <div class="box"><b>Музыка на диске</b><div class="d">G:\Музыка — сами файлы (~120 ГБ)</div></div>
+    <div class="box"><b>«Хранители» (сами, фоном)</b><div class="d">
+      <span class="pill">обложки</span><span class="pill">настроение</span><span class="pill">бас</span><span class="pill">форма волны</span><span class="pill">громкость</span><span class="pill">жанр</span><span class="pill">вкус из Яндекса</span><span class="pill">сверка с диском</span></div></div>
+  </div>
+
+  <div class="col">
+    <div class="ct">Связь с телефоном</div>
+    <div class="box home"><b>Дома — напрямую</b> <span class="tag home">Wi-Fi</span><div class="d">телефон → http://IP-ПК:8090<br>быстро, без посредников</div></div>
+    <div class="arrow">— или —</div>
+    <div class="box vds"><b>Вне дома — через ВДС</b> <span class="tag away">SSH-канал</span><div class="d">ПК держит SSH-туннель до ВДС → nginx → 127.0.0.1:8093 → сервер. Секретный ключ в заголовке. Телефон ходит на https://…/soundflow-remote</div></div>
+    <div class="box vds"><b>ВДС ещё отдаёт</b><div class="d">канал обновлений: version.json + APK; для ПК pc-version.json + установщик</div></div>
+  </div>
+
+  <div class="col">
+    <div class="ct">Телефон (Flutter)</div>
+    <div class="arrow">↓ спрашивает по HTTP</div>
+    <div class="box acc"><b>Приложение</b><div class="d">Поток, Моя музыка, плеер</div></div>
+    <div class="box"><b>Что берёт с сервера</b><div class="d">
+      <span class="pill">/tracks каталог</span><span class="pill">/cover обложка</span><span class="pill">/audio файл</span><span class="pill">/bass</span><span class="pill">/waveform</span><span class="pill">/search</span><span class="pill">/sync события</span><span class="pill">/blackbox лог</span><span class="pill">/device/plan докачки</span></div></div>
+    <div class="box"><b>Что делает сам (офлайн)</b><div class="d">радио/похожее по отпечаткам, темп полосы, косинусы вкуса — без сервера</div></div>
+  </div>
+
+</div>
+<div class="legend">
+  <span>■ <span style="color:#4DA3FF">синие</span> — внешние сайты</span>
+  <span>■ <span style="color:#FFB84D">жёлтые</span> — ВДС (интернет)</span>
+  <span>■ <span style="color:#B2FF00">лаймовые</span> — сам SoundFlow</span>
+  <span>Скачанное на телефоне играет локально; связь с сервером нужна для нового и для «вне дома».</span>
+</div>
+</body></html>

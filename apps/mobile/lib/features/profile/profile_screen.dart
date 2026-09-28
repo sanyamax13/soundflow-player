@@ -13,6 +13,9 @@ import '../admin/admin_screen.dart';
 import '../discover/discover_screen.dart';
 import '../sync/sync_offer_card.dart';
 import '../player/seek_skin.dart';
+import '../../core/black_box.dart';
+import '../../core/glass_sheet.dart';
+import '../../data/db.dart';
 
 /// Профиль. 26.09.2026 (разбор Gemini + Alex «да»): сверху вниз —
 /// обновление (только когда есть) · «Медиатека» (вся ли музыка на телефоне) ·
@@ -143,6 +146,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ]),
               ],
+              const SizedBox(height: 22),
+              AppleSection(dividerInset: 58, children: [
+                _DebugRow(db: ref.read(dbProvider)),
+              ]),
               const SizedBox(height: 28),
             ],
           ),
@@ -257,3 +264,39 @@ class _UpdateCardState extends State<_UpdateCard> {
   }
 }
 
+/// «Отладка для разработчика» (Alex 28.09.2026): по согласию приложение шлёт разработчику журнал
+/// действий в реальном времени. Включение — только после явного «да»; личное (пароли, содержимое)
+/// не передаётся. Выключается там же.
+class _DebugRow extends StatefulWidget {
+  const _DebugRow({required this.db});
+  final Db db;
+  @override
+  State<_DebugRow> createState() => _DebugRowState();
+}
+
+class _DebugRowState extends State<_DebugRow> {
+  bool _on = BlackBox.live;
+
+  Future<void> _toggle(bool v) async {
+    if (v) {
+      final ok = await confirmSheet(context,
+          title: 'Включить отладку?',
+          body: 'Приложение будет передавать разработчику журнал действий, экранов, ошибок и сети '
+              'в реальном времени. Пароли и содержимое песен не передаются. Выключить можно здесь же.',
+          okLabel: 'Включить');
+      if (!ok) return;
+    }
+    BlackBox.setLive(v);
+    await widget.db.kvSet('debug_live', v ? '1' : '0');
+    if (mounted) setState(() => _on = v);
+  }
+
+  @override
+  Widget build(BuildContext context) => AppleRow(
+        key: const ValueKey('profile_debug'),
+        icon: SolarBold.dangerCircle,
+        title: 'Отладка для разработчика',
+        subtitle: _on ? 'включена — данные передаются' : 'выключена',
+        trailing: Switch(value: _on, onChanged: _toggle),
+      );
+}

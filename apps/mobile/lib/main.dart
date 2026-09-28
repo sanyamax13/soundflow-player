@@ -83,6 +83,7 @@ Future<void> _boot() async {
 
   final db = await Db.open();
   await loadSeekSkin(db); // вид полосы в плеере (features/player/seek_skin.dart)
+  final dbg = await db.kvGet('debug_live') == '1';
   // Адрес сервера пользователь задаёт в Профиле — берём сохранённый. Совсем
   // новая установка (ничего не сохранено) — пробуем один раз сами найти
   // программу в сети/по USB, прежде чем откатиться на адрес по умолчанию
@@ -130,6 +131,7 @@ Future<void> _boot() async {
   // Подробный «чёрный ящик» (Alex TG 21786): всё пишется в файл дня и само уходит на
   // домашний сервер (core/black_box.dart).
   BlackBox.start(upload: (gz) async => api.uploadBlackBox(await sync.deviceId(), gz));
+  if (dbg) BlackBox.setLive(true);
   final downloads = DownloadsRepo(api, db, sync);
   // late — onMissingFile ссылается на player, чтобы вернуть трек в очередь
   // после докачки (см. PlayerController.requeueTrack); замыкание просто
