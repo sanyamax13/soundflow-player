@@ -104,7 +104,6 @@ class _RemoteAccessScreenState extends ConsumerState<RemoteAccessScreen> {
                     children: [
                       AppleRow(
                         icon: SolarOutline.global,
-                        iconBg: Afisha.gray,
                         title: 'Пока недоступно',
                         subtitle:
                             'Сначала подключитесь к компьютеру дома по Wi-Fi '
@@ -123,7 +122,6 @@ class _RemoteAccessScreenState extends ConsumerState<RemoteAccessScreen> {
                     children: [
                       AppleRow(
                         icon: SolarOutline.global,
-                        iconBg: Afisha.green,
                         title: 'Удалённый доступ',
                         subtitle: _enabled
                             ? 'Включён — связь через интернет'

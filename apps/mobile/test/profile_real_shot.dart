@@ -60,25 +60,9 @@ void main() {
             ..addFont(Future.value(ByteData.view(grotesk.readAsBytesSync().buffer))))
           .load();
     }
-    for (final p in [
-      r'E:\flutter\bin\cache\artifacts\material_fonts\materialicons-regular.otf',
-      r'E:\flutter\bin\cache\artifacts\material_fonts\MaterialIcons-Regular.otf',
-    ]) {
-      final f = File(p);
-      if (f.existsSync()) {
-        await (FontLoader('MaterialIcons')
-              ..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer))))
-            .load();
-        break;
-      }
-    }
-    final cupertino = File(
-        r'C:\Users\brain\AppData\Local\Pub\Cache\hosted\pub.dev\cupertino_icons-1.0.9\assets\CupertinoIcons.ttf');
-    if (cupertino.existsSync()) {
-      await (FontLoader('packages/cupertino_icons/CupertinoIcons')
-            ..addFont(Future.value(ByteData.view(cupertino.readAsBytesSync().buffer))))
-          .load();
-    }
+    await (FontLoader('SolarApp')
+          ..addFont(Future.value(ByteData.view(File('assets/fonts/SolarApp.ttf').readAsBytesSync().buffer))))
+        .load();
   });
 
   testWidgets('экран «Профиль»', (tester) async {

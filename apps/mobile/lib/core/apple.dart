@@ -150,7 +150,6 @@ class AppleRow extends StatelessWidget {
     super.key,
     required this.title,
     this.icon,
-    this.iconBg = Afisha.gray,
     this.subtitle,
     this.value,
     this.trailing,
@@ -161,7 +160,6 @@ class AppleRow extends StatelessWidget {
 
   final String title;
   final IconData? icon;
-  final Color iconBg;
   final String? subtitle;
   final String? value;
   final Widget? trailing;
@@ -179,14 +177,15 @@ class AppleRow extends StatelessWidget {
         child: Row(
           children: [
             if (icon != null) ...[
+              // Как значки плеера: белый значок на тёмной плитке, без цветных квадратов (Alex 28.09.2026).
               Container(
-                width: 30,
-                height: 30,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(7),
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 18, color: Colors.white),
+                child: Icon(icon, size: 20, color: Colors.white),
               ),
               const SizedBox(width: 12),
             ],

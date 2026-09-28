@@ -269,7 +269,6 @@ class SyncOfferCard extends ConsumerWidget {
             icon: o.lastCheckFailed
                 ? SolarOutline.cloudCross
                 : SolarOutline.refresh,
-            iconBg: o.lastCheckFailed ? Afisha.red : Afisha.green,
             // «Медиатека» (разбор Gemini 26.09.2026, Alex «да»): вся ли моя музыка уже на
             // телефоне. Было «Музыка с компьютера».
             title: 'Медиатека',

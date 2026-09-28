@@ -100,7 +100,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   AppleRow(
                     icon: SolarBold.magicWand,
-                    iconBg: Afisha.lime,
                     title: 'Открытия',
                     subtitle: 'новая музыка по вкусу — Яндекс и торренты',
                     chevron: true,
@@ -114,7 +113,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     builder: (context, skin, _) => AppleRow(
                       key: const ValueKey('profile_seek_skin'),
                       icon: SolarOutline.tuning,
-                      iconBg: Afisha.gray,
                       title: 'Вид плеера',
                       value: skin.label,
                       onTap: () => toggleSeekSkin(ref.read(dbProvider)),
@@ -122,7 +120,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   AppleRow(
                     icon: SolarBold.home2,
-                    iconBg: Afisha.blue,
                     title: 'Связь с домом',
                     trailing: _OnlineBadge(online: _online),
                     chevron: true,
@@ -140,7 +137,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 AppleSection(dividerInset: 58, children: [
                   AppleRow(
                     icon: SolarOutline.infoCircle,
-                    iconBg: Afisha.gray,
                     title: 'О программе',
                     value: _installed,
                     onTap: _loadVersion,
@@ -180,7 +176,9 @@ class _OnlineBadge extends StatelessWidget {
 
 /// Обновление — наверху, одной строкой с кнопкой (разбор Gemini 26.09.2026). Показывается,
 /// только когда новая версия есть; иначе внизу тихая строка «О программе».
-class _UpdateCard extends StatelessWidget {
+/// Карточка новой версии: что в ней нового — одной строкой, нажатие по карточке раскрывает текст
+/// целиком (Alex 28.09.2026: «пиши кратко, что обновляется, по тапу раскрывается»).
+class _UpdateCard extends StatefulWidget {
   const _UpdateCard({required this.info, required this.busy, required this.onTap});
 
   final UpdateInfo info;
@@ -188,38 +186,72 @@ class _UpdateCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_UpdateCard> createState() => _UpdateCardState();
+}
+
+class _UpdateCardState extends State<_UpdateCard> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      constraints: const BoxConstraints(minHeight: 76),
-      padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: Afisha.lime.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Afisha.lime.withValues(alpha: 0.4), width: 0.5),
-      ),
-      child: Row(
-        children: [
-          const Icon(SolarBold.downloadMinimalistic, color: Afisha.lime, size: 32),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text('Новая версия v${info.versionCode}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Afisha.ink, fontSize: 17, fontWeight: FontWeight.w600)),
+    final note = widget.info.changelog.trim();
+    return GestureDetector(
+      key: const ValueKey('update_card'),
+      behavior: HitTestBehavior.opaque,
+      onTap: note.isEmpty ? null : () => setState(() => _open = !_open),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          constraints: const BoxConstraints(minHeight: 76),
+          padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: Afisha.lime.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Afisha.lime.withValues(alpha: 0.4), width: 0.5),
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(0, 48),
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              shape: const StadiumBorder(),
-            ),
-            onPressed: busy ? null : onTap,
-            child: busy
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Обновить'),
+          child: Row(
+            crossAxisAlignment: _open ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+            children: [
+              const Icon(SolarBold.downloadMinimalistic, color: Afisha.lime, size: 32),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Новая версия v${widget.info.versionCode}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Afisha.ink, fontSize: 17, fontWeight: FontWeight.w600)),
+                    if (note.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(note,
+                          key: const ValueKey('update_note'),
+                          maxLines: _open ? null : 1,
+                          overflow: _open ? null : TextOverflow.ellipsis,
+                          style: const TextStyle(color: Afisha.inkDim, fontSize: 14, height: 1.3)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: widget.busy ? null : widget.onTap,
+                child: widget.busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Обновить'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
