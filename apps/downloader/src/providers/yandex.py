@@ -508,6 +508,16 @@ async def playlist_by_link(link: str):
     return await asyncio.to_thread(_playlist_sync, link)
 
 
+def _pairs(client, ids) -> list[dict]:
+    """artist/title по id треков (пачками — Яндекс не любит тысячи id разом)."""
+    out = []
+    for i in range(0, len(ids), 200):
+        for t in client.tracks(ids[i:i + 200]) or []:
+            if t:
+                out.append({"artist": ", ".join(_artists_of(t)), "title": t.title or ""})
+    return out
+
+
 # ───────── «Не рекомендовать» (чёрный список) ─────────
 def _dislikes_sync():
     client = _get_client()
@@ -516,8 +526,7 @@ def _dislikes_sync():
     try:
         dl = client.users_dislikes_tracks()
         ids = [t.id for t in (dl.tracks if dl else []) or [] if getattr(t, "id", None)]
-        full = client.tracks(ids) if ids else []
-        return [{"artist": ", ".join(_artists_of(t)), "title": t.title or ""} for t in full if t], None
+        return _pairs(client, ids), None
     except Exception as e:  # noqa: BLE001
         log.warning("yandex dislikes: %s", e)
         return [], "Яндекс не отдал «Не рекомендовать»"
@@ -525,6 +534,45 @@ def _dislikes_sync():
 
 async def dislikes():
     return await asyncio.to_thread(_dislikes_sync)
+
+
+# ───────── начальный вкус своей копии плеера (28.09.2026) ─────────
+# «Мне нравится» и песни из своих плейлистов человека — программа (cmd/soundflow/tasteseed.go) отмечает
+# их лайками у тех песен, что уже есть в его каталоге. Только чтение, в аккаунт Яндекса ничего не пишется.
+_SEED_MAX = 3000
+
+
+def _taste_seed_sync():
+    client = _get_client()
+    if client is None:
+        return [], "нет токена Яндекса"
+    ids: list[str] = []
+    seen: set[str] = set()
+
+    def add(tid):
+        tid = str(tid or "")
+        if tid and tid not in seen and len(ids) < _SEED_MAX:
+            seen.add(tid)
+            ids.append(tid)
+
+    try:
+        likes = client.users_likes_tracks()
+        for t in (likes.tracks if likes else []) or []:
+            add(getattr(t, "id", None))
+        for pl in client.users_playlists_list() or []:
+            if len(ids) >= _SEED_MAX:
+                break
+            full = client.users_playlists(pl.kind, pl.owner.uid) if getattr(pl, "owner", None) else None
+            for ts in (getattr(full, "tracks", None) or []):
+                add(getattr(ts, "id", None) or getattr(getattr(ts, "track", None), "id", None))
+        return _pairs(client, ids), None
+    except Exception as e:  # noqa: BLE001
+        log.warning("yandex taste seed: %s", e)
+        return [], "Яндекс не отдал лайки и плейлисты"
+
+
+async def taste_seed():
+    return await asyncio.to_thread(_taste_seed_sync)
 
 
 # ───────── сырые кандидаты «Волны» (cmd/soundflow/yandex_wave.go ранжирует сам) ─────────

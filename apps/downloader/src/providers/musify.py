@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote, quote_plus, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
@@ -53,6 +53,33 @@ class MusifyMatch:
     duration_sec: int | None = None
     score: float = 0.0
     is_alternate: bool = False
+
+
+# С 28.09.2026 musify отдаёт «Проверка браузера…»: страница с JS, который считает djb2(n + M) и
+# переходит на /__mzverify — тот ставит куку, дальше сайт пускает. Решаем то же самое без браузера.
+_CHALLENGE = re.compile(r'var n="([^"]+)",M="([^"]+)"')
+
+
+def _djb2(s: str) -> str:
+    h = 5381
+    for ch in s:
+        h = ((h << 5) + h + ord(ch)) & 0xFFFFFFFF
+    return format(h, "x")
+
+
+def _get(session: "cffi.Session", url: str, **kw):
+    """GET с прохождением «Проверки браузера» musify (кука остаётся в session)."""
+    r = session.get(url, **kw)
+    m = _CHALLENGE.search(r.text[:4000]) if "__mzverify" in r.text[:4000] else None
+    if m is None:
+        return r
+    nonce, salt = m.groups()
+    parts = urlsplit(url)
+    back = parts.path + (("?" + parts.query) if parts.query else "")
+    verify = (f"{BASE}/__mzverify?n={quote(nonce, safe='')}&t={_djb2(nonce + salt)}"
+              f"&r={quote(back, safe='')}")
+    session.get(verify, impersonate=kw.get("impersonate", IMPERSONATE), timeout=20)
+    return session.get(url, **kw)
 
 
 def _norm(s: str) -> str:
@@ -92,7 +119,7 @@ def _parse_search(html: str) -> list[tuple[str, str, str]]:
 
 def _search_sync(session: "cffi.Session", query: str) -> list[tuple[str, str, str]]:
     url = f"{BASE}/search?searchText={quote_plus(query)}"
-    r = session.get(url, impersonate=IMPERSONATE, timeout=20)
+    r = _get(session, url, impersonate=IMPERSONATE, timeout=20)
     if r.status_code != 200:
         log.warning("musify search HTTP %d for %r", r.status_code, query)
         return []
@@ -134,7 +161,7 @@ def _find_track_sync(artist: str, title: str,
         log.info("musify: взял альтернативную версию %r", best_title)
 
     track_url = urljoin(BASE, best_href)
-    r = session.get(track_url, impersonate=IMPERSONATE, timeout=20)
+    r = _get(session, track_url, impersonate=IMPERSONATE, timeout=20)
     if r.status_code != 200:
         return None
     soup = BeautifulSoup(r.text, "html.parser")
@@ -192,7 +219,7 @@ def _download_match_sync(match: MusifyMatch, cache_dir: Path) -> tuple[str, Musi
 
     session = cffi.Session(headers={**EXTRA_HEADERS, "referer": match.track_url})
     try:
-        r = session.get(match.download_url, impersonate=IMPERSONATE, timeout=60)
+        r = _get(session, match.download_url, impersonate=IMPERSONATE, timeout=60)
         if r.status_code != 200:
             log.warning("musify download HTTP %d for %r", r.status_code, match.download_url)
             return None

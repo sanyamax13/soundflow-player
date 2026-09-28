@@ -12,6 +12,7 @@ import '../../core/update_download.dart';
 import '../admin/admin_screen.dart';
 import '../discover/discover_screen.dart';
 import '../sync/sync_offer_card.dart';
+import '../player/seek_skin.dart';
 
 /// Профиль. 26.09.2026 (разбор Gemini + Alex «да»): сверху вниз —
 /// обновление (только когда есть) · «Медиатека» (вся ли музыка на телефоне) ·
@@ -105,6 +106,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     chevron: true,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(builder: (_) => const DiscoverScreen()),
+                    ),
+                  ),
+                  // Вид плеера — «Оценка» / «Листание», одно нажатие переключает (Alex TG 22574, 28.09.2026).
+                  ValueListenableBuilder<SeekSkin>(
+                    valueListenable: seekSkin,
+                    builder: (context, skin, _) => AppleRow(
+                      key: const ValueKey('profile_seek_skin'),
+                      icon: CupertinoIcons.slider_horizontal_3,
+                      iconBg: Afisha.gray,
+                      title: 'Вид плеера',
+                      value: skin.label,
+                      onTap: () => toggleSeekSkin(ref.read(dbProvider)),
                     ),
                   ),
                   AppleRow(

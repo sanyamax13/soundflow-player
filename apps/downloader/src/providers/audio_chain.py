@@ -1,8 +1,9 @@
 """Режим 1 «Найти трек» — авто-цепочка для ОДНОГО трака.
 
-Порядок (Alex 08.09.2026): Яндекс → musify → mp3party. Яндекс первый —
-личный Плюс, почти весь каталог в 320, точная студийная версия. Не нашёл /
-нет токена → musify (свободный 320 mp3). Не нашёл → mp3party.
+Порядок (Alex 28.09.2026, было «Яндекс первым» с 08.09): musify → mp3party → Яндекс.
+Смысл плеера — бесплатно, без подписок: сначала бесплатные источники, Яндекс — последним
+запасным и только если человек вошёл (есть токен). Эталон длины по-прежнему берётся из
+открытого поиска Яндекса — он без входа и без подписки.
 
 Торренты сюда НЕ входят — это отдельный ручной режим «Торренты — обзор»
 (torrent_browse.py): там Alex сам смотрит список релизов и выбирает.
@@ -83,7 +84,49 @@ async def find_audio_chain(
             return False
         return True
 
-    # 1. Yandex Music — 320, точная студийная версия. Нет токена → None.
+    # 1. musify.club — бесплатный, обычно 320 mp3.
+    if "musify" not in skip:
+        mr = await _safe(mus.find_and_download(
+            artist, title, rejected_source_urls=rejected,
+            expected_duration_sec=expected_duration_sec), "musify")
+        if mr is not None:
+            if not _acceptable(mr.duration_sec):
+                log.info("audio_chain: musify отдал обрезок (%ss vs %ss), пропускаю",
+                         mr.duration_sec, expected_duration_sec)
+            else:
+                log.info("audio_chain: %s — musify успех (%skbps)", artist, mr.bitrate_kbps)
+                return AudioChainResult(
+                    file_path=mr.file_path,
+                    bitrate_kbps=mr.bitrate_kbps,
+                    duration_sec=mr.duration_sec,
+                    size_bytes=mr.size_bytes,
+                    source="musify",
+                    provider_user="musify",
+                    provider_url=mr.source_url,
+                )
+
+    # 2. mp3party.net. В РФ бывает отдаёт заглушки — не падаем.
+    if "mp3party" not in skip:
+        pr = await _safe(m3p.find_and_download(artist, title), "mp3party")
+        if pr is not None:
+            if not _acceptable(pr.duration_sec):
+                log.info("audio_chain: mp3party wrong duration (%ss vs %ss), пропускаю",
+                         pr.duration_sec, expected_duration_sec)
+            elif pr.track_url in rejected:
+                log.info("audio_chain: mp3party rejected by user: %s", pr.track_url)
+            else:
+                log.info("audio_chain: %s — mp3party успех (%skbps)", artist, pr.bitrate_kbps)
+                return AudioChainResult(
+                    file_path=pr.file_path,
+                    bitrate_kbps=pr.bitrate_kbps,
+                    duration_sec=pr.duration_sec,
+                    size_bytes=pr.size_bytes,
+                    source="mp3party",
+                    provider_user="mp3party",
+                    provider_url=pr.track_url,
+                )
+
+    # 3. Yandex Music — последний запасной: только если человек вошёл (нет токена → None).
     if "yandex" not in skip:
         ym_res = await _safe(ym.download_track(
             artist, title, config.track_cache_dir,
@@ -105,48 +148,6 @@ async def find_audio_chain(
                     source="yandex",
                     provider_user="yandex",
                     provider_url=f"yandexmusic://{m.track_id}",
-                )
-
-    # 2. musify.club — свободный 320 mp3.
-    if "musify" not in skip:
-        mr = await _safe(mus.find_and_download(
-            artist, title, rejected_source_urls=rejected,
-            expected_duration_sec=expected_duration_sec), "musify")
-        if mr is not None:
-            if not _acceptable(mr.duration_sec):
-                log.info("audio_chain: musify отдал обрезок (%ss vs %ss), пропускаю",
-                         mr.duration_sec, expected_duration_sec)
-            else:
-                log.info("audio_chain: %s — musify успех (%skbps)", artist, mr.bitrate_kbps)
-                return AudioChainResult(
-                    file_path=mr.file_path,
-                    bitrate_kbps=mr.bitrate_kbps,
-                    duration_sec=mr.duration_sec,
-                    size_bytes=mr.size_bytes,
-                    source="musify",
-                    provider_user="musify",
-                    provider_url=mr.source_url,
-                )
-
-    # 3. mp3party.net — последний. В РФ бывает отдаёт заглушки — не падаем.
-    if "mp3party" not in skip:
-        pr = await _safe(m3p.find_and_download(artist, title), "mp3party")
-        if pr is not None:
-            if not _acceptable(pr.duration_sec):
-                log.info("audio_chain: mp3party wrong duration (%ss vs %ss), пропускаю",
-                         pr.duration_sec, expected_duration_sec)
-            elif pr.track_url in rejected:
-                log.info("audio_chain: mp3party rejected by user: %s", pr.track_url)
-            else:
-                log.info("audio_chain: %s — mp3party успех (%skbps)", artist, pr.bitrate_kbps)
-                return AudioChainResult(
-                    file_path=pr.file_path,
-                    bitrate_kbps=pr.bitrate_kbps,
-                    duration_sec=pr.duration_sec,
-                    size_bytes=pr.size_bytes,
-                    source="mp3party",
-                    provider_user="mp3party",
-                    provider_url=pr.track_url,
                 )
 
     log.info("audio_chain: %s — %s не найден ни одним источником", artist, title)

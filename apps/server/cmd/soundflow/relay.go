@@ -41,15 +41,27 @@ func (s *Service) startRelay() {
 	handler := relayAuth(secret, s.buildPhoneRouter())
 	srv := &http.Server{Handler: handler}
 	s.relaySrv = srv
-	go s.relayLoop(host, user, keyPath, remoteBind, srv)
+	gen := s.relayGen.Add(1)
+	go s.relayLoop(host, user, keyPath, remoteBind, srv, gen)
 }
 
-func (s *Service) relayLoop(host, user, keyPath, remoteBind string, srv *http.Server) {
-	for !s.relayStop.Load() {
+// restartRelay — поднять канал заново с новыми настройками (мастер первого запуска, setup_vds.go):
+// старый цикл видит смену поколения и выходит.
+func (s *Service) restartRelay() {
+	if s.relaySrv != nil {
+		_ = s.relaySrv.Close()
+	}
+	s.relayGen.Add(1)
+	s.startRelay()
+}
+
+func (s *Service) relayLoop(host, user, keyPath, remoteBind string, srv *http.Server, gen int64) {
+	alive := func() bool { return !s.relayStop.Load() && s.relayGen.Load() == gen }
+	for alive() {
 		if err := s.relayOnce(host, user, keyPath, remoteBind, srv); err != nil {
 			_ = s.db.AddServerLog("error", "", "", "канал до VDS оборвался: "+err.Error(), 0)
 		}
-		if s.relayStop.Load() {
+		if !alive() {
 			return
 		}
 		time.Sleep(relayReconnectDelay)

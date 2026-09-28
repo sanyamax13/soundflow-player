@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,12 +110,9 @@ func newDownloaderProc() *downloaderProc {
 	if dir == "" {
 		return nil
 	}
-	py := filepath.Join(dir, ".venv", "Scripts", "python.exe")
-	if runtime.GOOS != "windows" {
-		py = filepath.Join(dir, ".venv", "bin", "python")
-	}
-	if _, err := os.Stat(py); err != nil {
-		fmt.Printf("SoundFlow: качалка найдена (%s), но нет venv (%s) — «Найти трек» выключено\n", dir, py)
+	py := downloaderPython(dir)
+	if py == "" {
+		fmt.Printf("SoundFlow: качалка найдена (%s), но нет Python (.venv или python\\) — «Найти трек» выключено\n", dir)
 		return nil
 	}
 	port, local, set := sidecarEnvPort()
@@ -122,6 +120,22 @@ func newDownloaderProc() *downloaderProc {
 		return nil // SOUNDFLOW_SIDECAR_URL указывает на другой компьютер — свою качалку не запускаем
 	}
 	return &downloaderProc{dir: dir, python: py, fixedPort: port, stop: make(chan struct{})}
+}
+
+// downloaderPython — Python качалки: .venv (у Alex, сборка из исходников) или python\ рядом — переносной
+// Python со всеми библиотеками, который кладёт установщик (своя копия плеера у другого человека,
+// 28.09.2026: venv на другой компьютер не переносится). "" — не нашли.
+func downloaderPython(dir string) string {
+	cands := []string{filepath.Join(dir, ".venv", "Scripts", "python.exe"), filepath.Join(dir, "python", "python.exe")}
+	if runtime.GOOS != "windows" {
+		cands = []string{filepath.Join(dir, ".venv", "bin", "python"), filepath.Join(dir, "python", "bin", "python3")}
+	}
+	for _, c := range cands {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
 }
 
 // sidecarEnvPort — порт из SOUNDFLOW_SIDECAR_URL. set — переменная задана; local — она указывает на этот
@@ -351,6 +365,20 @@ func (d *downloaderProc) shutdown() {
 	}
 }
 
+// restart — перезапустить качалку, чтобы она взяла новые настройки из окружения (мастер первого
+// запуска: вошли в Яндекс, задали вход в qBittorrent). Процесс убиваем — run поднимет его заново.
+func (d *downloaderProc) restart() {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	cmd := d.cmd
+	d.mu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		killProcessTree(cmd.Process.Pid)
+	}
+}
+
 // qBittorrentReachable — только проверка, без запуска (Опус-ревью
 // 14.09.2026, пункт 9): смотрим, отвечает ли Web UI qBittorrent на :8080.
 // Нужна, чтобы предупредить в окне ДО того, как Alex откроет вкладку
@@ -374,19 +402,7 @@ func ensureQBittorrent() error {
 	if qBittorrentReachable() {
 		return nil
 	}
-	exe := ""
-	for _, c := range []string{
-		os.Getenv("SOUNDFLOW_QBITTORRENT"),
-		`C:\Program Files\qBittorrent\qbittorrent.exe`,
-		`C:\Program Files (x86)\qBittorrent\qbittorrent.exe`,
-	} {
-		if c != "" {
-			if _, err := os.Stat(c); err == nil {
-				exe = c
-				break
-			}
-		}
-	}
+	exe := qbtExe()
 	if exe == "" {
 		return fmt.Errorf("qBittorrent не найден — поставь его для торрент-режима")
 	}
@@ -404,6 +420,33 @@ func ensureQBittorrent() error {
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("qBittorrent запущен, но Web UI на :8080 не ответил — включи Web UI в настройках qBittorrent")
+}
+
+// qbtExe — где установлен qBittorrent; "" — не найден.
+func qbtExe() string {
+	for _, c := range []string{
+		os.Getenv("SOUNDFLOW_QBITTORRENT"),
+		`C:\Program Files\qBittorrent\qbittorrent.exe`,
+		`C:\Program Files (x86)\qBittorrent\qbittorrent.exe`,
+	} {
+		if c != "" {
+			if _, err := os.Stat(c); err == nil {
+				return c
+			}
+		}
+	}
+	return ""
+}
+
+// qbtRunning — запущен ли qBittorrent (даже с выключенным Web UI).
+func qbtRunning() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq qbittorrent.exe", "/NH")
+	hideChildWindow(cmd)
+	out, err := cmd.Output()
+	return err == nil && strings.Contains(strings.ToLower(string(out)), "qbittorrent.exe")
 }
 
 // launchMinimized — запустить qBittorrent так, чтобы её окно не выскакивало поверх того, чем Alex

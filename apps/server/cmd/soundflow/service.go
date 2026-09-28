@@ -22,6 +22,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"soundflow/server/internal/api"
+	"soundflow/server/internal/appsettings"
 	"soundflow/server/internal/coverart"
 	"soundflow/server/internal/db"
 	"soundflow/server/internal/diskspace"
@@ -51,6 +52,7 @@ type Service struct {
 	backups    *backupKeeper      // сама раз в сутки копирует базу (backupkeeper.go)
 	waveforms  *waveformKeeper    // сама считает форму звука для полоски-эквалайзера (wavekeeper.go)
 	bass       *bassKeeper        // сама разбирает удары баса для пульсации кнопки «играть» (basskeeper.go)
+	seeder     *tasteSeeder       // начальный вкус из Яндекса у своей копии плеера (tasteseed.go)
 	loudness   *loudKeeper        // сама считает громкость песен для выравнивания (loudkeeper.go)
 	moods      *moodKeeper        // сама знает настроение песен и угадывает неизвестный жанр (moodkeeper.go)
 	spectrum   *spectrumKeeper    // сама проверяет спектр — ловит «поддельный 320» (spectrumkeeper.go)
@@ -87,6 +89,7 @@ type Service struct {
 	// тихо выключено, как качалка/модель.
 	relaySrv  *http.Server
 	relayStop atomic.Bool
+	relayGen  atomic.Int64 // поколение канала: restartRelay поднимает новое, старый цикл выходит
 }
 
 // staticHandler — отдаёт вшитый frontend/ (index.html в корне).
@@ -103,6 +106,7 @@ func NewService() (*Service, error) {
 	if err := os.MkdirAll(data, 0o755); err != nil {
 		return nil, err
 	}
+	appsettings.Apply(data) // settings.json своей копии плеера — до первого чтения окружения
 	dbPath := env("SOUNDFLOW_DB", filepath.Join(data, "soundflow.db"))
 	if _, err := os.Stat(dbPath); err != nil {
 		// dev: рядом с репой
@@ -177,6 +181,8 @@ func NewService() (*Service, error) {
 	s.waveforms.Start()
 	s.bass = newBassKeeper(s)
 	s.bass.Start()
+	s.seeder = newTasteSeeder(s)
+	s.seeder.Start()
 	s.loudness = newLoudKeeper(s)
 	s.loudness.Start()
 	s.moods = newMoodKeeper(s)
@@ -218,6 +224,7 @@ func (s *Service) OnShutdown(ctx context.Context) {
 	s.backups.Stop()
 	s.waveforms.Stop()
 	s.bass.Stop()
+	s.seeder.Stop()
 	s.loudness.Stop()
 	s.moods.Stop()
 	s.spectrum.Stop()
@@ -250,6 +257,7 @@ func (s *Service) APIRouter() http.Handler {
 // mountAPI — ручки окна. Используется и в Wails, и в телефонном сервере (чтобы
 // окно можно было открыть и обычным браузером для отладки).
 func (s *Service) mountAPI(r chi.Router) {
+	s.mountSetup(r) // мастер первого запуска своей копии (setup.go)
 	r.Get("/api/info", s.hInfo)
 	r.Get("/api/qr.png", s.hQR)
 	r.Get("/api/catalog", s.hCatalog)

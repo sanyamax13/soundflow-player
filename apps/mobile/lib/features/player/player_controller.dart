@@ -509,6 +509,7 @@ class PlayerController {
   Future<void> _reloadFrom(List<NowPlaying> newQueue) async {
     final p = _player;
     if (p == null) return;
+    if (await _replaceTailInPlace(newQueue)) return;
     final wasPlaying = p.playing;
     final pos = p.position;
     // Файл трека мог не докачаться/пропасть между тем как он попал в
@@ -536,6 +537,44 @@ class PlayerController {
     await p.setAudioSource(src, initialIndex: _index, initialPosition: pos);
     if (wasPlaying) await p.play();
     reloadSeq.value++;
+  }
+
+  /// Сменить только хвост очереди (после играющей песни), не трогая саму песню: без этого
+  /// `setAudioSource` заново открывал играющий файл — на выборе исполнителя/настроения/жанра песня
+  /// на миг замирала (Alex, голосовое 28.09.2026). Баг зацикливания (см. [_reloadFrom]) был от
+  /// точечной правки при `LoopMode.all`: нативный плеер уже готовился перейти на 0-й трек. Поэтому
+  /// на время правки круговой повтор выключаем. false — такой случай не подходит (изменилось
+  /// уже сыгранное или сама песня) или правка не сошлась — тогда полная перестройка, как раньше.
+  Future<bool> _replaceTailInPlace(List<NowPlaying> newQueue) async {
+    final p = _player;
+    final src = _source;
+    if (p == null || src == null || newQueue.length <= _index || src.length != _queue.length) return false;
+    for (var i = 0; i <= _index; i++) {
+      if (i >= _queue.length || newQueue[i].id != _queue[i].id) return false;
+    }
+    final tail = <NowPlaying>[];
+    for (final t in newQueue.skip(_index + 1)) {
+      if (File(t.path).existsSync()) {
+        tail.add(t);
+      } else if (_missingNotified.add(t.id)) {
+        onMissingFile?.call(t);
+      }
+    }
+    final loop = p.loopMode;
+    try {
+      if (loop != LoopMode.off) await p.setLoopMode(LoopMode.off);
+      if (src.length > _index + 1) await src.removeRange(_index + 1, src.length);
+      if (tail.isNotEmpty) await src.addAll([for (final t in tail) AudioSource.uri(Uri.file(t.path))]);
+    } finally {
+      if (loop != LoopMode.off) await p.setLoopMode(loop);
+    }
+    _queue = [..._queue.sublist(0, _index + 1), ...tail];
+    if (src.length != _queue.length) {
+      BlackBox.log('queue_inplace_mismatch', {'src': src.length, 'queue': _queue.length});
+      return false;
+    }
+    reloadSeq.value++;
+    return true;
   }
 
   /// Хвост очереди КАК ОН БЫЛ до включения радио (снимок из `setSimilarTail`)

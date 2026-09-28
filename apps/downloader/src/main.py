@@ -448,6 +448,14 @@ async def yandex_dislikes() -> YandexDislikesResponse:
     return YandexDislikesResponse(items=[YandexDislikeItem(**i) for i in items], error=err)
 
 
+@app.get("/yandex/taste-seed", response_model=YandexDislikesResponse)
+async def yandex_taste_seed() -> YandexDislikesResponse:
+    """«Мне нравится» + свои плейлисты — начальный вкус своей копии плеера (tasteseed.go)."""
+    from .providers.yandex import taste_seed
+    items, err = await taste_seed()
+    return YandexDislikesResponse(items=[YandexDislikeItem(**i) for i in items], error=err)
+
+
 class YandexWaveItem(BaseModel):
     yandex_id: str
     artist: str = ""

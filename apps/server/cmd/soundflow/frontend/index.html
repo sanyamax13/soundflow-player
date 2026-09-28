@@ -14,6 +14,8 @@ try{var _t=localStorage.getItem("sfTheme");
   else if(_t==="auto"||_t==="") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme","dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}
 if(window.chrome && window.chrome.webview) document.documentElement.classList.add("mica");
+/* Новая установка — сначала мастер первого запуска (setup.html, setup.go). */
+fetch("/api/setup/state").then(function(r){return r.ok?r.json():null}).then(function(s){if(s&&s.needed)location.replace("/setup/")}).catch(function(){});
 </script>
 <style>
   /* ───────── Оформление «как у Apple» (Alex TG 20345, 21.09.2026; система — docs/revision-2026-09-20/03-design.md §2) ─────────
@@ -3115,5 +3117,6 @@ showView(location.hash.slice(1) || "catalog");
 setInterval(tick, 2000);
 document.addEventListener("visibilitychange", () => { if(!document.hidden){ tick(); checkPhoneStatus(); } });
 </script>
+<script src="pcupdate.js"></script>
 </body>
 </html>

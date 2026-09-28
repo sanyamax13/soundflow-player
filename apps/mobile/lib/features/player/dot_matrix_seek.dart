@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 
 import '../../core/theme.dart';
+import 'glass_seek_painter.dart';
 import 'player_controller.dart';
+import 'seek_skin.dart';
 
 /// «1:12» — минуты без ведущего нуля, секунды двумя цифрами. Часы не выделяем:
 /// длинные записи показываются как «100:05», как и раньше в плеере.
@@ -57,6 +59,7 @@ class DotMatrixSeek extends StatefulWidget {
     required this.tint,
     this.total = DotMatrixTotal.small,
     this.waveform,
+    this.bass,
   });
 
   final PlayerController controller;
@@ -74,6 +77,15 @@ class DotMatrixSeek extends StatefulWidget {
   /// случайно (сервер ещё не досчитал форму этой песни — см.
   /// apps/server/cmd/soundflow/wavekeeper.go).
   final ValueListenable<List<double>?>? waveform;
+
+  /// Удары баса песни — 20 отметок 0..255 в секунду (те же, что для вспышки
+  /// кнопки «играть»). По ним пляска живёт под песню (Alex TG 22544/22546,
+  /// 27.09.2026): где удары частые — в драйвовом припеве, в быстром роке с
+  /// первой секунды — столбики разгоняются; где редкие или их нет — медленный
+  /// куплет, вступление — пляшут медленно. Смотрим именно частоту ударов, а
+  /// не громкость относительно самой песни: у рока, драйвового от начала до
+  /// конца, пляска быстрая всю песню. null — скорость как раньше, ровная.
+  final ValueListenable<Uint8List?>? bass;
 
   // 46 → 64: зона захвата пальцем по высоте как у кнопок (разбор Gemini 26.09.2026).
   static const _height = 64.0;
@@ -102,18 +114,32 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
   late final List<double> _phases;
   late List<double> _envelopes; // потолок пляски каждого столбика — меняется, когда придёт настоящая громкость
 
+  // «Время пляски»: идёт быстрее или медленнее настоящего — по частоте ударов
+  // в этом месте песни (см. [DotMatrixSeek.bass]). Скорость меняется плавно,
+  // фаза столбиков не скачет.
+  double _tau = 0;
+  double _tempo = 1; // сглаженный множитель скорости
+  int _lastUs = 0;
+  List<double>? _tempoAt; // целевой множитель на каждую отметку баса (20 в секунду)
+  double _pulse = 0; // удар баса сейчас, 0..1, гаснет за ~120 мс (вид «Стекло»)
+
   @override
   void initState() {
     super.initState();
     // Просто «метроном» перерисовки — само время берём из Stopwatch (его
     // можно ставить на паузу вместе с треком, не теряя фазу пляски).
-    _ticker = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
+    _ticker = AnimationController(vsync: this, duration: const Duration(seconds: 1))
+      ..addListener(_advance)
+      ..repeat();
     final rnd = math.Random(5);
     _envelopes = List<double>.generate(_cols, (_) => 0.18 + rnd.nextDouble() * 0.82);
     _speeds = List<double>.generate(_cols, (_) => 0.7 + rnd.nextDouble() * 1.6); // циклов в секунду
     _phases = List<double>.generate(_cols, (_) => rnd.nextDouble());
     widget.controller.playing.addListener(_syncPlaying);
     widget.waveform?.addListener(_onWaveform);
+    widget.bass?.addListener(_onBass);
+    _onBass();
+    seekSkin.addListener(_onSkin);
     _onWaveform();
     _syncPlaying();
   }
@@ -131,6 +157,31 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
     });
   }
 
+  void _onBass() {
+    final b = widget.bass?.value;
+    _tempoAt = (b == null || b.isEmpty) ? null : bassTempo(b);
+  }
+
+  void _onSkin() => setState(() {});
+
+  // Кадр: сдвинуть «время пляски» на прошедшее время × текущую скорость.
+  void _advance() {
+    final us = _clock.elapsedMicroseconds;
+    final dt = (us - _lastUs) / 1e6;
+    _lastUs = us;
+    if (dt <= 0) return; // пауза — стоим
+    var target = 1.0;
+    final tp = _tempoAt;
+    final i = widget.controller.position.value.inMilliseconds ~/ 50;
+    if (tp != null && i >= 0 && i < tp.length) target = tp[i];
+    final b = widget.bass?.value;
+    final hit = (b != null && i >= 0 && i < b.length) ? b[i] / 255 : 0.0;
+    _pulse = math.max(hit, _pulse * math.exp(-dt / 0.12));
+    // ~0.7 с на смену скорости: разгон к припеву и спад заметны, но без рывков
+    _tempo += (target - _tempo) * (1 - math.exp(-dt / 0.7));
+    _tau += dt * _tempo;
+  }
+
   void _syncPlaying() {
     if (widget.controller.playing.value) {
       if (!_clock.isRunning) _clock.start();
@@ -143,6 +194,8 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
   void dispose() {
     widget.controller.playing.removeListener(_syncPlaying);
     widget.waveform?.removeListener(_onWaveform);
+    widget.bass?.removeListener(_onBass);
+    seekSkin.removeListener(_onSkin);
     _ticker.dispose();
     super.dispose();
   }
@@ -261,13 +314,15 @@ class _DotMatrixSeekState extends State<DotMatrixSeek> with SingleTickerProvider
                                 animation: _ticker,
                                 builder: (context, _) => CustomPaint(
                                   size: Size.infinite,
-                                  painter: _EqualizerPainter(
-                                    envelopes: _envelopes,
-                                    speeds: _speeds,
-                                    phases: _phases,
-                                    t: _clock.elapsedMicroseconds / 1e6,
-                                    progress: frac,
-                                  ),
+                                  painter: seekSkin.value == SeekSkin.glass
+                                      ? GlassSeekPainter(progress: frac, t: _tau, pulse: _pulse)
+                                      : _EqualizerPainter(
+                                          envelopes: _envelopes,
+                                          speeds: _speeds,
+                                          phases: _phases,
+                                          t: _tau,
+                                          progress: frac,
+                                        ),
                                 ),
                               ),
                             ),
@@ -324,6 +379,35 @@ class _TimeBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Множитель скорости пляски на каждую отметку баса (20 в секунду): считаем
+/// удары (заметный всплеск, выше соседей, не чаще раза в 150 мс) в окне ±1.5 с,
+/// каждый с весом своей силы (0..1), и переводим в скорость. Сила нужна, чтобы
+/// после припева, где бочка продолжает стучать, но тише, пляска тоже спадала
+/// (Alex TG 22554, 28.09.2026, Galantis «Runaway»: «почему не замедляется»).
+/// Ударов нет (тихое вступление) — ×0.45, два сильных в секунду — ×1.45,
+/// чаще — до ×2.
+@visibleForTesting
+List<double> bassTempo(Uint8List env) {
+  const minHit = 90, minGap = 3, half = 30;
+  final n = env.length;
+  final hit = List<double>.filled(n + 1, 0); // накопленная сила ударов до i
+  var last = -minGap;
+  for (var i = 0; i < n; i++) {
+    final v = env[i];
+    final isHit = v >= minHit &&
+        (i == 0 || v >= env[i - 1]) &&
+        (i == n - 1 || v > env[i + 1]) &&
+        i - last >= minGap;
+    if (isHit) last = i;
+    hit[i + 1] = hit[i] + (isHit ? v / 255 : 0);
+  }
+  return List<double>.generate(n, (i) {
+    final a = math.max(0, i - half), b = math.min(n, i + half);
+    final rate = (hit[b] - hit[a]) / ((b - a) / 20);
+    return (0.45 + 0.5 * rate).clamp(0.45, 2.0);
+  });
 }
 
 double _eqBarValue(double envelope, double speed, double phase, double t) {

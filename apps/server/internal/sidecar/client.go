@@ -364,3 +364,18 @@ func (c *Client) YandexDislikes(ctx context.Context) ([]YandexDislikeItem, error
 	}
 	return out.Items, nil
 }
+
+// YandexTasteSeed — «Мне нравится» и песни своих плейлистов (начальный вкус своей копии плеера).
+func (c *Client) YandexTasteSeed(ctx context.Context) ([]YandexDislikeItem, error) {
+	var out struct {
+		Items []YandexDislikeItem `json:"items"`
+		Error string              `json:"error"`
+	}
+	if err := c.get(ctx, "/yandex/taste-seed", &out); err != nil {
+		return nil, err
+	}
+	if out.Error != "" {
+		return nil, fmt.Errorf("sidecar yandex/taste-seed: %s", out.Error)
+	}
+	return out.Items, nil
+}

@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soundflow/features/player/dot_matrix_seek.dart';
 import 'package:soundflow/features/player/player_controller.dart';
+import 'package:soundflow/features/player/seek_skin.dart';
 
 /// В тесте нет аудиоплагина — настоящий seek ничего не делает. Запоминаем,
 /// КУДА просили перемотать.
@@ -111,5 +114,41 @@ void main() {
     await tester.tapAt(tester.getCenter(find.byKey(const ValueKey('dot_matrix_seek_area'))));
     await tester.pump();
     expect(player.seeks, isEmpty);
+  });
+
+  test('скорость пляски: тишина медленно, два удара в секунду ~×1.45, частые — быстро', () {
+    // 20 отметок в секунду, 30 секунд: 0–10 с тишина, 10–20 с удар раз в 0.5 с, 20–30 с раз в 0.2 с
+    final env = Uint8List(600);
+    for (var i = 200; i < 400; i += 10) {
+      env[i] = 255;
+    }
+    for (var i = 400; i < 600; i += 4) {
+      env[i] = 255;
+    }
+    final t = bassTempo(env);
+    expect(t[100], closeTo(0.45, 0.01));
+    expect(t[300], closeTo(1.45, 0.05));
+    expect(t[500], closeTo(2.0, 0.01));
+  });
+
+  test('скорость пляски: те же удары, но тише — медленнее', () {
+    final loud = Uint8List(400), quiet = Uint8List(400);
+    for (var i = 0; i < 400; i += 10) {
+      loud[i] = 255;
+      quiet[i] = 110;
+    }
+    expect(bassTempo(quiet)[200], lessThan(bassTempo(loud)[200] - 0.4));
+  });
+
+  testWidgets('вид «Стекло»: та же перемотка пальцем, смена вида — сразу', (tester) async {
+    seekSkin.value = SeekSkin.glass;
+    addTearDown(() => seekSkin.value = SeekSkin.equalizer);
+    final player = await _pump(tester);
+    await tester.tapAt(tester.getCenter(find.byKey(const ValueKey('dot_matrix_seek_area'))));
+    await tester.pump();
+    expect(player.seeks, isNotEmpty);
+    seekSkin.value = SeekSkin.equalizer;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 }

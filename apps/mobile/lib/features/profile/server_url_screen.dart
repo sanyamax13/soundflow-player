@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/config.dart';
 import '../../core/notice.dart';
-import '../../core/server_discovery.dart';
+import '../../core/pairing_flow.dart';
 import '../../core/theme.dart';
 import '../../data/api.dart';
 
@@ -18,12 +18,6 @@ class ServerUrlScreen extends ConsumerStatefulWidget {
   ConsumerState<ServerUrlScreen> createState() => _ServerUrlScreenState();
 }
 
-/// Последний адрес, который реально подтвердил себя рабочим (сохранён рукой
-/// через «Сохранить» или найден автосканом) — НЕ хардкод из config.dart.
-/// «Вернуть обычный адрес» раньше сбрасывал сюда 127.0.0.1:8090 (USB по
-/// умолчанию) даже когда реальный сервер — адрес в Wi-Fi на другом порте,
-/// без предупреждения (Опус-ревью телефона 14.09.2026, пункт 5).
-const _kLastGoodUrl = 'last_reachable_server_url';
 
 class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
   late final TextEditingController _ctrl;
@@ -64,82 +58,21 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
       _scanning = true;
       _reachable = null;
     });
-    final found = await discoverServer()
-        .timeout(const Duration(seconds: 20), onTimeout: () => null);
+    var who = '';
+    final r = await findAndPair(ref.read(apiProvider), ref.read(dbProvider), name: (n) => who = n);
     if (!mounted) return;
-    setState(() => _scanning = false);
-    if (found == null) {
-      Notice.show('Не найден в сети', subtitle: 'Введите адрес вручную', kind: NoticeKind.warn);
-      return;
-    }
-    _ctrl.text = found;
-    await _check();
-    if (!mounted || _reachable != true) return;
-    await _confirmAndPersist(found);
-  }
-
-  /// Первое подключение — с подтверждением на компьютере (Alex TG
-  /// 24.09.2026): раньше первый ответивший адрес сохранялся молча — для
-  /// чужого компьютера/человека это неочевидно и небезопасно. Теперь спрашиваем
-  /// компьютер, открыто ли окно «Подключить телефон», и, если да, показываем
-  /// подтверждение здесь тоже, прежде чем сохранять адрес навсегда.
-  /// Сервер не умеет отвечать на эту ручку (старая версия программы) —
-  /// ведём себя как раньше, молча сохраняем: не ломаем то, что уже работало.
-  Future<void> _confirmAndPersist(String found) async {
-    final info = await Api.pairingCheck(found);
-    if (!mounted) return;
-    if (info == null) {
-      await _persist(found);
-      if (!mounted) return;
-      Notice.show('Нашёл и сохранил', subtitle: found, kind: NoticeKind.done);
-      return;
-    }
-    if (!info.open) {
-      Notice.show(
-        'Компьютер найден, но не готов',
-        subtitle: 'На компьютере нажмите «Подключить телефон» и попробуйте снова',
-        kind: NoticeKind.warn,
-      );
-      return;
-    }
-    // Без вопроса «Подключиться?» (27.09.2026, разбор Gemini и Алисы): согласие уже дано — на
-    // компьютере открыто окно «Подключить телефон» (info.open выше), второй вопрос здесь лишний.
-    final confirm = await Api.pairingConfirm(found);
-    if (!mounted) return;
-    if (!confirm.ok) {
-      Notice.show('Не успели', subtitle: 'Окно на компьютере закрылось — попробуйте снова', kind: NoticeKind.warn);
-      return;
-    }
-    await _persist(found);
-    await _persistRelay(confirm.relayUrl, confirm.relayKey);
-    if (!mounted) return;
-    Notice.show('Связь с домом установлена', subtitle: info.name.isEmpty ? found : info.name, kind: NoticeKind.done);
-  }
-
-  Future<void> _persist(String raw) async {
-    final api = ref.read(apiProvider);
-    final db = ref.read(dbProvider);
-    api.setBaseUrl(raw);
-    await db.kvSet('server_url', api.baseUrl);
-    await db.kvSet(_kLastGoodUrl, api.baseUrl);
-  }
-
-  /// Адрес и ключ удалённого доступа через VDS — компьютер отдаёт их сразу
-  /// при подтверждении подключения по Wi-Fi (Alex TG 24.09.2026), если у
-  /// него это настроено. Читает их «Настройки → Удалённый доступ»
-  /// (remote_access_screen.dart). Не пришли — не трогаем, что уже сохранено
-  /// (могло быть подключение к другому компьютеру без этой настройки).
-  Future<void> _persistRelay(String? relayUrl, String? relayKey) async {
-    if (relayUrl == null || relayUrl.isEmpty || relayKey == null || relayKey.isEmpty) return;
-    final db = ref.read(dbProvider);
-    await db.kvSet('relay_url', relayUrl);
-    await db.kvSet('relay_key', relayKey);
+    setState(() {
+      _scanning = false;
+      _ctrl.text = ref.read(apiProvider).baseUrl;
+      _reachable = r == PairResult.connected ? true : _reachable;
+    });
+    showPairResult(r, who);
   }
 
   Future<void> _save() async {
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
-    await _persist(_ctrl.text);
+    await persistServer(ref.read(apiProvider), ref.read(dbProvider), _ctrl.text);
     if (!mounted) return;
     setState(() => _saving = false);
     Notice.show('Адрес сохранён', subtitle: ref.read(apiProvider).baseUrl, kind: NoticeKind.done);
@@ -153,7 +86,7 @@ class _ServerUrlScreenState extends ConsumerState<ServerUrlScreen> {
   /// только если рабочего ещё ни разу не было.
   Future<void> _restoreLastGood() async {
     final db = ref.read(dbProvider);
-    final last = await db.kvGet(_kLastGoodUrl);
+    final last = await db.kvGet(kLastGoodUrl);
     if (!mounted) return;
     setState(() {
       _ctrl.text = last ?? kDefaultApiBase;

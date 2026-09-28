@@ -48,8 +48,16 @@ class FitText extends StatelessWidget {
         size = minFontSize;
         if (fallbackMaxLines != null && !fits(size, lines)) lines = fallbackMaxLines!;
       }
-      return Text(text,
-          maxLines: lines, overflow: TextOverflow.ellipsis, style: style.copyWith(fontSize: size));
+      final t = style.copyWith(fontSize: size);
+      if (lines > 1) return Text(text, maxLines: lines, overflow: TextOverflow.ellipsis, style: t);
+      // Одна строка — страховка на случай, если телефон рисует шире, чем намерили (Alex, скрин
+      // 28.09.2026: на Samsung «Tyga feat. G-Eazy & Rich The …» так и обрезалось «…» при верном
+      // замере в тестах): строка целиком, а не влезает — ужимается ещё, до ширины места.
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(text, maxLines: 1, softWrap: false, style: t),
+      );
     });
   }
 }

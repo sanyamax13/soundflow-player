@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/providers.dart';
 import 'app/shell.dart';
+import 'features/onboarding/connect_screen.dart';
+import 'features/player/seek_skin.dart';
 import 'core/black_box.dart';
 import 'core/config.dart';
 import 'core/crash_log.dart';
@@ -80,12 +82,16 @@ Future<void> _boot() async {
   };
 
   final db = await Db.open();
+  await loadSeekSkin(db); // вид полосы в плеере (features/player/seek_skin.dart)
   // Адрес сервера пользователь задаёт в Профиле — берём сохранённый. Совсем
   // новая установка (ничего не сохранено) — пробуем один раз сами найти
   // программу в сети/по USB, прежде чем откатиться на адрес по умолчанию
   // (см. core/config.dart; Alex TG 13.09.2026 — не заставлять вводить руками
   // при первом запуске).
   final savedUrl = await db.kvGet('server_url');
+  // Совсем новый телефон и компьютер не нашёлся по USB — сначала экран «Найти компьютер»
+  // (features/onboarding/connect_screen.dart).
+  var firstRun = false;
   if (savedUrl != null && savedUrl.isNotEmpty) {
     apiBase = savedUrl;
   } else {
@@ -97,6 +103,8 @@ Future<void> _boot() async {
     if (found != null) {
       apiBase = found;
       await db.kvSet('server_url', found);
+    } else {
+      firstRun = true;
     }
   }
   final api = Api(baseUrl: apiBase);
@@ -234,13 +242,16 @@ Future<void> _boot() async {
         syncProvider.overrideWithValue(sync),
         syncOfferProvider.overrideWithValue(offer),
       ],
-      child: const SoundFlowApp(),
+      child: SoundFlowApp(firstRun: firstRun),
     ),
   );
 }
 
 class SoundFlowApp extends StatelessWidget {
-  const SoundFlowApp({super.key});
+  const SoundFlowApp({super.key, this.firstRun = false});
+
+  /// Новый телефон, компьютер ещё не знаком — начать с «Найти компьютер».
+  final bool firstRun;
 
   @override
   Widget build(BuildContext context) {
@@ -258,7 +269,7 @@ class SoundFlowApp extends StatelessWidget {
             child: NoticeHost(child: child ?? const SizedBox.shrink()),
           ),
       // Входа нет — сразу вкладки. Плеер личный, сервер в домашней сети.
-      home: const Shell(),
+      home: firstRun ? const ConnectScreen() : const Shell(),
     );
   }
 }

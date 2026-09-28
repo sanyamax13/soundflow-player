@@ -29,6 +29,7 @@ import '../my_music/artist_grouping.dart' show artistKey, artistPartKey, artists
 import 'cover_art.dart';
 import 'cover_palette.dart';
 import 'dot_matrix_seek.dart';
+import 'seek_skin.dart';
 import 'player_controller.dart';
 
 /// Полноэкранный плеер — вариант 4.2 «Радио-объект» (Alex TG 18568–18590,
@@ -108,12 +109,21 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   late final AnimationController _bg;
   late final AnimationController _heart;
   late final AnimationController _dragX;
+  // Смахивание строки «название + исполнитель»: влево — следующая песня, вправо — предыдущая
+  // (Alex, голосовое 28.09.2026: «перелистывание свайпом, и чтобы не мешало лайку/удалению» —
+  // обложка по-прежнему оставить/удалить). Строка едет за пальцем, как обложка.
+  late final AnimationController _titleX = AnimationController.unbounded(vsync: this, value: 0);
+  double _titleIn = 1; // откуда въезжает новое название: 1 — справа (следующая), -1 — слева
   // Плашка «Дальше» тянется за пальцем (Alex TG 24.09.2026: «аккуратно за
   // моим пальцем она шла бы, сейчас просто по свайпу поднимается сразу
   // вся») — 0 = свёрнута (только строка «Дальше: …»), 1 = раскрыта на
   // весь список. Значение двигается ЖИВЬЁМ во время onVerticalDragUpdate,
   // а не только по итоговой скорости жеста.
   late final AnimationController _queueOpen;
+  late final Animation<double> _queueFade = _queueOpen.drive(const _Clamp01());
+  final ValueNotifier<bool> _queueShown = ValueNotifier(false); // шторка хоть чуть раскрыта — строить список
+  final ValueNotifier<bool> _queueInteractive = ValueNotifier(false); // раскрыта больше чем наполовину
+  final ValueNotifier<bool> _queueCovers = ValueNotifier(false); // раскрыта полностью — плеер под ней замирает
   static const double _queuePeek = 98; // полоска + ряд из 5 кнопок режима с подписями (27.09.2026)
   // «Дыхание» обложки, пока играет: 1.0 ↔ 1.02 за ~4.5 с (разбор Gemini
   // 26.09.2026, моушн «Ambient Flow»). На паузе стоит — батарея и тесты.
@@ -141,7 +151,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _queueOpen = AnimationController.unbounded(
       vsync: this,
       duration: const Duration(milliseconds: 260),
-    );
+    )..addListener(() {
+        final t = _queueOpen.value;
+        _queueShown.value = t > 0.01;
+        _queueInteractive.value = t >= 0.6;
+        _queueCovers.value = t > 0.97;
+      });
     _breath = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4500),
@@ -197,7 +212,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
     _bg.dispose();
     _heart.dispose();
     _dragX.dispose();
+    _titleX.dispose();
     _queueOpen.dispose();
+    _queueShown.dispose();
+    _queueInteractive.dispose();
+    _queueCovers.dispose();
     _tint.dispose();
     _waveform.dispose();
     _bass.dispose();
@@ -277,6 +296,18 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   Future<void> _toggle() {
     HapticFeedback.lightImpact();
     return _p.toggle();
+  }
+
+  /// Урна в виде «Листание»: удаление насовсем — только после подтверждения (кнопку можно задеть
+  /// случайно, в отличие от длинного смахивания).
+  Future<void> _deleteButton(NowPlaying now) async {
+    HapticFeedback.selectionClick();
+    final ok = await confirmSheet(context,
+        title: 'Удалить песню насовсем?',
+        body: '${now.title} — ${now.artist}\nФайл удалится и с компьютера.',
+        okLabel: 'Удалить',
+        danger: true);
+    if (ok && mounted) await _swipeDelete(now);
   }
 
   Future<void> _toggleFavButton() async {
@@ -561,7 +592,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
               // границы вместе с ним каждый кадр заново рисовался весь экран плеера —
               // обложка, тексты, кнопки (оптимизация 21.09.2026, Alex TG 20331).
               // Цвет фона переливается к новой обложке за 650 мс, а не щёлкает (Alex «4 делай»).
-              RepaintBoundary(
+              ValueListenableBuilder<bool>(
+                valueListenable: _queueCovers,
+                builder: (_, covered, child) => TickerMode(enabled: !covered, child: child!),
+                child: RepaintBoundary(
                 child: TweenAnimationBuilder<CoverColors>(
                   tween: _CoverColorsTween(end: colors),
                   duration: const Duration(milliseconds: 650),
@@ -569,7 +603,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   builder: (_, c, _) => _LivingBackdrop(anim: _bg, colors: c, img: img),
                 ),
               ),
-              SafeArea(
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _queueCovers,
+                builder: (_, covered, child) => TickerMode(enabled: !covered, child: child!),
+                child: SafeArea(
                 child: Column(
                   children: [
                     _topBar(now),
@@ -591,7 +629,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                       child: DotMatrixSeek(
                           controller: _p,
                           tint: colors.isFallback ? Afisha.lime : colors.glow,
-                          waveform: _waveform),
+                          waveform: _waveform,
+                          bass: _bass),
                     ),
                     const SizedBox(height: 12),
                     _transport(colors),
@@ -599,6 +638,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     const SizedBox(height: _queuePeek),
                   ],
                 ),
+              ),
               ),
               _queueSheet(now),
               _heartPop(),
@@ -640,12 +680,47 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   // Название и исполнитель слева, «сердце» справа на уровне названия (разбор Gemini
   // 26.09.2026, Alex «беру»): под рукой, но в стороне от ряда кнопок плеера.
   // Смена песни — текст уезжает вбок и проявляется новый (200 мс), а не подменяется.
+  Future<void> _titleSwipeEnd(DragEndDetails d) async {
+    final v = d.primaryVelocity ?? 0;
+    final x = _titleX.value;
+    final dir = (x <= -80 || (v < -700 && x <= -30))
+        ? -1
+        : (x >= 80 || (v > 700 && x >= 30))
+            ? 1
+            : 0;
+    if (dir == 0) {
+      await _titleX.animateTo(0, duration: const Duration(milliseconds: 220), curve: Curves.easeOutBack);
+      return;
+    }
+    HapticFeedback.selectionClick();
+    _titleIn = dir < 0 ? 1 : -1;
+    BlackBox.log(dir < 0 ? 'swipe_title_next' : 'swipe_title_prev', {'id': _p.now.value?.id});
+    await _titleX.animateTo(dir * 420.0, duration: const Duration(milliseconds: 140), curve: Curves.easeIn);
+    if (dir < 0) {
+      await _p.next();
+    } else {
+      await _p.prev();
+    }
+    _titleX.value = 0;
+  }
+
   Widget _titleRow(NowPlaying now) => Padding(
         padding: const EdgeInsets.fromLTRB(28, 0, 12, 0),
         child: Row(
           children: [
             Expanded(
-              child: AnimatedSwitcher(
+              child: GestureDetector(
+               key: const ValueKey('player_title_swipe'),
+               behavior: HitTestBehavior.opaque,
+               onHorizontalDragUpdate: (d) => _titleX.value = (_titleX.value + d.delta.dx).clamp(-260.0, 260.0),
+               onHorizontalDragEnd: _titleSwipeEnd,
+               child: AnimatedBuilder(
+                animation: _titleX,
+                builder: (_, child) => Transform.translate(
+                  offset: Offset(_titleX.value, 0),
+                  child: Opacity(opacity: (1 - _titleX.value.abs() / 320).clamp(0.15, 1.0), child: child),
+                ),
+                child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
@@ -656,7 +731,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 transitionBuilder: (child, a) => FadeTransition(
                   opacity: a,
                   child: SlideTransition(
-                    position: Tween(begin: const Offset(0.06, 0), end: Offset.zero).animate(a),
+                    position: Tween(begin: Offset(0.06 * _titleIn, 0), end: Offset.zero).animate(a),
                     child: child,
                   ),
                 ),
@@ -688,21 +763,42 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   ],
                 ),
               ),
+              ),
+              ),
             ),
             // Цель для сердечка-анимации (_heartPop) — оно прилетает СЮДА, а не
             // в центр экрана (Опус-ревью «Поток» 23.09.2026, пункт 3).
-            CompositedTransformTarget(
-              link: _favLink,
-              child: _Pressable(
-                key: const ValueKey('player_fav'),
-                onTap: _toggleFavButton,
-                child: SizedBox(
-                  width: 64,
-                  height: 64,
-                  child: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-                      color: _fav ? Afisha.lime : Colors.white70, size: 30),
+            // Вид «Оценка» — сердечка нет (лайк — смахиванием обложки), остаётся только точка, куда
+            // прилетает сердечко-анимация. Вид «Листание» — урна и сердечко (Alex 28.09.2026).
+            ValueListenableBuilder<SeekSkin>(
+              valueListenable: seekSkin,
+              builder: (_, skin, _) => Row(mainAxisSize: MainAxisSize.min, children: [
+                if (skin == SeekSkin.glass)
+                  _Pressable(
+                    key: const ValueKey('player_delete'),
+                    onTap: () => _deleteButton(now),
+                    child: const SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: Icon(CupertinoIcons.trash, color: Colors.white70, size: 28),
+                    ),
+                  ),
+                CompositedTransformTarget(
+                  link: _favLink,
+                  child: skin == SeekSkin.glass
+                      ? _Pressable(
+                          key: const ValueKey('player_fav'),
+                          onTap: _toggleFavButton,
+                          child: SizedBox(
+                            width: 64,
+                            height: 64,
+                            child: Icon(_fav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                                color: _fav ? Afisha.lime : Colors.white70, size: 30),
+                          ),
+                        )
+                      : const SizedBox(width: 16, height: 64),
                 ),
-              ),
+              ]),
             ),
           ],
         ),
@@ -723,7 +819,15 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         // от случайного касания.
         // Быстрый взмах засчитываем, только если палец реально прошёл хотя бы 60 точек: иначе
         // короткий рывок в машине удалял бы песню насовсем (ревизия кода 27.09.2026).
-        if (_dragX.value <= -110 || (v < -900 && _dragX.value <= -60)) {
+        if (seekSkin.value == SeekSkin.glass) {
+          // Вид «Листание»: влево — следующая, вправо — предыдущая.
+          if (_dragX.value <= -80 || (v < -700 && _dragX.value <= -40)) {
+            _swipeNext();
+          } else if (_dragX.value >= 80 || (v > 700 && _dragX.value >= 40)) {
+            HapticFeedback.lightImpact();
+            unawaited(_p.prev());
+          }
+        } else if (_dragX.value <= -110 || (v < -900 && _dragX.value <= -60)) {
           unawaited(_swipeDelete(now));
         } else if (_dragX.value >= 110 || (v > 900 && _dragX.value >= 60)) {
           unawaited(_swipeKeep(now));
@@ -751,8 +855,12 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       child: AnimatedBuilder(
         animation: _dragX,
         builder: (context, child) {
-          final t = (_dragX.value / 110).clamp(-1.0, 1.0);
-          final glow = t >= 0 ? Afisha.lime : Afisha.red;
+          final browse = seekSkin.value == SeekSkin.glass;
+          final t = (_dragX.value / (browse ? 80 : 110)).clamp(-1.0, 1.0);
+          final glow = browse || t >= 0 ? Afisha.lime : Afisha.red;
+          final icon = browse
+              ? (t < 0 ? CupertinoIcons.forward_fill : CupertinoIcons.backward_fill)
+              : (t >= 0 ? CupertinoIcons.heart_fill : CupertinoIcons.trash_fill);
           return Transform.translate(
             offset: Offset(_dragX.value, 0),
             child: Transform.rotate(
@@ -776,8 +884,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                                   borderRadius: BorderRadius.circular(32),
                                   border: Border.all(color: glow.withValues(alpha: 0.9 * t.abs()), width: 3),
                                 ),
-                                child: Icon(t >= 0 ? CupertinoIcons.heart_fill : CupertinoIcons.trash_fill,
-                                    color: glow.withValues(alpha: t.abs()), size: 96),
+                                child: Icon(icon, color: glow.withValues(alpha: t.abs()), size: 96),
                               ),
                             ),
                           ),
@@ -932,6 +1039,48 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   Widget _queueSheet(NowPlaying now) {
     final maxHeight = MediaQuery.of(context).size.height * 0.7;
     final dragRange = maxHeight - _queuePeek;
+    // Плавность (Alex, голосовое 28.09.2026: «панель выдвигаю — главный экран теряет FPS»): шторка
+    // теперь постоянной высоты и едет сдвигом, а не меняет высоту каждый кадр — список очереди не
+    // перекладывается заново на каждом кадре жеста. Содержимое (ручка, кнопки, список) строится
+    // один раз и передаётся в AnimatedBuilder готовым (child) — на кадре меняются только сдвиг,
+    // прозрачность подложки и списка. Анимации плеера под раскрытой шторкой замирают (TickerMode
+    // в build), чтобы размытие не пересчитывалось 60 раз в секунду впустую.
+    final content = Column(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _animateQueueTo(_queueOpen.value > 0.5 ? 0 : 1),
+          onVerticalDragStart: (_) => _queueRaw = _queueOpen.value.clamp(0.0, 1.0),
+          onVerticalDragUpdate: (d) {
+            _queueRaw -= d.delta.dy / dragRange;
+            _queueOpen.value = _rubber(_queueRaw);
+          },
+          onVerticalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            final vel = -v / dragRange; // доля высоты в секунду
+            if (v < -300) return _animateQueueTo(1, velocity: vel);
+            if (v > 300) return _animateQueueTo(0, velocity: vel);
+            _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0, velocity: vel);
+          },
+          child: _queueHandleRow(now),
+        ),
+        Expanded(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _queueShown,
+            builder: (_, shown, _) => !shown
+                ? const SizedBox.shrink()
+                : FadeTransition(
+                    opacity: _queueFade,
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _queueInteractive,
+                      builder: (_, on, child) => IgnorePointer(ignoring: !on, child: child),
+                      child: RepaintBoundary(child: _queueBody(now)),
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
     return Positioned(
       left: 0,
       right: 0,
@@ -940,76 +1089,49 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         top: false,
         child: AnimatedBuilder(
           animation: _queueOpen,
-          builder: (context, _) {
+          child: content,
+          builder: (context, content) {
             final t = _queueOpen.value;
-            final height = _queuePeek + dragRange * t;
-            return ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              // 25.09.2026 (Alex TG, «начни с 1» — плеер, стекло на карточках):
-              // панель «Дальше» была сплошной Afisha.surface — теперь размытый
-              // фон + лёгкий блик сверху-слева, тёмная подложка (Afisha.surface)
-              // осталась ПОД бликом отдельным слоем — иначе на пёстрой обложке
-              // текст очереди было бы не прочитать (тут не плоский чёрный фон,
-              // как в apple.dart, а живая картинка).
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: height,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: ColoredBox(color: Afisha.surface.withValues(alpha: 0.55 + 0.35 * t)),
-                      ),
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Colors.white.withValues(alpha: 0.14),
-                                Colors.white.withValues(alpha: 0.05),
-                                Colors.transparent,
-                              ],
-                              stops: const [0, 0.4, 1],
+            return Transform.translate(
+              offset: Offset(0, dragRange * (1 - t.clamp(0.0, 1.0))),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                // 25.09.2026 (Alex TG, «начни с 1» — плеер, стекло на карточках):
+                // панель «Дальше» была сплошной Afisha.surface — теперь размытый
+                // фон + лёгкий блик сверху-слева, тёмная подложка (Afisha.surface)
+                // осталась ПОД бликом отдельным слоем — иначе на пёстрой обложке
+                // текст очереди было бы не прочитать (тут не плоский чёрный фон,
+                // как в apple.dart, а живая картинка).
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: maxHeight,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ColoredBox(color: Afisha.surface.withValues(alpha: 0.55 + 0.35 * t.clamp(0.0, 1.0))),
+                        ),
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.14),
+                                  Colors.white.withValues(alpha: 0.05),
+                                  Colors.transparent,
+                                ],
+                                stops: const [0, 0.4, 1],
+                              ),
+                              border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.16))),
                             ),
-                            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.16))),
                           ),
                         ),
-                      ),
-                      Column(
-                        children: [
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _animateQueueTo(t > 0.5 ? 0 : 1),
-                            onVerticalDragStart: (_) => _queueRaw = _queueOpen.value.clamp(0.0, 1.0),
-                            onVerticalDragUpdate: (d) {
-                              _queueRaw -= d.delta.dy / dragRange;
-                              _queueOpen.value = _rubber(_queueRaw);
-                            },
-                            onVerticalDragEnd: (d) {
-                              final v = d.primaryVelocity ?? 0;
-                              final vel = -v / dragRange; // доля высоты в секунду
-                              if (v < -300) return _animateQueueTo(1, velocity: vel);
-                              if (v > 300) return _animateQueueTo(0, velocity: vel);
-                              _animateQueueTo(_queueOpen.value > 0.5 ? 1 : 0, velocity: vel);
-                            },
-                            child: _queueHandleRow(now),
-                          ),
-                          if (t > 0.01)
-                            Expanded(
-                              child: Opacity(
-                                opacity: t.clamp(0.0, 1.0),
-                                child: IgnorePointer(
-                                  ignoring: t < 0.6,
-                                  child: _queueBody(now),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
+                        content!,
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1896,4 +2018,11 @@ class _BassPulseState extends State<_BassPulse> with SingleTickerProviderStateMi
           ),
         ),
       );
+}
+
+/// Значение шторки очереди может чуть выходить за 0..1 («резинка»); прозрачности нужно строго 0..1.
+class _Clamp01 extends Animatable<double> {
+  const _Clamp01();
+  @override
+  double transform(double t) => t.clamp(0.0, 1.0);
 }

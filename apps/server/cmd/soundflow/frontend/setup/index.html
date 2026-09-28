@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoundFlow — первый запуск</title>
+<!-- Мастер первого запуска своей копии плеера (setup.go, 28.09.2026). Лежит в setup/index.html, а не
+     setup.html: окно Wails подключает свои функции (выбор папки, открыть ссылку) только к страницам
+     «…/» и «…/index.html». Отдельная страница, а не ещё
+     один экран в index.html: её видят один раз, основному окну она не нужна. -->
+<style>
+  @font-face{font-family:Inter; font-weight:400; src:url("../fonts/Inter-Regular.ttf") format("truetype")}
+  @font-face{font-family:Inter; font-weight:600; src:url("../fonts/Inter-SemiBold.ttf") format("truetype")}
+  @font-face{font-family:Inter; font-weight:700; src:url("../fonts/Inter-Bold.ttf") format("truetype")}
+  :root{
+    color-scheme:dark;
+    --bg:#000; --card:#161618; --fill:#1C1C1F; --line:#2A2A2E;
+    --ink:#F5F5F7; --ink-2:#A8A8B0; --acc:#B2FF00; --acc-ink:#0A0A0A;
+    --ok:#7ED957; --err:#FF6B5E; --r:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+    font:15px/1.5 Inter, system-ui, sans-serif; display:flex; align-items:center; justify-content:center; padding:32px 16px}
+  main{width:100%; max-width:560px}
+  .dots{display:flex; gap:8px; margin-bottom:24px}
+  .dots i{flex:1; height:4px; border-radius:2px; background:var(--line)}
+  .dots i.on{background:var(--acc)}
+  h1{font-size:28px; line-height:1.2; margin:0 0 8px}
+  p{color:var(--ink-2); margin:0 0 16px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:24px}
+  .row{display:flex; gap:12px; margin-top:24px}
+  button{font:600 16px Inter, sans-serif; min-height:52px; padding:0 24px; border-radius:12px; border:0; cursor:pointer}
+  .main{background:var(--acc); color:var(--acc-ink); flex:1}
+  .main:disabled{opacity:.4; cursor:default}
+  .alt{background:var(--fill); color:var(--ink)}
+  input{width:100%; font:15px Inter, sans-serif; color:var(--ink); background:var(--fill);
+    border:1px solid var(--line); border-radius:10px; padding:14px}
+  .code{font:700 40px/1 Inter, sans-serif; letter-spacing:4px; text-align:center; padding:20px;
+    background:var(--fill); border-radius:12px; margin:16px 0; user-select:all}
+  .msg{margin-top:16px; min-height:22px}
+  .msg.err{color:var(--err)} .msg.ok{color:var(--ok)}
+  a{color:var(--acc)}
+  section{display:none} section.on{display:block}
+</style>
+</head>
+<body>
+<main>
+  <div class="dots" id="dots"><i></i><i></i><i></i><i></i><i></i></div>
+
+  <section id="s-music">
+    <h1>Где лежит музыка?</h1>
+    <p>Выберите папку с музыкой. SoundFlow соберёт из неё каталог. Новые песни будут скачиваться сюда же — в папки «Яндекс» и «Торренты» внутри неё.</p>
+    <div class="card">
+      <input id="dir" placeholder="Например, D:\Музыка">
+      <div class="row">
+        <button class="alt" id="pick">Выбрать папку…</button>
+        <button class="main" id="music-next">Дальше</button>
+      </div>
+      <div class="msg" id="music-msg"></div>
+    </div>
+  </section>
+
+  <section id="s-yandex">
+    <h1>Вход в Яндекс Музыку</h1>
+    <p>Необязательно. Нужен только чтобы SoundFlow узнал ваш вкус по лайкам и плейлистам. Подписка не нужна. Пароль SoundFlow не видит: вход подтверждается на сайте Яндекса.</p>
+    <div class="card">
+      <div id="ya-idle">
+        <div class="row" style="margin-top:0">
+          <button class="alt" id="ya-skip">Пропустить</button>
+          <button class="main" id="ya-start">Войти</button>
+        </div>
+      </div>
+      <div id="ya-wait" hidden>
+        <p style="margin:0">Откройте <a href="#" id="ya-link">ya.ru/device</a> на телефоне или компьютере и введите код:</p>
+        <div class="code" id="ya-code"></div>
+        <p style="margin:0">Страница обновится сама, когда вход будет подтверждён.</p>
+        <div class="row"><button class="alt" id="ya-skip2">Пропустить</button></div>
+      </div>
+      <div class="msg" id="ya-msg"></div>
+    </div>
+  </section>
+
+  <section id="s-torrents">
+    <h1>Торренты</h1>
+    <p>SoundFlow сам находит и скачивает альбомы с торрентов через qBittorrent. Для этого ему нужен доступ к qBittorrent — нажмите «Включить».</p>
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <button class="alt" id="t-skip">Пропустить</button>
+        <button class="main" id="t-on">Включить</button>
+      </div>
+      <div class="msg" id="t-msg"></div>
+    </div>
+  </section>
+
+  <section id="s-vds">
+    <h1>Музыка вне дома</h1>
+    <p>Чтобы телефон находил музыку не только в домашнем Wi-Fi, нужен свой ВДС (сервер в интернете). Укажите его адрес — SoundFlow подготовит одну команду для настройки.</p>
+    <div class="card">
+      <div id="v-form">
+        <input id="v-ip" placeholder="Адрес ВДС, например 185.10.20.30">
+        <input id="v-domain" placeholder="Свой домен (необязательно)" style="margin-top:12px">
+        <div class="row">
+          <button class="alt" id="v-skip">Пропустить</button>
+          <button class="main" id="v-prep">Дальше</button>
+        </div>
+      </div>
+      <div id="v-cmd" hidden>
+        <p style="margin:0 0 8px">1. Войдите в консоль ВДС (как root).<br>2. Вставьте эту команду и нажмите Enter:</p>
+        <textarea id="v-text" readonly rows="4" style="width:100%; font:13px Consolas, monospace; color:var(--ink); background:var(--fill); border:1px solid var(--line); border-radius:10px; padding:12px; resize:none"></textarea>
+        <p style="margin:8px 0 0">3. Дождитесь слова «ГОТОВО» (1–3 минуты) и нажмите «Проверить».</p>
+        <div class="row">
+          <button class="alt" id="v-copy">Скопировать</button>
+          <button class="main" id="v-check">Проверить</button>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="alt" id="v-back">Изменить адрес</button><button class="alt" id="v-skip2">Пропустить</button></div>
+      </div>
+      <div class="msg" id="v-msg"></div>
+    </div>
+  </section>
+
+  <section id="s-done">
+    <h1>Готово — теперь телефон</h1>
+    <p id="done-text">SoundFlow настроен. Каталог музыки собирается в фоне — это может занять время.</p>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex; gap:20px; align-items:center">
+        <img id="apk-qr" alt="" width="140" height="140" style="border-radius:10px; background:#fff; flex:none">
+        <div>
+          <p style="margin:0 0 8px">1. Наведите камеру телефона на код и установите приложение SoundFlow<span id="apk-link"></span>.</p>
+          <p style="margin:0 0 8px">2. Откройте его и нажмите «Найти компьютер» (телефон — в том же Wi-Fi).</p>
+          <p style="margin:0" id="pair-state">Ждём телефон…</p>
+        </div>
+      </div>
+      <div class="row"><button class="alt" id="pair-again">Подключить телефон ещё раз</button></div>
+    </div>
+    <div class="card">
+      <div class="row" style="margin-top:0"><button class="main" id="finish">Открыть SoundFlow</button></div>
+      <div class="msg" id="done-msg"></div>
+    </div>
+  </section>
+</main>
+<script>
+const steps = ["music", "yandex", "torrents", "vds", "done"];
+const $ = id => document.getElementById(id);
+function show(name){
+  steps.forEach((s, i) => {
+    $("s-" + s).classList.toggle("on", s === name);
+    $("dots").children[i].classList.toggle("on", i <= steps.indexOf(name));
+  });
+  if(name === "done" && pairBase === null) openPairing();
+}
+function say(id, text, kind){ const m = $(id); m.textContent = text || ""; m.className = "msg" + (kind ? " " + kind : ""); }
+async function api(method, url, body){
+  const r = await fetch(url, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const t = await r.text();
+  if(!r.ok) throw new Error(t.trim() || ("Ошибка " + r.status));
+  try { return JSON.parse(t); } catch(e) { return {}; }
+}
+function openUrl(u){
+  if(window.runtime && window.runtime.BrowserOpenURL) window.runtime.BrowserOpenURL(u); else window.open(u, "_blank");
+}
+
+// 1. Музыка
+$("pick").onclick = async () => {
+  try { if(window.go && window.go.main && window.go.main.Service){ const d = await window.go.main.Service.PickFolder(); if(d) $("dir").value = d; } }
+  catch(e){ say("music-msg", e.message || String(e), "err"); }
+};
+$("music-next").onclick = async () => {
+  const dir = $("dir").value.trim();
+  if(!dir){ say("music-msg", "Укажите папку с музыкой.", "err"); return; }
+  $("music-next").disabled = true;
+  try { await api("POST", "/api/setup/music", {dir}); say("music-msg", ""); show("yandex"); }
+  catch(e){ say("music-msg", e.message, "err"); }
+  $("music-next").disabled = false;
+};
+
+// 2. Яндекс
+let yaTimer = null;
+function yaDone(){ clearInterval(yaTimer); yaTimer = null; show("torrents"); }
+$("ya-skip").onclick = $("ya-skip2").onclick = yaDone;
+$("ya-start").onclick = async () => {
+  say("ya-msg", "");
+  try {
+    const y = await api("POST", "/api/setup/yandex/start");
+    $("ya-code").textContent = y.code;
+    $("ya-link").onclick = e => { e.preventDefault(); openUrl(y.url || "https://ya.ru/device"); };
+    $("ya-idle").hidden = true; $("ya-wait").hidden = false;
+    yaTimer = setInterval(async () => {
+      const s = await api("GET", "/api/setup/yandex/status").catch(() => null);
+      if(!s) return;
+      if(s.state === "ok"){ say("ya-msg", "Вход выполнен.", "ok"); setTimeout(yaDone, 800); clearInterval(yaTimer); }
+      if(s.state === "error"){ clearInterval(yaTimer); say("ya-msg", s.error, "err"); $("ya-idle").hidden = false; $("ya-wait").hidden = true; }
+    }, 3000);
+  } catch(e){ say("ya-msg", e.message, "err"); }
+};
+
+// 3. Торренты
+$("t-skip").onclick = () => show("vds");
+$("t-on").onclick = async () => {
+  $("t-on").disabled = true; say("t-msg", "Настройка qBittorrent…");
+  try { await api("POST", "/api/setup/torrents"); say("t-msg", "Торренты включены.", "ok"); setTimeout(() => show("vds"), 800); }
+  catch(e){ say("t-msg", e.message, "err"); }
+  $("t-on").disabled = false;
+};
+
+// 4. Свой ВДС
+$("v-skip").onclick = $("v-skip2").onclick = () => show("done");
+$("v-back").onclick = () => { $("v-form").hidden = false; $("v-cmd").hidden = true; say("v-msg", ""); };
+$("v-prep").onclick = async () => {
+  try {
+    const v = await api("POST", "/api/setup/vds/prepare", {ip: $("v-ip").value, domain: $("v-domain").value});
+    $("v-text").value = v.command; $("v-form").hidden = true; $("v-cmd").hidden = false; say("v-msg", "");
+  } catch(e){ say("v-msg", e.message, "err"); }
+};
+$("v-copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("v-text").value); } catch(e){ $("v-text").select(); document.execCommand("copy"); }
+  say("v-msg", "Команда скопирована.", "ok");
+};
+$("v-check").onclick = async () => {
+  $("v-check").disabled = true; say("v-msg", "Проверка — до 40 секунд…");
+  try { const v = await api("POST", "/api/setup/vds/check"); say("v-msg", "Работает: " + v.url, "ok"); setTimeout(() => show("done"), 1200); }
+  catch(e){ say("v-msg", e.message, "err"); }
+  $("v-check").disabled = false;
+};
+
+// 5. Готово и телефон: окно «Подключить телефон» (2 минуты) открывается само
+let pairBase = null, pairTimer = null;
+async function openPairing(){
+  try {
+    const p = await api("POST", "/api/setup/phone");
+    if(pairBase === null) pairBase = p.confirmed;
+    if(p.apk){ $("apk-qr").src = "/api/setup/apk-qr.png"; $("apk-link").innerHTML = ' (<a href="#" id="apk-a">ссылка</a>)'; $("apk-a").onclick = e => { e.preventDefault(); openUrl(p.apk); }; }
+    else $("apk-qr").style.display = "none";
+  } catch(e){ say("done-msg", e.message, "err"); }
+  clearInterval(pairTimer);
+  pairTimer = setInterval(async () => {
+    const st = await api("GET", "/api/pairing/status").catch(() => null);
+    if(!st) return;
+    if(st.confirmed > pairBase){ $("pair-state").textContent = "✓ Телефон подключён."; $("pair-state").style.color = "var(--ok)"; clearInterval(pairTimer); return; }
+    $("pair-state").textContent = st.open ? `Ждём телефон… (${st.seconds_left} с)` : "Время вышло — нажмите «Подключить телефон ещё раз».";
+  }, 1500);
+}
+$("pair-again").onclick = openPairing;
+$("finish").onclick = async () => {
+  try { await api("POST", "/api/setup/finish"); location.href = "/"; }
+  catch(e){ say("done-msg", e.message, "err"); }
+};
+
+// Уже начатый мастер — продолжить с нужного шага.
+api("GET", "/api/setup/state").then(s => {
+  if(s.musicDir) $("dir").value = s.musicDir;
+  show(!s.musicDir ? "music" : !s.yandex ? "yandex" : !s.torrents ? "torrents" : !s.vds ? "vds" : "done");
+}).catch(() => show("music"));
+</script>
+</body>
+</html>
