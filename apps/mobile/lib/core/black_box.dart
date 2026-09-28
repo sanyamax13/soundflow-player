@@ -33,12 +33,17 @@ class BlackBox {
   static int _seq = 0;
   static bool _started = false;
   static bool _live = false; // режим отладки: частая отправка логов разработчику (по согласию)
+  static String? debugDevice; // id устройства для сборщика отладки на ВДС
+  // Сборщик отладки на ВДС (collector.py). Токен общий — просто чтобы не спамили посторонние.
+  static const _debugUrl = 'https://vdsmusic.ru/soundflow-debug';
+  static const _debugToken = '4a7927601b06872e43750495d4ee6b1a';
+  static bool _dbgUploading = false;
 
   /// Включить/выключить живую отладку. On — сразу отправить накопленное.
   static void setLive(bool on) {
     _live = on;
     log('debug_live', {'on': on});
-    if (on) unawaited(flush().then((_) => uploadNow()));
+    if (on) unawaited(flush().then((_) async { await uploadNow(); await _uploadDebug(); }));
   }
 
   static bool get live => _live;
@@ -116,7 +121,7 @@ class BlackBox {
     Timer.periodic(const Duration(minutes: 10), (_) => unawaited(uploadNow()));
     // Режим отладки (Alex 28.09.2026): по согласию — частая отправка, чтобы разработчик видел «в моменте».
     Timer.periodic(const Duration(seconds: 6), (_) {
-      if (_live) unawaited(flush().then((_) => uploadNow()));
+      if (_live) unawaited(flush().then((_) async { await uploadNow(); await _uploadDebug(); }));
     });
     Timer(const Duration(seconds: 20), () => unawaited(uploadNow()));
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
@@ -172,6 +177,68 @@ class BlackBox {
   static int _frames = 0;
   static int _worstFrameMs = 0;
   static DateTime _lastJankLog = DateTime(2000);
+
+  /// Отправка журнала на общий сборщик отладки ВДС (только в режиме отладки). Свои смещения в
+  /// .sentdbg, чтобы не дублировать. Ошибки глушим — отладка не должна мешать приложению.
+  static Future<void> _uploadDebug() async {
+    if (!_live || _dbgUploading || debugDevice == null) return;
+    _dbgUploading = true;
+    try {
+      final dir = _dir ??= await _openDir();
+      final offF = File('${dir.path}/.sentdbg');
+      final sent = <String, int>{};
+      if (offF.existsSync()) {
+        try {
+          (jsonDecode(offF.readAsStringSync()) as Map).forEach((k, v) => sent['$k'] = (v as num).toInt());
+        } catch (_) {}
+      }
+      final files = dir.listSync().whereType<File>().where((f) => f.path.endsWith('.jsonl')).toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      for (final f in files) {
+        final name = f.uri.pathSegments.last;
+        final len = f.lengthSync();
+        var off = sent[name] ?? 0;
+        while (off < len) {
+          final raf = f.openSync();
+          final List<int> bytes;
+          try {
+            raf.setPositionSync(off);
+            bytes = raf.readSync(min(_maxUploadChunk, len - off));
+          } finally {
+            raf.closeSync();
+          }
+          final cut = bytes.lastIndexOf(10) + 1;
+          if (cut <= 0) break;
+          final ok = await _postDebug(gzip.encode(bytes.sublist(0, cut)));
+          if (!ok) return; // нет связи — попробуем позже
+          off += cut;
+          sent[name] = off;
+          offF.writeAsStringSync(jsonEncode(sent));
+        }
+      }
+    } catch (_) {
+    } finally {
+      _dbgUploading = false;
+    }
+  }
+
+  static Future<bool> _postDebug(List<int> gz) async {
+    try {
+      final cl = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+      final req = await cl.postUrl(Uri.parse(_debugUrl));
+      req.headers.set('X-Device', debugDevice ?? 'unknown');
+      req.headers.set('X-Debug-Token', _debugToken);
+      req.headers.set('Content-Encoding', 'gzip');
+      req.headers.set('Content-Type', 'application/json');
+      req.add(gz);
+      final resp = await req.close();
+      await resp.drain<void>();
+      cl.close();
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Future<void> _pulse() async {
     final d = <String, Object?>{};

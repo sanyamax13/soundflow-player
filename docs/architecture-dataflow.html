@@ -1,70 +1,113 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
 @font-face{font-family:Inter;src:url("Inter-SemiBold.ttf")}
-body{margin:0;background:#0b0b0d;color:#f4f4f5;font-family:Inter,sans-serif;width:1600px;padding:26px 30px}
-h1{font-size:26px;margin:0 0 4px} .sub{color:#9b9b9b;font-size:14px;margin:0 0 20px}
-.cols{display:flex;gap:0;align-items:stretch}
-.col{flex:1;padding:0 14px}
-.ct{font-size:13px;color:#B2FF00;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:0 0 10px;text-align:center}
-.box{background:#161618;border:1px solid #2a2a2e;border-radius:14px;padding:12px 14px;margin:0 0 12px}
-.box b{font-size:15px} .box .d{color:#9b9b9b;font-size:12.5px;margin-top:3px;line-height:1.4}
-.box.acc{border-color:#B2FF00;background:rgba(178,255,0,.07)}
-.box.ext{border-color:#4DA3FF} .box.vds{border-color:#FFB84D}
-.arrow{color:#6e7681;font-size:12px;text-align:center;margin:-6px 0 6px}
-.legend{margin-top:18px;color:#9b9b9b;font-size:12.5px;display:flex;gap:22px;flex-wrap:wrap}
-.tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;margin-left:6px}
-.home{background:#1e3a1e;color:#7ED957} .away{background:#3a2f14;color:#FFB84D}
-.pill{display:inline-block;background:#1c1c1f;border:1px solid #2a2a2e;border-radius:8px;padding:2px 8px;margin:2px 3px 0 0;font-size:11.5px;color:#c9d1d9}
+*{box-sizing:border-box} body{margin:0;background:#08080a}
+text{font-family:Inter,sans-serif;fill:#f5f5f7}
 </style></head><body>
-<h1>SoundFlow — как ходят данные</h1>
-<p class="sub">Карта для быстрой ориентации: что откуда берётся, где напрямую, где через посредника. 28.09.2026.</p>
-<div class="cols">
+<svg width="1600" height="860" viewBox="0 0 1600 860">
+  <defs>
+    <linearGradient id="bgv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e0e12"/><stop offset="1" stop-color="#08080a"/>
+    </linearGradient>
+    <linearGradient id="lime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2a06"/><stop offset="1" stop-color="#12160b"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1c2c"/><stop offset="1" stop-color="#0c141d"/></linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1e08"/><stop offset="1" stop-color="#1a1206"/></linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a1a1f"/><stop offset="1" stop-color="#141418"/></linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000" flood-opacity="0.55"/></filter>
+    <marker id="mg" markerWidth="10" markerHeight="10" refX="8" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#8be04e"/></marker>
+    <marker id="my" markerWidth="10" markerHeight="10" refX="8" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#ffb84d"/></marker>
+    <marker id="mn" markerWidth="10" markerHeight="10" refX="8" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#9aa3b2"/></marker>
+  </defs>
+  <rect width="1600" height="860" fill="url(#bgv)"/>
+  <text x="44" y="52" style="font-size:28px;font-weight:700">SoundFlow — как всё связано</text>
+  <text x="44" y="80" style="font-size:15px;fill:#9b9b9b">Слева направо: где берётся музыка → компьютер → интернет → телефон</text>
 
-  <div class="col">
-    <div class="ct">Откуда берётся музыка</div>
-    <div class="box ext"><b>Бесплатные источники</b><div class="d">musify.club, mp3party.net — ищутся первыми</div></div>
-    <div class="box ext"><b>Торренты</b><div class="d">nnmclub, rutor и др. → qBittorrent (порт 8080)</div></div>
-    <div class="box ext"><b>Яндекс Музыка</b><div class="d">последним; вход по токену. Плюс: лайки/плейлисты → вкус, «Волна», эталон длины</div></div>
-  </div>
+  <!-- ================= ZONES ================= -->
+  <rect x="40"  y="120" width="300" height="470" rx="20" fill="url(#blue)" stroke="#28527e" opacity="0.55"/>
+  <rect x="380" y="120" width="250" height="470" rx="20" fill="#101014" stroke="#26262c" opacity="0.6"/>
+  <rect x="670" y="120" width="360" height="470" rx="20" fill="url(#lime)" stroke="#3a5a12" opacity="0.6"/>
+  <rect x="1070" y="120" width="240" height="470" rx="20" fill="url(#amber)" stroke="#5a4318" opacity="0.6"/>
+  <rect x="1350" y="120" width="210" height="470" rx="20" fill="url(#lime)" stroke="#3a5a12" opacity="0.6"/>
+  <text x="60"  y="150" style="font-size:14px;font-weight:700;fill:#7fb2ff">🌐  ИНТЕРНЕТ-ИСТОЧНИКИ</text>
+  <text x="400" y="150" style="font-size:14px;font-weight:700;fill:#c9d1d9">⬇  КАЧАЛКА</text>
+  <text x="690" y="150" style="font-size:14px;font-weight:700;fill:#b2ff00">🖥  КОМПЬЮТЕР (сервер)</text>
+  <text x="1090" y="150" style="font-size:14px;font-weight:700;fill:#ffb84d">☁  ВАШ ВДС</text>
+  <text x="1370" y="150" style="font-size:14px;font-weight:700;fill:#b2ff00">📱  ТЕЛЕФОН</text>
 
-  <div class="col">
-    <div class="ct">Качалка (Python)</div>
-    <div class="arrow">↓ находит и качает</div>
-    <div class="box"><b>downloader (sidecar :8001)</b><div class="d">audio_chain: musify→mp3party→Яндекс. Кладёт файлы в<br>G:\Музыка\Яндекс и \Торренты</div></div>
-    <div class="arrow">↓ запускает и опрашивает</div>
-    <div class="box acc"><b>Сервер сам держит качалку</b><div class="d">запускает процесс, отдаёт ей токен/пути через окружение</div></div>
-  </div>
+  <!-- ================= CARDS ================= -->
+  <!-- sources -->
+  <g filter="url(#sh)"><rect x="62"  y="176" width="256" height="60" rx="13" fill="url(#card)" stroke="#3a6ea5"/></g>
+  <text x="82" y="205" style="font-size:16px;font-weight:700">🎵 musify · mp3party</text><text x="82" y="224" style="font-size:12.5px;fill:#9b9b9b">бесплатно, ищутся первыми</text>
+  <g filter="url(#sh)"><rect x="62"  y="252" width="256" height="60" rx="13" fill="url(#card)" stroke="#3a6ea5"/></g>
+  <text x="82" y="281" style="font-size:16px;font-weight:700">🧲 Торренты</text><text x="82" y="300" style="font-size:12.5px;fill:#9b9b9b">nnmclub, rutor…</text>
+  <g filter="url(#sh)"><rect x="62"  y="328" width="256" height="72" rx="13" fill="url(#card)" stroke="#3a6ea5"/></g>
+  <text x="82" y="357" style="font-size:16px;font-weight:700">🅔 Яндекс Музыка</text><text x="82" y="376" style="font-size:12.5px;fill:#9b9b9b">последним · лайки/плейлисты</text><text x="82" y="392" style="font-size:12.5px;fill:#9b9b9b">→ вкус и «Волна»</text>
 
-  <div class="col">
-    <div class="ct">Сервер на ПК (Go)</div>
-    <div class="box acc"><b>SoundFlow.exe</b><div class="d">окно (WebView2) + сервер в одном. Слушает :8090</div></div>
-    <div class="box"><b>Каталог + метки</b><div class="d">SQLite soundflow.db<br>(%LocalAppData%\SoundFlow)</div></div>
-    <div class="box"><b>Музыка на диске</b><div class="d">G:\Музыка — сами файлы (~120 ГБ)</div></div>
-    <div class="box"><b>«Хранители» (сами, фоном)</b><div class="d">
-      <span class="pill">обложки</span><span class="pill">настроение</span><span class="pill">бас</span><span class="pill">форма волны</span><span class="pill">громкость</span><span class="pill">жанр</span><span class="pill">вкус из Яндекса</span><span class="pill">сверка с диском</span></div></div>
-  </div>
+  <!-- qbittorrent + downloader -->
+  <g filter="url(#sh)"><rect x="398" y="200" width="214" height="60" rx="13" fill="url(#card)" stroke="#2a2a2e"/></g>
+  <text x="418" y="229" style="font-size:16px;font-weight:700">⇩ qBittorrent</text><text x="418" y="248" style="font-size:12.5px;fill:#9b9b9b">порт 8080</text>
+  <g filter="url(#sh)"><rect x="398" y="300" width="214" height="76" rx="13" fill="url(#card)" stroke="#2a2a2e"/></g>
+  <text x="418" y="329" style="font-size:16px;font-weight:700">🐍 Качалка</text><text x="418" y="348" style="font-size:12.5px;fill:#9b9b9b">ищет, качает,</text><text x="418" y="364" style="font-size:12.5px;fill:#9b9b9b">кладёт mp3 на диск</text>
 
-  <div class="col">
-    <div class="ct">Связь с телефоном</div>
-    <div class="box home"><b>Дома — напрямую</b> <span class="tag home">Wi-Fi</span><div class="d">телефон → http://IP-ПК:8090<br>быстро, без посредников</div></div>
-    <div class="arrow">— или —</div>
-    <div class="box vds"><b>Вне дома — через ВДС</b> <span class="tag away">SSH-канал</span><div class="d">ПК держит SSH-туннель до ВДС → nginx → 127.0.0.1:8093 → сервер. Секретный ключ в заголовке. Телефон ходит на https://…/soundflow-remote</div></div>
-    <div class="box vds"><b>ВДС ещё отдаёт</b><div class="d">канал обновлений: version.json + APK; для ПК pc-version.json + установщик</div></div>
-  </div>
+  <!-- server internals -->
+  <g filter="url(#sh)"><rect x="690" y="182" width="320" height="52" rx="12" fill="url(#card)" stroke="#2a2a2e"/></g>
+  <text x="708" y="204" style="font-size:15px;font-weight:700">🗂 Каталог + метки</text><text x="708" y="221" style="font-size:12px;fill:#9b9b9b">SQLite soundflow.db</text>
+  <g filter="url(#sh)"><rect x="690" y="244" width="320" height="52" rx="12" fill="url(#card)" stroke="#2a2a2e"/></g>
+  <text x="708" y="266" style="font-size:15px;font-weight:700">💽 Музыка на диске</text><text x="708" y="283" style="font-size:12px;fill:#9b9b9b">G:\Музыка (~120 ГБ)</text>
+  <g filter="url(#sh)"><rect x="690" y="306" width="320" height="76" rx="12" fill="url(#card)" stroke="#2a2a2e"/></g>
+  <text x="708" y="328" style="font-size:15px;font-weight:700">⚙ Хранители (фоном)</text><text x="708" y="346" style="font-size:12px;fill:#9b9b9b">обложки · настроение · бас · волна</text><text x="708" y="362" style="font-size:12px;fill:#9b9b9b">громкость · жанр · вкус</text>
+  <g filter="url(#sh)"><rect x="690" y="392" width="320" height="52" rx="12" fill="rgba(178,255,0,.1)" stroke="#7a9a2e"/></g>
+  <text x="708" y="414" style="font-size:15px;font-weight:700">📤 Отдаёт телефону</text><text x="708" y="431" style="font-size:12px;fill:#b9c99a">каталог · обложки · /audio · вкус</text>
 
-  <div class="col">
-    <div class="ct">Телефон (Flutter)</div>
-    <div class="arrow">↓ спрашивает по HTTP</div>
-    <div class="box acc"><b>Приложение</b><div class="d">Поток, Моя музыка, плеер</div></div>
-    <div class="box"><b>Что берёт с сервера</b><div class="d">
-      <span class="pill">/tracks каталог</span><span class="pill">/cover обложка</span><span class="pill">/audio файл</span><span class="pill">/bass</span><span class="pill">/waveform</span><span class="pill">/search</span><span class="pill">/sync события</span><span class="pill">/blackbox лог</span><span class="pill">/device/plan докачки</span></div></div>
-    <div class="box"><b>Что делает сам (офлайн)</b><div class="d">радио/похожее по отпечаткам, темп полосы, косинусы вкуса — без сервера</div></div>
-  </div>
+  <!-- VDS -->
+  <g filter="url(#sh)"><rect x="1092" y="300" width="196" height="96" rx="14" fill="url(#card)" stroke="#8a6a2e"/></g>
+  <text x="1110" y="330" style="font-size:16px;font-weight:700">☁ ВДС</text>
+  <text x="1110" y="352" style="font-size:12.5px;fill:#9b9b9b">труба «вне дома»</text>
+  <text x="1110" y="370" style="font-size:12.5px;fill:#9b9b9b">канал обновлений:</text>
+  <text x="1110" y="386" style="font-size:12.5px;fill:#9b9b9b">версия · APK · установщик</text>
 
-</div>
-<div class="legend">
-  <span>■ <span style="color:#4DA3FF">синие</span> — внешние сайты</span>
-  <span>■ <span style="color:#FFB84D">жёлтые</span> — ВДС (интернет)</span>
-  <span>■ <span style="color:#B2FF00">лаймовые</span> — сам SoundFlow</span>
-  <span>Скачанное на телефоне играет локально; связь с сервером нужна для нового и для «вне дома».</span>
-</div>
+  <!-- phone -->
+  <g filter="url(#sh)"><rect x="1372" y="196" width="168" height="150" rx="14" fill="rgba(178,255,0,.08)" stroke="#7a9a2e"/></g>
+  <text x="1390" y="226" style="font-size:17px;font-weight:700">📱 Приложение</text>
+  <text x="1390" y="250" style="font-size:12.5px;fill:#9b9b9b">Поток · плеер</text>
+  <text x="1390" y="276" style="font-size:12.5px;fill:#b9c99a">скачанное играет</text><text x="1390" y="292" style="font-size:12.5px;fill:#b9c99a">офлайн</text>
+  <text x="1390" y="318" style="font-size:12.5px;fill:#b9c99a">радио и вкус —</text><text x="1390" y="334" style="font-size:12.5px;fill:#b9c99a">считает сам</text>
+
+  <!-- ================= CONNECTORS (orthogonal) ================= -->
+  <!-- sources -> downloader (merge into left of качалка y~338) -->
+  <path d="M318,206 H360 V330 H396" fill="none" stroke="#9aa3b2" stroke-width="2" marker-end="url(#mn)"/>
+  <path d="M318,282 H360 V332 H396" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+  <path d="M318,360 H360 V336 H396" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+  <!-- downloader <-> qbittorrent -->
+  <path d="M505,300 V262" fill="none" stroke="#9aa3b2" stroke-width="2" marker-end="url(#mn)"/>
+  <text x="514" y="286" style="font-size:12px;fill:#c9d1d9;font-weight:700">торренты</text>
+  <!-- downloader -> server (mp3 to disk) -->
+  <path d="M612,330 H650 V270 H688" fill="none" stroke="#9aa3b2" stroke-width="2" marker-end="url(#mn)"/>
+  <rect x="628" y="243" width="70" height="16" rx="3" fill="#08080a"/><text x="632" y="256" style="font-size:12px;fill:#c9d1d9;font-weight:700">mp3 → диск</text>
+  <!-- server -> downloader (запускает, dashed, lower) -->
+  <path d="M688,352 H650 V346 H614" fill="none" stroke="#9aa3b2" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#mn)"/>
+  <rect x="628" y="356" width="66" height="15" rx="3" fill="#08080a"/><text x="631" y="368" style="font-size:11.5px;fill:#9aa3b2;font-weight:700">запускает</text>
+
+  <!-- HOME Wi-Fi: server top -> phone top (green lane over the top) -->
+  <path d="M850,182 V100 H1456 V196" fill="none" stroke="#8be04e" stroke-width="2.4" marker-end="url(#mg)"/>
+  <path d="M1456,196 V96 H846 V182" fill="none" stroke="#8be04e" stroke-width="1.2" opacity="0.4"/>
+  <rect x="1060" y="88" width="230" height="20" rx="5" fill="#12200f"/><text x="1074" y="103" style="font-size:13px;fill:#8be04e;font-weight:700">дома — по Wi-Fi, напрямую</text>
+
+  <!-- server <-> VDS (SSH tunnel, yellow) -->
+  <path d="M1010,418 H1050 V348 H1090" fill="none" stroke="#ffb84d" stroke-width="2.2" marker-end="url(#my)"/>
+  <path d="M1090,360 H1050 V424 H1012" fill="none" stroke="#ffb84d" stroke-width="1.2" opacity="0.45"/>
+  <rect x="1018" y="452" width="196" height="18" rx="4" fill="#1a1206"/><text x="1028" y="466" style="font-size:12px;fill:#ffb84d;font-weight:700">ПК держит SSH-туннель</text>
+
+  <!-- VDS -> phone (away, yellow) -->
+  <path d="M1288,336 H1330 V300 H1370" fill="none" stroke="#ffb84d" stroke-width="2.2" marker-end="url(#my)"/>
+  <rect x="1300" y="352" width="150" height="18" rx="4" fill="#1a1206"/><text x="1310" y="366" style="font-size:12px;fill:#ffb84d;font-weight:700">вне дома — https</text>
+
+  <!-- ================= LEGEND ================= -->
+  <g transform="translate(44,640)">
+    <rect x="0" y="0" width="1512" height="56" rx="14" fill="#101014" stroke="#26262c"/>
+    <circle cx="28" cy="28" r="6" fill="#8be04e"/><text x="42" y="33" style="font-size:14px;fill:#c9d1d9">Дома по Wi-Fi — напрямую, полное качество</text>
+    <circle cx="430" cy="28" r="6" fill="#ffb84d"/><text x="444" y="33" style="font-size:14px;fill:#c9d1d9">Вне дома — через ваш ВДС</text>
+    <line x1="760" y1="28" x2="796" y2="28" stroke="#9aa3b2" stroke-width="2" stroke-dasharray="5 4"/><text x="806" y="33" style="font-size:14px;fill:#c9d1d9">служебное: запуск, обновления</text>
+    <text x="1180" y="33" style="font-size:14px;fill:#c9d1d9">Скачанное на телефоне играет офлайн</text>
+  </g>
+</svg>
 </body></html>

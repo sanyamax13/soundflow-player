@@ -131,6 +131,7 @@ Future<void> _boot() async {
   // Подробный «чёрный ящик» (Alex TG 21786): всё пишется в файл дня и само уходит на
   // домашний сервер (core/black_box.dart).
   BlackBox.start(upload: (gz) async => api.uploadBlackBox(await sync.deviceId(), gz));
+  BlackBox.debugDevice = await sync.deviceId();
   if (dbg) BlackBox.setLive(true);
   final downloads = DownloadsRepo(api, db, sync);
   // late — onMissingFile ссылается на player, чтобы вернуть трек в очередь
