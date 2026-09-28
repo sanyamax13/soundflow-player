@@ -112,6 +112,8 @@ func (s *Service) relayOnce(host, user, keyPath, remoteBind string, srv *http.Se
 	defer ln.Close()
 
 	_ = s.db.AddServerLog("info", "", "", "канал до VDS поднят ("+remoteBind+")", 0)
+	s.relayUp.Store(true)
+	defer s.relayUp.Store(false)
 	err = srv.Serve(ln)
 	if err == http.ErrServerClosed {
 		return nil

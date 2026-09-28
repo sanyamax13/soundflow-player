@@ -90,6 +90,7 @@ type Service struct {
 	relaySrv  *http.Server
 	relayStop atomic.Bool
 	relayGen  atomic.Int64 // поколение канала: restartRelay поднимает новое, старый цикл выходит
+	relayUp   atomic.Bool  // канал до ВДС сейчас поднят (для монитора)
 }
 
 // staticHandler — отдаёт вшитый frontend/ (index.html в корне).
@@ -257,7 +258,9 @@ func (s *Service) APIRouter() http.Handler {
 // mountAPI — ручки окна. Используется и в Wails, и в телефонном сервере (чтобы
 // окно можно было открыть и обычным браузером для отладки).
 func (s *Service) mountAPI(r chi.Router) {
-	s.mountSetup(r) // мастер первого запуска своей копии (setup.go)
+	s.mountSetup(r)                                   // мастер первого запуска своей копии (setup.go)
+	r.Get("/api/status-map", localOnly(s.hStatusMap)) // живой монитор (statusmap.go)
+	r.Get("/api/status-map/phone", s.hStatusMap)      // и по каналу ВДС — чтобы видеть удалённо
 	r.Get("/api/info", s.hInfo)
 	r.Get("/api/qr.png", s.hQR)
 	r.Get("/api/catalog", s.hCatalog)
