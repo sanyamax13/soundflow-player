@@ -66,19 +66,19 @@ Future<void> settle(WidgetTester t) async {
 void main() {
   setUpAll(sqfliteFfiInit);
 
-  testWidgets('строка названия: влево — следующая, вправо — предыдущая, чуть-чуть — ничего', (t) async {
+  testWidgets('строка названия: вправо — следующая, влево — предыдущая, чуть-чуть — ничего', (t) async {
     await t.binding.setSurfaceSize(const Size(412, 915));
     final p = _FakePlayer();
     await t.pumpWidget(await _app(p));
     await t.pump(const Duration(milliseconds: 300));
     final title = find.byKey(const ValueKey('player_title_swipe'));
-    await t.drag(title, const Offset(-150, 0));
-    await settle(t);
-    expect(p.nexts, 1);
     await t.drag(title, const Offset(150, 0));
     await settle(t);
+    expect(p.nexts, 1);
+    await t.drag(title, const Offset(-150, 0));
+    await settle(t);
     expect(p.prevs, 1);
-    await t.drag(title, const Offset(-20, 0));
+    await t.drag(title, const Offset(20, 0));
     await settle(t);
     expect(p.nexts, 1);
     await t.pumpWidget(const SizedBox());
@@ -98,10 +98,10 @@ void main() {
     expect(find.byKey(const ValueKey('player_fav')), findsOneWidget);
     expect(find.byKey(const ValueKey('player_delete')), findsOneWidget);
     final cover = find.byType(Hero).first;
-    await t.drag(cover, const Offset(-150, 0));
+    await t.drag(cover, const Offset(150, 0));
     await settle(t);
     expect(p.nexts, 1);
-    await t.drag(cover, const Offset(150, 0));
+    await t.drag(cover, const Offset(-150, 0));
     await settle(t);
     expect(p.prevs, 1);
     await t.pumpWidget(const SizedBox());

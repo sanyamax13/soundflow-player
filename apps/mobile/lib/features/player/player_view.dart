@@ -683,9 +683,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   Future<void> _titleSwipeEnd(DragEndDetails d) async {
     final v = d.primaryVelocity ?? 0;
     final x = _titleX.value;
-    final dir = (x <= -80 || (v < -700 && x <= -30))
+    // Как у обложки в «Листании»: вправо — следующая, влево — предыдущая (Alex 28.09.2026).
+    final dir = (x >= 80 || (v > 700 && x >= 30))
         ? -1
-        : (x >= 80 || (v > 700 && x >= 30))
+        : (x <= -80 || (v < -700 && x <= -30))
             ? 1
             : 0;
     if (dir == 0) {
@@ -693,9 +694,9 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       return;
     }
     HapticFeedback.selectionClick();
-    _titleIn = dir < 0 ? 1 : -1;
+    _titleIn = dir < 0 ? -1 : 1;
     BlackBox.log(dir < 0 ? 'swipe_title_next' : 'swipe_title_prev', {'id': _p.now.value?.id});
-    await _titleX.animateTo(dir * 420.0, duration: const Duration(milliseconds: 140), curve: Curves.easeIn);
+    await _titleX.animateTo(-dir * 420.0, duration: const Duration(milliseconds: 140), curve: Curves.easeIn);
     if (dir < 0) {
       await _p.next();
     } else {
@@ -820,10 +821,10 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         // Быстрый взмах засчитываем, только если палец реально прошёл хотя бы 60 точек: иначе
         // короткий рывок в машине удалял бы песню насовсем (ревизия кода 27.09.2026).
         if (seekSkin.value == SeekSkin.glass) {
-          // Вид «Листание»: влево — следующая, вправо — предыдущая.
-          if (_dragX.value <= -80 || (v < -700 && _dragX.value <= -40)) {
+          // Вид «Листание»: вправо — следующая, влево — предыдущая (Alex 28.09.2026: «вправо — след. песня»).
+          if (_dragX.value >= 80 || (v > 700 && _dragX.value >= 40)) {
             _swipeNext();
-          } else if (_dragX.value >= 80 || (v > 700 && _dragX.value >= 40)) {
+          } else if (_dragX.value <= -80 || (v < -700 && _dragX.value <= -40)) {
             HapticFeedback.lightImpact();
             unawaited(_p.prev());
           }
@@ -859,7 +860,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           final t = (_dragX.value / (browse ? 80 : 110)).clamp(-1.0, 1.0);
           final glow = browse || t >= 0 ? Afisha.lime : Afisha.red;
           final icon = browse
-              ? (t < 0 ? SolarBold.skipNext : SolarBold.skipPrevious)
+              ? (t > 0 ? SolarBold.skipNext : SolarBold.skipPrevious)
               : (t >= 0 ? SolarBold.heart : SolarBold.trashBinTrash);
           return Transform.translate(
             offset: Offset(_dragX.value, 0),
