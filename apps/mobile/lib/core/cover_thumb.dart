@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:solar_icons/solar_icons.dart';
+import 'solar.dart';
 
 import 'letter_tile.dart';
 import 'theme.dart';
@@ -62,7 +62,7 @@ class CoverThumb extends StatelessWidget {
     if (l != null && l.trim().isNotEmpty) return LetterTile(name: l, size: size, radius: 0);
     return Container(
       color: Afisha.surfaceHi,
-      child: Icon(SolarIconsBold.musicNote, color: Afisha.inkDim, size: size * 0.5),
+      child: Icon(SolarBold.musicNote, color: Afisha.inkDim, size: size * 0.5),
     );
   }
 }

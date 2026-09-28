@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../app/providers.dart';
 import '../../core/app_log.dart';
@@ -319,7 +319,7 @@ class _StreamScreenState extends ConsumerState<StreamScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(SolarIconsBold.soundwave, color: Afisha.inkDim, size: 64),
+              const Icon(SolarBold.soundwave, color: Afisha.inkDim, size: 64),
               const SizedBox(height: 16),
               const Text('В Потоке пока пусто',
                   style: TextStyle(fontSize: 18, color: Afisha.ink)),

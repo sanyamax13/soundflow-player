@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart' show IconData;
-import 'package:solar_icons/solar_icons.dart';
+import 'solar.dart';
 
 /// Названия жанров Яндекса по-русски (сервер хранит код Яндекса: rusrap, pop…,
 /// cmd/soundflow/genrekeeper.go, 26.09.2026). Неизвестный код показываем как есть,
@@ -62,18 +62,18 @@ String genreLabel(String code) {
 /// Тот же список, что на сервере (apps/server/cmd/soundflow/moodkeeper.go genreGroups) — сервер по нему
 /// угадывает жанр песен, которых Яндекс не знает.
 const genreGroupOrder = <(String, String, IconData)>[
-  ('pop', 'Поп', SolarIconsBold.microphoneLarge),
-  ('dance', 'Танцевальная и электроника', SolarIconsBold.headphonesRound),
-  ('rock', 'Рок', SolarIconsBold.speaker),
-  ('alt', 'Альтернатива и инди', SolarIconsBold.turntableMusicNote),
-  ('rap', 'Рэп', SolarIconsBold.microphone),
-  ('estrada', 'Эстрада и шансон', SolarIconsBold.musicNotes),
-  ('calm', 'Спокойное и лаунж', SolarIconsBold.moonSleep),
-  ('folk', 'Фолк, кантри, этника', SolarIconsBold.leaf),
-  ('rnb', 'R&B, соул, регги', SolarIconsBold.musicNote3),
-  ('metal', 'Метал', SolarIconsBold.flame),
-  ('soundtrack', 'Саундтреки', SolarIconsBold.clapperboardPlay),
-  ('jazz', 'Джаз и блюз', SolarIconsBold.cupMusic),
+  ('pop', 'Поп', SolarBold.microphoneLarge),
+  ('dance', 'Танцевальная и электроника', SolarBold.headphonesRound),
+  ('rock', 'Рок', SolarBold.speaker),
+  ('alt', 'Альтернатива и инди', SolarBold.turntableMusicNote),
+  ('rap', 'Рэп', SolarBold.microphone),
+  ('estrada', 'Эстрада и шансон', SolarBold.musicNotes),
+  ('calm', 'Спокойное и лаунж', SolarBold.moonSleep),
+  ('folk', 'Фолк, кантри, этника', SolarBold.leaf),
+  ('rnb', 'R&B, соул, регги', SolarBold.musicNote3),
+  ('metal', 'Метал', SolarBold.flame),
+  ('soundtrack', 'Саундтреки', SolarBold.clapperboardPlay),
+  ('jazz', 'Джаз и блюз', SolarBold.cupMusic),
 ];
 
 final Map<String, String> _groupOf = () {
@@ -104,12 +104,12 @@ String? genreGroup(String? code) => code == null ? null : _groupOf[code];
 
 /// Настроения по звуку (сервер, moodkeeper.go): код → подпись и значок (Solar, 28.09.2026 — вместо эмодзи).
 const moodOrder = <(String, String, IconData)>[
-  ('happy', 'Радостное', SolarIconsBold.smileCircle),
-  ('energetic', 'Энергичное', SolarIconsBold.bolt),
-  ('tender', 'Нежное', SolarIconsBold.handHeart),
-  ('sad', 'Грустное', SolarIconsBold.cloudRain),
-  ('aggressive', 'Жёсткое', SolarIconsBold.fire),
-  ('dance', 'Танцевальное', SolarIconsBold.confetti), // 6-е, Alex 27.09.2026 «для симметрии» — класс AudioSet «Dance music»
+  ('happy', 'Радостное', SolarBold.smileCircle),
+  ('energetic', 'Энергичное', SolarBold.bolt),
+  ('tender', 'Нежное', SolarBold.handHeart),
+  ('sad', 'Грустное', SolarBold.cloudRain),
+  ('aggressive', 'Жёсткое', SolarBold.fire),
+  ('dance', 'Танцевальное', SolarBold.confetti), // 6-е, Alex 27.09.2026 «для симметрии» — класс AudioSet «Dance music»
 ];
 
 /// Цвет полоски под плиткой настроения (разбор Алисы 27.09.2026). «Энергичное» оранжевое, а не

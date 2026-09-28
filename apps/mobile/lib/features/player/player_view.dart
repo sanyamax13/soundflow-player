@@ -10,7 +10,7 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../app/providers.dart';
 import '../../core/black_box.dart';
@@ -662,7 +662,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
             if (widget.onDismiss != null)
               IconButton(
                 onPressed: widget.onDismiss,
-                icon: const Icon(SolarIconsOutline.altArrowDown, color: Colors.white, size: 24),
+                icon: const Icon(SolarOutline.altArrowDown, color: Colors.white, size: 24),
               )
             else
               const SizedBox(width: 12),
@@ -780,7 +780,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                     child: const SizedBox(
                       width: 64,
                       height: 64,
-                      child: Icon(SolarIconsOutline.trashBinTrash, color: Colors.white70, size: 28),
+                      child: Icon(SolarOutline.trashBinTrash, color: Colors.white70, size: 28),
                     ),
                   ),
                 CompositedTransformTarget(
@@ -792,7 +792,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                           child: SizedBox(
                             width: 64,
                             height: 64,
-                            child: Icon(_fav ? SolarIconsBold.heart : SolarIconsOutline.heart,
+                            child: Icon(_fav ? SolarBold.heart : SolarOutline.heart,
                                 color: _fav ? Afisha.lime : Colors.white70, size: 30),
                           ),
                         )
@@ -859,8 +859,8 @@ class _PlayerViewState extends ConsumerState<PlayerView>
           final t = (_dragX.value / (browse ? 80 : 110)).clamp(-1.0, 1.0);
           final glow = browse || t >= 0 ? Afisha.lime : Afisha.red;
           final icon = browse
-              ? (t < 0 ? SolarIconsBold.skipNext : SolarIconsBold.skipPrevious)
-              : (t >= 0 ? SolarIconsBold.heart : SolarIconsBold.trashBinTrash);
+              ? (t < 0 ? SolarBold.skipNext : SolarBold.skipPrevious)
+              : (t >= 0 ? SolarBold.heart : SolarBold.trashBinTrash);
           return Transform.translate(
             offset: Offset(_dragX.value, 0),
             child: Transform.rotate(
@@ -996,7 +996,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
       children: [
         _NudgeButton(
           key: const ValueKey('player_prev'),
-          icon: SolarIconsBold.skipPrevious,
+          icon: SolarBold.skipPrevious,
           dir: -1,
           onTap: _swipePrev,
           frame: glass,
@@ -1023,7 +1023,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
         const SizedBox(width: 28),
         _NudgeButton(
           key: const ValueKey('player_next'),
-          icon: SolarIconsBold.skipNext,
+          icon: SolarBold.skipNext,
           dir: 1,
           onTap: _swipeNext,
           frame: glass,
@@ -1146,11 +1146,11 @@ class _PlayerViewState extends ConsumerState<PlayerView>
   // нажатием — пять крупных кнопок, каждая в одно нажатие, включённая лаймовая; повторное нажатие —
   // обычный Поток. Строку «Дальше: …» убрали — очередь видна, если потянуть полоску вверх.
   static const _modes = <(String, IconData, String)>[
-    ('similar', SolarIconsBold.soundwave, 'Похожее'),
-    ('artist', SolarIconsBold.microphone3, 'Исполнитель'),
-    ('favorite', SolarIconsBold.heart, 'Любимое'),
-    ('mood', SolarIconsBold.emojiFunnyCircle, 'Настроение'),
-    ('genre', SolarIconsBold.musicNote2, 'Жанр'),
+    ('similar', SolarBold.soundwave, 'Похожее'),
+    ('artist', SolarBold.microphone3, 'Исполнитель'),
+    ('favorite', SolarBold.heart, 'Любимое'),
+    ('mood', SolarBold.emojiFunnyCircle, 'Настроение'),
+    ('genre', SolarBold.musicNote2, 'Жанр'),
   ];
 
   Widget _queueHandleRow(NowPlaying now) {
@@ -1368,7 +1368,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 child: Row(
                   children: [
                     const SizedBox(width: 8),
-                    Icon(SolarIconsBold.microphone3,
+                    Icon(SolarBold.microphone3,
                         color: counts[n]! == 0 ? Afisha.inkDim : Afisha.lime, size: 24),
                     const SizedBox(width: 14),
                     Expanded(
@@ -1505,7 +1505,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(SolarIconsOutline.closeCircle, color: Afisha.inkDim, size: 20),
+                    icon: const Icon(SolarOutline.closeCircle, color: Afisha.inkDim, size: 20),
                     onPressed: () {
                       _p.removeFromQueue(e.key);
                       setBodyState(() {});
@@ -1513,7 +1513,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   ),
                   ReorderableDragStartListener(
                     index: x,
-                    child: const Icon(SolarIconsOutline.hamburgerMenu, color: Afisha.inkDim),
+                    child: const Icon(SolarOutline.hamburgerMenu, color: Afisha.inkDim),
                   ),
                 ],
               ),
@@ -1553,7 +1553,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                       // Было 120 — от центра экрана хватало места. Растёт теперь
                       // от кнопки лайка внизу экрана, крупнее — упиралось бы в
                       // край (Опус-ревью «Поток» 23.09.2026, пункт 3).
-                      child: const Icon(SolarIconsBold.heart,
+                      child: const Icon(SolarBold.heart,
                           color: Afisha.lime, size: 90),
                     ),
                   ),
@@ -1747,12 +1747,12 @@ class _HelpOverlay extends StatelessWidget {
                 const Text('Всё управление — по обложке',
                     style: TextStyle(color: Afisha.inkDim, fontSize: 12)),
                 const SizedBox(height: 14),
-                row(SolarIconsOutline.arrowRight, 'Тап', 'пауза или играть'),
-                row(SolarIconsOutline.heart, 'Смахнуть вправо', 'в избранное и дальше'),
-                row(SolarIconsOutline.trashBinTrash, 'Смахнуть влево', 'удалить насовсем (и с компьютера) и дальше'),
-                row(SolarIconsOutline.altArrowUp, 'Смахнуть вверх', 'очередь «Дальше»'),
-                row(SolarIconsOutline.altArrowDown, 'Смахнуть вниз', 'свернуть плеер'),
-                row(SolarIconsOutline.menuDots, 'Вести по точкам', 'перемотка'),
+                row(SolarOutline.arrowRight, 'Тап', 'пауза или играть'),
+                row(SolarOutline.heart, 'Смахнуть вправо', 'в избранное и дальше'),
+                row(SolarOutline.trashBinTrash, 'Смахнуть влево', 'удалить насовсем (и с компьютера) и дальше'),
+                row(SolarOutline.altArrowUp, 'Смахнуть вверх', 'очередь «Дальше»'),
+                row(SolarOutline.altArrowDown, 'Смахнуть вниз', 'свернуть плеер'),
+                row(SolarOutline.menuDots, 'Вести по точкам', 'перемотка'),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,

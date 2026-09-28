@@ -3,7 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../core/solar.dart';
 
 import '../core/black_box.dart';
 import '../core/theme.dart';
@@ -38,14 +38,14 @@ class _ShellState extends ConsumerState<Shell> {
 
   static const _labels = ['Поток', 'Моя музыка', 'Профиль'];
   static const _icons = [
-    SolarIconsBold.radioMinimalistic,
-    SolarIconsOutline.musicLibrary2,
-    SolarIconsOutline.userCircle,
+    SolarBold.radioMinimalistic,
+    SolarOutline.musicLibrary2,
+    SolarOutline.userCircle,
   ];
   static const _iconsOn = [
-    SolarIconsBold.radioMinimalistic,
-    SolarIconsBold.musicLibrary2,
-    SolarIconsBold.userCircle,
+    SolarBold.radioMinimalistic,
+    SolarBold.musicLibrary2,
+    SolarBold.userCircle,
   ];
 
   // Экран строим только когда вкладку открыли — не дёргаем сеть на старте.

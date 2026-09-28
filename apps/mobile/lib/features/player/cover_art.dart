@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../core/config.dart';
 import '../../core/letter_tile.dart';
@@ -41,7 +41,7 @@ class CoverArt extends StatelessWidget {
         ? Container(
             color: Afisha.surfaceHi,
             child: const Center(
-              child: Icon(SolarIconsBold.soundwave, color: Afisha.lime, size: 96),
+              child: Icon(SolarBold.soundwave, color: Afisha.lime, size: 96),
             ),
           )
         : _ArtistCover(artist: a);

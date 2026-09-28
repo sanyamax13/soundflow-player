@@ -30,6 +30,7 @@ import 'package:soundflow/data/sync_offer.dart';
 import 'package:soundflow/data/sync_repo.dart';
 import 'package:soundflow/features/player/player_controller.dart';
 import 'package:soundflow/features/player/player_view.dart';
+import 'package:soundflow/features/player/seek_skin.dart';
 
 Future<Widget> _app({Future<void> Function(Db db)? seed}) async {
   final api = Api();
@@ -65,15 +66,10 @@ Future<Widget> _app({Future<void> Function(Db db)? seed}) async {
 void main() {
   setUpAll(() async {
     sqfliteFfiInit();
-    // Значки Solar (шрифт пакета solar_icons) — иначе на картинке вместо них квадраты.
-    for (final w in ['Bold', 'Outline']) {
-      final f = File('${Platform.environment['HOME']}/.pub-cache/hosted/pub.dev/solar_icons-0.1.0/fonts/SolarIcons$w.ttf');
-      if (f.existsSync()) {
-        await (FontLoader('packages/solar_icons/SolarIcons$w')
-              ..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer))))
-            .load();
-      }
-    }
+    // Значки Solar — свой шрифт приложения (tool/build_solar_font.py).
+    await (FontLoader('SolarApp')
+          ..addFont(Future.value(ByteData.view(File('assets/fonts/SolarApp.ttf').readAsBytesSync().buffer))))
+        .load();
     for (final w in ['Regular', 'Medium', 'SemiBold', 'Bold']) {
       final f = File('assets/fonts/Inter-$w.ttf');
       if (f.existsSync()) {
@@ -119,6 +115,8 @@ void main() {
     await t.binding.setSurfaceSize(const Size(400, 860));
     await t.pumpWidget(await _app());
     await t.pump(const Duration(milliseconds: 300));
+    seekSkin.value = SeekSkin.glass; // сердечко-кнопка есть только в виде «Листание»
+    await t.pump();
     await t.tap(find.byKey(const ValueKey('player_fav')));
     // Лайк пишется в базу по-настоящему — даём ей ответить, потом кадр посреди вспышки.
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));

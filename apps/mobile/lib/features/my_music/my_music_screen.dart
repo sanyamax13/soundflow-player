@@ -4,7 +4,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../app/providers.dart';
 import '../../core/config.dart';
@@ -484,7 +484,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       hintText: 'Поиск: песня или исполнитель',
       hintStyle: const TextStyle(color: Afisha.inkDim, fontSize: 15),
       prefixIcon: const Icon(
-        SolarIconsOutline.magnifier,
+        SolarOutline.magnifier,
         color: Afisha.inkDim,
         size: 19,
       ),
@@ -492,7 +492,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
           ? null
           : IconButton(
               icon: const Icon(
-                SolarIconsBold.closeCircle,
+                SolarBold.closeCircle,
                 color: Afisha.inkDim,
                 size: 18,
               ),
@@ -769,9 +769,9 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
         context,
         title: f.display,
         actions: const [
-          SheetAction('play', 'Играть всё', SolarIconsBold.play),
-          SheetAction('shuffle', 'Вперемешку', SolarIconsOutline.shuffle),
-          SheetAction('delete', 'Удалить всего исполнителя', SolarIconsOutline.trashBinTrash, destructive: true),
+          SheetAction('play', 'Играть всё', SolarBold.play),
+          SheetAction('shuffle', 'Вперемешку', SolarOutline.shuffle),
+          SheetAction('delete', 'Удалить всего исполнителя', SolarOutline.trashBinTrash, destructive: true),
         ],
       );
       switch (v) {
@@ -793,7 +793,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       width: 64,
       height: 64,
       child: Center(
-        child: Icon(SolarIconsOutline.menuDots, color: Afisha.inkDim, size: 22),
+        child: Icon(SolarOutline.menuDots, color: Afisha.inkDim, size: 22),
       ),
     ),
   );
@@ -830,7 +830,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
         IconButton(
           constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
           onPressed: () => _toggleFav(t),
-          icon: const Icon(SolarIconsBold.heart, color: Afisha.lime, size: 22),
+          icon: const Icon(SolarBold.heart, color: Afisha.lime, size: 22),
         ),
       _moreButton(() async {
         final v = await showAppleActionSheet<String>(
@@ -840,10 +840,10 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
             SheetAction(
               'fav',
               t.favorite ? 'Убрать из избранного' : 'В избранное',
-              t.favorite ? SolarIconsOutline.heartBroken : SolarIconsBold.heart,
+              t.favorite ? SolarOutline.heartCrack : SolarBold.heart,
             ),
-            const SheetAction('less', 'Меньше такого', SolarIconsOutline.dislike),
-            const SheetAction('delete', 'Убрать совсем', SolarIconsOutline.trashBinTrash, destructive: true),
+            const SheetAction('less', 'Меньше такого', SolarOutline.dislike),
+            const SheetAction('delete', 'Убрать совсем', SolarOutline.trashBinTrash, destructive: true),
           ],
         );
         switch (v) {
@@ -922,7 +922,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
       appBar: AppBar(
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(SolarIconsOutline.altArrowLeft, size: 30),
+          icon: const Icon(SolarOutline.altArrowLeft, size: 30),
           onPressed: () => setState(() => _openKey = null),
         ),
         title: Text(
@@ -950,7 +950,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                 Expanded(
                   child: _pill(
                     label: 'Играть всё',
-                    icon: SolarIconsBold.play,
+                    icon: SolarBold.play,
                     accent: true,
                     onTap: tracks.isEmpty ? null : () => _playList(tracks, 0),
                   ),
@@ -959,7 +959,7 @@ class _MyMusicScreenState extends ConsumerState<MyMusicScreen> {
                 Expanded(
                   child: _pill(
                     label: 'Вперемешку',
-                    icon: SolarIconsOutline.shuffle,
+                    icon: SolarOutline.shuffle,
                     accent: false,
                     onTap: tracks.isEmpty ? null : () => _playList(tracks, 0, shuffle: true),
                   ),

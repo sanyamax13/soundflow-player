@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../app/providers.dart';
 import '../../core/apple.dart';
@@ -398,13 +398,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             IconButton(
               onPressed: _askPlaylistLink,
               constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
-              icon: const Icon(SolarIconsOutline.link, color: Colors.white70),
+              icon: const Icon(SolarOutline.link, color: Colors.white70),
               tooltip: 'Плейлист по ссылке',
             ),
             IconButton(
               onPressed: _loadingList ? null : () => _loadWave(refresh: _day == 0),
               constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
-              icon: Icon(SolarIconsOutline.refresh, color: _loadingList ? Colors.white24 : Colors.white70),
+              icon: Icon(SolarOutline.refresh, color: _loadingList ? Colors.white24 : Colors.white70),
               tooltip: 'Пересобрать волну',
             ),
           ],
@@ -438,7 +438,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                   ),
                   onPressed: _toggleAll,
-                  icon: Icon(_playAll ? SolarIconsBold.stop : SolarIconsBold.play, size: 20),
+                  icon: Icon(_playAll ? SolarBold.stop : SolarBold.play, size: 20),
                   label: Text(_playAll ? 'Остановить' : 'Слушать всё',
                       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
                 ),
@@ -474,7 +474,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                               alignment: Alignment.centerRight,
                               padding: const EdgeInsets.only(right: 28),
                               color: Afisha.red,
-                              child: const Icon(SolarIconsOutline.trashBinTrash, color: Colors.white, size: 26),
+                              child: const Icon(SolarOutline.trashBinTrash, color: Colors.white, size: 26),
                             ),
                             child: _DiscoverRow(
                             track: _items[i],
@@ -555,7 +555,7 @@ class _DiscoverRow extends StatelessWidget {
                           child: loading
                               ? const SizedBox(
                                   width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Afisha.lime))
-                              : const Icon(SolarIconsBold.volumeLoud, color: Afisha.lime, size: 24),
+                              : const Icon(SolarBold.volumeLoud, color: Afisha.lime, size: 24),
                         ),
                       ),
                   ],
@@ -585,7 +585,7 @@ class _DiscoverRow extends StatelessWidget {
               width: 64,
               height: 64,
               child: haveIt
-                  ? const Icon(SolarIconsBold.checkCircle, color: Afisha.lime, size: 26)
+                  ? const Icon(SolarBold.checkCircle, color: Afisha.lime, size: 26)
                   : s?.state == 'running'
                       ? const Center(
                           child: SizedBox(
@@ -594,7 +594,7 @@ class _DiscoverRow extends StatelessWidget {
                           onPressed: onAcquire,
                           icon: Icon(
                             // закрашенная — тонкий контур терялся на чёрном (вердикт Gemini 26.09.2026)
-                            s?.state == 'fail' ? SolarIconsOutline.refresh : SolarIconsBold.cloudDownload,
+                            s?.state == 'fail' ? SolarOutline.refresh : SolarBold.cloudDownload,
                             color: s?.state == 'fail' ? Colors.redAccent : Colors.white.withValues(alpha: 0.8),
                             size: 26,
                           ),

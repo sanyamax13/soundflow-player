@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../app/providers.dart';
 import '../../core/apple.dart';
@@ -99,7 +99,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 dividerInset: 58,
                 children: [
                   AppleRow(
-                    icon: SolarIconsBold.magicStick,
+                    icon: SolarBold.magicWand,
                     iconBg: Afisha.lime,
                     title: 'Открытия',
                     subtitle: 'новая музыка по вкусу — Яндекс и торренты',
@@ -113,7 +113,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     valueListenable: seekSkin,
                     builder: (context, skin, _) => AppleRow(
                       key: const ValueKey('profile_seek_skin'),
-                      icon: SolarIconsOutline.tuning,
+                      icon: SolarOutline.tuning,
                       iconBg: Afisha.gray,
                       title: 'Вид плеера',
                       value: skin.label,
@@ -121,7 +121,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ),
                   AppleRow(
-                    icon: SolarIconsBold.home2,
+                    icon: SolarBold.home2,
                     iconBg: Afisha.blue,
                     title: 'Связь с домом',
                     trailing: _OnlineBadge(online: _online),
@@ -139,7 +139,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(height: 22),
                 AppleSection(dividerInset: 58, children: [
                   AppleRow(
-                    icon: SolarIconsOutline.infoCircle,
+                    icon: SolarOutline.infoCircle,
                     iconBg: Afisha.gray,
                     title: 'О программе',
                     value: _installed,
@@ -200,7 +200,7 @@ class _UpdateCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(SolarIconsBold.downloadMinimalistic, color: Afisha.lime, size: 32),
+          const Icon(SolarBold.downloadMinimalistic, color: Afisha.lime, size: 32),
           const SizedBox(width: 12),
           Expanded(
             child: Text('Новая версия v${info.versionCode}',

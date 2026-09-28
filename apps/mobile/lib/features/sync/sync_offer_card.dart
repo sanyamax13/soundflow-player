@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:solar_icons/solar_icons.dart';
+import '../../core/solar.dart';
 
 import '../../app/providers.dart';
 import '../../core/apple.dart';
@@ -52,8 +52,8 @@ class SyncOfferCard extends ConsumerWidget {
       rows.add(
         _row(
           icon: o.lowSpace
-              ? SolarIconsBold.dangerCircle
-              : SolarIconsBold.cloudDownload,
+              ? SolarBold.dangerCircle
+              : SolarBold.cloudDownload,
           tileBg: o.lowSpace ? _red : Afisha.lime,
           tileFg: o.lowSpace ? Colors.white : Colors.black,
           title: o.addTitle,
@@ -76,7 +76,7 @@ class SyncOfferCard extends ConsumerWidget {
       }
       rows.add(
         _row(
-          icon: SolarIconsBold.trashBinTrash,
+          icon: SolarBold.trashBinTrash,
           tileBg: const Color(0xFF3A3A3C),
           tileFg: Colors.white,
           title: o.removeTitle,
@@ -267,8 +267,8 @@ class SyncOfferCard extends ConsumerWidget {
         children: [
           AppleRow(
             icon: o.lastCheckFailed
-                ? SolarIconsOutline.cloudCross
-                : SolarIconsOutline.refresh,
+                ? SolarOutline.cloudCross
+                : SolarOutline.refresh,
             iconBg: o.lastCheckFailed ? Afisha.red : Afisha.green,
             // «Медиатека» (разбор Gemini 26.09.2026, Alex «да»): вся ли моя музыка уже на
             // телефоне. Было «Музыка с компьютера».

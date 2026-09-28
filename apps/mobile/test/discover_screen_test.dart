@@ -1,7 +1,6 @@
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:solar_icons/solar_icons.dart';
+import 'package:soundflow/core/solar.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soundflow/app/providers.dart';
 import 'package:soundflow/core/notice.dart';
@@ -154,7 +153,7 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // второй опрос — «done»
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(SolarIconsBold.checkCircle), findsOneWidget);
+    expect(find.byIcon(SolarBold.checkCircle), findsOneWidget);
     expect(find.text('качаю…'), findsNothing);
   });
 

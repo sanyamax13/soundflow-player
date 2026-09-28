@@ -4,7 +4,7 @@ import 'package:flutter/cupertino.dart'
         CupertinoTextThemeData,
         CupertinoThemeData;
 import 'package:flutter/material.dart';
-import 'package:solar_icons/solar_icons.dart';
+import 'solar.dart';
 
 /// Тема «Афиша» — чистый чёрный фон, белый текст, минимум серого, лаймовый
 /// акцент на нижнем меню. Шрифт — Inter (Alex 06.09.2026, вместо узкого Oswald:
@@ -113,7 +113,7 @@ class Afisha {
         ),
       ),
       actionIconTheme: ActionIconThemeData(
-        backButtonIconBuilder: (_) => const Icon(SolarIconsOutline.altArrowLeft, size: 30),
+        backButtonIconBuilder: (_) => const Icon(SolarOutline.altArrowLeft, size: 30),
       ),
       sliderTheme: const SliderThemeData(
         activeTrackColor: lime,
