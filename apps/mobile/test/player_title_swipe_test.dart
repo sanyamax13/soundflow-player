@@ -1,6 +1,5 @@
 // Смахивание строки «название + исполнитель» (Alex, голосовое 28.09.2026): влево — следующая,
 // вправо — предыдущая, короткое движение — ничего. И шторка очереди тянется без ошибок.
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

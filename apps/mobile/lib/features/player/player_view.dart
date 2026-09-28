@@ -1445,7 +1445,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(t.emoji, style: const TextStyle(fontSize: 30)),
+                      Icon(t.icon, size: 34, color: t.stripe != null ? Color(t.stripe!) : Afisha.lime),
                       const SizedBox(height: 4),
                       Text(t.label,
                           maxLines: 2,
@@ -1816,10 +1816,10 @@ class _CoverColorsTween extends Tween<CoverColors> {
 
 /// Плитка выбора настроения/жанра.
 class _Tile {
-  const _Tile(this.key, this.label, this.emoji, {this.count, this.stripe});
+  const _Tile(this.key, this.label, this.icon, {this.count, this.stripe});
   final String key;
   final String label;
-  final String emoji;
+  final IconData icon;
   final int? count;
   final int? stripe;
 }

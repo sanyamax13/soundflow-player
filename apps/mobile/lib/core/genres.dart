@@ -1,3 +1,6 @@
+import 'package:flutter/widgets.dart' show IconData;
+import 'package:solar_icons/solar_icons.dart';
+
 /// Названия жанров Яндекса по-русски (сервер хранит код Яндекса: rusrap, pop…,
 /// cmd/soundflow/genrekeeper.go, 26.09.2026). Неизвестный код показываем как есть,
 /// с большой буквы.
@@ -58,19 +61,19 @@ String genreLabel(String code) {
 /// 12 больших групп вместо ~96 кодов Яндекса (12-я — «Альтернатива и инди», Alex 27.09.2026 «для симметрии») (27.09.2026, Alex: «жанров очень много, можно объединить»).
 /// Тот же список, что на сервере (apps/server/cmd/soundflow/moodkeeper.go genreGroups) — сервер по нему
 /// угадывает жанр песен, которых Яндекс не знает.
-const genreGroupOrder = <(String, String, String)>[
-  ('pop', 'Поп', '🎤'),
-  ('dance', 'Танцевальная и электроника', '🎧'),
-  ('rock', 'Рок', '🎸'),
-  ('alt', 'Альтернатива и инди', '🎹'),
-  ('rap', 'Рэп', '🎙'),
-  ('estrada', 'Эстрада и шансон', '🪗'),
-  ('calm', 'Спокойное и лаунж', '🌙'),
-  ('folk', 'Фолк, кантри, этника', '🪕'),
-  ('rnb', 'R&B, соул, регги', '💃'),
-  ('metal', 'Метал', '🤘'),
-  ('soundtrack', 'Саундтреки', '🎬'),
-  ('jazz', 'Джаз и блюз', '🎷'),
+const genreGroupOrder = <(String, String, IconData)>[
+  ('pop', 'Поп', SolarIconsBold.microphoneLarge),
+  ('dance', 'Танцевальная и электроника', SolarIconsBold.headphonesRound),
+  ('rock', 'Рок', SolarIconsBold.speaker),
+  ('alt', 'Альтернатива и инди', SolarIconsBold.turntableMusicNote),
+  ('rap', 'Рэп', SolarIconsBold.microphone),
+  ('estrada', 'Эстрада и шансон', SolarIconsBold.musicNotes),
+  ('calm', 'Спокойное и лаунж', SolarIconsBold.moonSleep),
+  ('folk', 'Фолк, кантри, этника', SolarIconsBold.leaf),
+  ('rnb', 'R&B, соул, регги', SolarIconsBold.musicNote3),
+  ('metal', 'Метал', SolarIconsBold.flame),
+  ('soundtrack', 'Саундтреки', SolarIconsBold.clapperboardPlay),
+  ('jazz', 'Джаз и блюз', SolarIconsBold.cupMusic),
 ];
 
 final Map<String, String> _groupOf = () {
@@ -99,14 +102,14 @@ final Map<String, String> _groupOf = () {
 /// Группа жанра по коду Яндекса; null — неизвестный код или жанра нет.
 String? genreGroup(String? code) => code == null ? null : _groupOf[code];
 
-/// Настроения по звуку (сервер, moodkeeper.go): код → подпись и значок.
-const moodOrder = <(String, String, String)>[
-  ('happy', 'Радостное', '😊'),
-  ('energetic', 'Энергичное', '⚡'),
-  ('tender', 'Нежное', '🌸'),
-  ('sad', 'Грустное', '🌧'),
-  ('aggressive', 'Жёсткое', '🔥'),
-  ('dance', 'Танцевальное', '💃'), // 6-е, Alex 27.09.2026 «для симметрии» — класс AudioSet «Dance music»
+/// Настроения по звуку (сервер, moodkeeper.go): код → подпись и значок (Solar, 28.09.2026 — вместо эмодзи).
+const moodOrder = <(String, String, IconData)>[
+  ('happy', 'Радостное', SolarIconsBold.smileCircle),
+  ('energetic', 'Энергичное', SolarIconsBold.bolt),
+  ('tender', 'Нежное', SolarIconsBold.handHeart),
+  ('sad', 'Грустное', SolarIconsBold.cloudRain),
+  ('aggressive', 'Жёсткое', SolarIconsBold.fire),
+  ('dance', 'Танцевальное', SolarIconsBold.confetti), // 6-е, Alex 27.09.2026 «для симметрии» — класс AudioSet «Dance music»
 ];
 
 /// Цвет полоски под плиткой настроения (разбор Алисы 27.09.2026). «Энергичное» оранжевое, а не
