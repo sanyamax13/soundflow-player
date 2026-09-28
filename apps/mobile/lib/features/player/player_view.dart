@@ -1445,7 +1445,7 @@ class _PlayerViewState extends ConsumerState<PlayerView>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(t.icon, size: 34, color: t.stripe != null ? Color(t.stripe!) : Afisha.lime),
+                      Icon(t.icon, size: 34, color: Colors.white), // белые, как значки плеера (Alex 28.09.2026: «не цветные»)
                       const SizedBox(height: 4),
                       Text(t.label,
                           maxLines: 2,
